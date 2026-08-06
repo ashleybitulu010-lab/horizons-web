@@ -3,19 +3,23 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Send, ChevronDown } from 'lucide-react';
 import pb from '@/lib/pocketbaseClient';
 import Ashy from '@/components/Ashy';
+import { useChat } from '@/context/ChatContext';
+import {
+  useOnboarding,
+  WELCOME_ONBOARDING,
+  ORDER_RULE_MESSAGE,
+  ORDER_BLOCK_MESSAGE,
+  ONE_DATA_REMINDER,
+  ONBOARDING_STEPS,
+  ONBOARDING_RELAUNCH_EVENT,
+} from '@/hooks/useOnboarding';
+import { checkOnboardingStep, detectPrematureSale } from '@/lib/onboardingChecks';
+import { localAshyReply, escalateToTelegramSupport } from '@/lib/ashyAssistant';
 
 const SUPPORT_AVATAR = 'https://horizons-cdn.hostinger.com/29358ba6-568b-49c6-9aac-6ece4b30fac6/ca8bd733c63d36fa2caff0db62fb3057.png';
 
-const AUTO_REPLIES = [
-  "Merci pour votre message ! Un membre de notre équipe vous répondra très bientôt. En attendant, n'hésitez pas à nous donner plus de détails sur votre problème.",
-  "Bonjour ! Nous avons bien reçu votre question. Notre équipe est disponible du lundi au vendredi de 9h à 18h. Nous reviendrons vers vous rapidement.",
-  "Merci de nous avoir contactés ! Votre demande a été enregistrée. Nous vous répondrons dans les plus brefs délais.",
-  "Message reçu ! Notre équipe support va traiter votre demande. Merci de votre patience.",
-];
-
-const TOOLTIPS = ["👋 Besoin d'aide ?", "💬 Discutez avec nous"];
+const TOOLTIPS = ['👋 Besoin d\'aide ?', '💬 Discutez avec Ashy', '🎯 Relancer le guide ?'];
 const BUBBLE_SIZE = 80;
-
 const MARGIN = 28;
 const LS_KEY = 'ash_support_bubble_pos';
 
@@ -45,9 +49,7 @@ function clampPos(x, y) {
 }
 
 function getDefaultPos() {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  return { x: vw - BUBBLE_SIZE - MARGIN, y: vh - BUBBLE_SIZE - MARGIN };
+  return { x: window.innerWidth - BUBBLE_SIZE - MARGIN, y: window.innerHeight - BUBBLE_SIZE - MARGIN };
 }
 
 function loadPos() {
@@ -55,52 +57,89 @@ function loadPos() {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return null;
     const pos = JSON.parse(raw);
-    if (typeof pos.x === 'number' && typeof pos.y === 'number') {
-      return clampPos(pos.x, pos.y);
-    }
-  } catch (_) {}
+    if (typeof pos.x === 'number' && typeof pos.y === 'number') return clampPos(pos.x, pos.y);
+  } catch (_) { /* ignore */ }
   return null;
 }
 
 function savePos(pos) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(pos)); } catch (_) {}
+  try { localStorage.setItem(LS_KEY, JSON.stringify(pos)); } catch (_) { /* ignore */ }
 }
 
-// Snap to nearest edge (left or right)
 function snapToEdge(x, y) {
-  const vw = window.innerWidth;
-  const midX = vw / 2;
-  const snappedX = x < midX ? MARGIN : vw - BUBBLE_SIZE - MARGIN;
+  const midX = window.innerWidth / 2;
+  const snappedX = x < midX ? MARGIN : window.innerWidth - BUBBLE_SIZE - MARGIN;
   return clampPos(snappedX, y);
 }
 
-// Find a safe position avoiding critical UI zones (input / send button area)
 function avoidCriticalZones(x, y) {
-  const CRITICAL_ZONES = [
-    // Bottom-center input bar area (approx)
-    { x: 0, y: window.innerHeight - 100, w: window.innerWidth, h: 100 },
-  ];
+  const zone = { x: 0, y: window.innerHeight - 100, w: window.innerWidth, h: 100 };
   const bubbleRect = { x, y, w: BUBBLE_SIZE, h: BUBBLE_SIZE };
-
-  for (const zone of CRITICAL_ZONES) {
-    const overlap =
-      bubbleRect.x < zone.x + zone.w &&
-      bubbleRect.x + bubbleRect.w > zone.x &&
-      bubbleRect.y < zone.y + zone.h &&
-      bubbleRect.y + bubbleRect.h > zone.y;
-    if (overlap) {
-      // Move above the zone
-      y = zone.y - BUBBLE_SIZE - MARGIN;
-      break;
-    }
-  }
+  const overlap =
+    bubbleRect.x < zone.x + zone.w &&
+    bubbleRect.x + bubbleRect.w > zone.x &&
+    bubbleRect.y < zone.y + zone.h &&
+    bubbleRect.y + bubbleRect.h > zone.y;
+  if (overlap) y = zone.y - BUBBLE_SIZE - MARGIN;
   return clampPos(x, y);
 }
 
+function makeLocalMsg(content, senderType, extras = {}) {
+  return {
+    id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    content,
+    sender_type: senderType,
+    created: new Date().toISOString(),
+    is_read: true,
+    local: true,
+    ...extras,
+  };
+}
+
+function ProgressBar({ progress, visible }) {
+  if (!visible) return null;
+  return (
+    <div className="px-4 py-2.5 flex-shrink-0" style={{ backgroundColor: '#FFF4EB', borderBottom: '1px solid rgba(255,107,0,0.12)' }}>
+      <div className="flex items-center justify-between mb-1.5">
+        <p className="text-[11px] font-semibold text-orange-700">
+          Étape {progress.step}/{progress.total}
+          {progress.label ? ` · ${progress.label}` : ''}
+        </p>
+        <p className="text-[11px] font-bold text-orange-600 tabular-nums">{progress.percent} %</p>
+      </div>
+      <div className="h-1.5 rounded-full bg-orange-100 overflow-hidden">
+        <motion.div
+          className="h-full rounded-full"
+          style={{ backgroundColor: '#FF6B00' }}
+          initial={false}
+          animate={{ width: `${progress.percent}%` }}
+          transition={{ type: 'spring', stiffness: 120, damping: 20 }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function SupportChatWidget({ user }) {
+  const { messages: mainMessages, loading: mainLoading } = useChat();
+  const {
+    state: onboarding,
+    progress,
+    currentStep,
+    isGuideMode,
+    isActive,
+    isPending,
+    startGuide,
+    skipGuide,
+    advanceStep,
+    completeGuide,
+    restartGuide,
+  } = useOnboarding(user?.id, user?.created);
+
   const [open, setOpen] = useState(false);
   const [chat, setChat] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [guideMessages, setGuideMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [agentTyping, setAgentTyping] = useState(false);
@@ -108,27 +147,106 @@ export default function SupportChatWidget({ user }) {
   const [showTooltip, setShowTooltip] = useState(false);
   const [tooltipText, setTooltipText] = useState(TOOLTIPS[0]);
   const [newMsgIds, setNewMsgIds] = useState(new Set());
-  const [initialized, setInitialized] = useState(false);
   const [celebrateSignal, setCelebrateSignal] = useState(0);
   const [thinkingSignal, setThinkingSignal] = useState(false);
-  const ashyRef = useRef(null);
+  const [validating, setValidating] = useState(false);
+  const [welcomeShown, setWelcomeShown] = useState(false);
 
-  // Drag state
   const [pos, setPos] = useState(() => loadPos() || getDefaultPos());
   const [isDragging, setIsDragging] = useState(false);
   const [snapTransition, setSnapTransition] = useState(false);
-  const dragStart = useRef(null); // { clientX, clientY, bx, by }
+  const dragStart = useRef(null);
   const hasMoved = useRef(false);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const tooltipInterval = useRef(null);
-  const autoReplyTimer = useRef(null);
+  const replyTimer = useRef(null);
+  const advancingRef = useRef(false);
+  const prematureWarnedRef = useRef(false);
+  const remindCounterRef = useRef(0);
+  const autoOpenedRef = useRef(false);
 
-  // On window resize, re-clamp position
+  const showGuideTranscript =
+    isGuideMode || (onboarding?.status === 'completed' && guideMessages.length > 0 && messages.length === 0);
+  const displayMessages = showGuideTranscript ? guideMessages : messages;
+
+  const pushGuide = useCallback((content, extras = {}) => {
+    const msg = makeLocalMsg(content, 'support', extras);
+    setGuideMessages((prev) => [...prev, msg]);
+    setNewMsgIds((prev) => new Set([...prev, msg.id]));
+    return msg;
+  }, []);
+
+  const pushGuideUser = useCallback((content) => {
+    const msg = makeLocalMsg(content, 'user');
+    setGuideMessages((prev) => [...prev, msg]);
+    setNewMsgIds((prev) => new Set([...prev, msg.id]));
+    return msg;
+  }, []);
+
+  const withTyping = useCallback((fn, delay = 900) => {
+    clearTimeout(replyTimer.current);
+    setAgentTyping(true);
+    setThinkingSignal(true);
+    replyTimer.current = setTimeout(() => {
+      setAgentTyping(false);
+      setThinkingSignal(false);
+      fn();
+    }, delay);
+  }, []);
+
+  // Auto-open for new / in-progress guide
+  useEffect(() => {
+    if (!user?.id) return;
+    if ((isPending || isActive) && !autoOpenedRef.current) {
+      autoOpenedRef.current = true;
+      setOpen(true);
+    }
+  }, [user?.id, isPending, isActive]);
+
+  // Seed welcome when pending
+  useEffect(() => {
+    if (!isPending || welcomeShown) return;
+    setGuideMessages([
+      makeLocalMsg(WELCOME_ONBOARDING.content, 'support', {
+        id: WELCOME_ONBOARDING.id,
+        actions: WELCOME_ONBOARDING.actions,
+      }),
+    ]);
+    setWelcomeShown(true);
+  }, [isPending, welcomeShown]);
+
+  // Resume active guide UI if panel reopens with empty local transcript
+  useEffect(() => {
+    if (!isActive || !currentStep || guideMessages.length > 0) return;
+    setGuideMessages([
+      makeLocalMsg(
+        `On reprend là où nous nous sommes arrêtés.\n\nÉtape ${currentStep.index}/5 — ${currentStep.title}\n\n${currentStep.explain}\n\n${ONE_DATA_REMINDER}`,
+        'support',
+      ),
+    ]);
+  }, [isActive, currentStep, guideMessages.length]);
+
+  // Relaunch from Settings
+  useEffect(() => {
+    const onRelaunch = () => {
+      restartGuide();
+      setWelcomeShown(false);
+      setGuideMessages([]);
+      advancingRef.current = false;
+      prematureWarnedRef.current = false;
+      remindCounterRef.current = 0;
+      autoOpenedRef.current = true;
+      setOpen(true);
+    };
+    window.addEventListener(ONBOARDING_RELAUNCH_EVENT, onRelaunch);
+    return () => window.removeEventListener(ONBOARDING_RELAUNCH_EVENT, onRelaunch);
+  }, [restartGuide]);
+
   useEffect(() => {
     const onResize = () => {
-      setPos(prev => {
+      setPos((prev) => {
         const clamped = clampPos(prev.x, prev.y);
         savePos(clamped);
         return clamped;
@@ -138,13 +256,10 @@ export default function SupportChatWidget({ user }) {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  // Scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, agentTyping]);
+  }, [displayMessages, agentTyping]);
 
-
-  // Tooltip animation loop (only when widget is closed)
   useEffect(() => {
     if (open) { setShowTooltip(false); return; }
     const showNext = () => {
@@ -157,14 +272,12 @@ export default function SupportChatWidget({ user }) {
     return () => { clearTimeout(initial); clearInterval(tooltipInterval.current); setShowTooltip(false); };
   }, [open]);
 
-  // Load or create support chat
   const initChat = useCallback(async () => {
-    if (!user?.id || initialized) return;
-    setInitialized(true);
+    if (!user?.id || isGuideMode) return null;
     try {
       const existing = await pb.collection('support_chats').getFirstListItem(
         `owner = "${user.id}" && status = "open"`,
-        { requestKey: 'sc-load' }
+        { requestKey: 'sc-load' },
       );
       setChat(existing);
       const msgs = await pb.collection('support_messages').getFullList({
@@ -173,6 +286,7 @@ export default function SupportChatWidget({ user }) {
         requestKey: 'sm-load',
       });
       setMessages(msgs);
+      return existing;
     } catch (_) {
       try {
         const newChat = await pb.collection('support_chats').create({
@@ -181,81 +295,146 @@ export default function SupportChatWidget({ user }) {
         setChat(newChat);
         const welcome = await pb.collection('support_messages').create({
           chat: newChat.id,
-          content: "👋 Bonjour ! Bienvenue sur le support Ash Ledger.\nComment pouvons-nous vous aider aujourd'hui ?",
+          content: "👋 Bonjour ! Je suis Ashy, votre assistant financier.\nComment puis-je vous aider aujourd'hui ?",
           sender_type: 'support',
           is_read: false,
         }, { requestKey: 'sm-welcome' });
         setMessages([welcome]);
-      } catch (err) { console.error('Support chat init error', err); }
+        return newChat;
+      } catch (err) {
+        console.error('Support chat init error', err);
+        return null;
+      }
     }
-  }, [user?.id, initialized]);
+  }, [user?.id, isGuideMode]);
 
   useEffect(() => {
-    if (open && user?.id) initChat();
-  }, [open, user?.id, initChat]);
+    if (open && user?.id && !isGuideMode && !chat?.id) {
+      void initChat();
+    }
+  }, [open, user?.id, initChat, isGuideMode, chat?.id]);
 
-  // Realtime subscription
   useEffect(() => {
-    if (!chat?.id) return;
+    if (!chat?.id || isGuideMode) return;
     void pb.collection('support_messages').subscribe('*', (e) => {
       if (e.record.chat !== chat.id) return;
       if (e.action === 'create') {
-        setMessages(prev => {
-          if (prev.find(m => m.id === e.record.id)) return prev;
+        setMessages((prev) => {
+          if (prev.find((m) => m.id === e.record.id)) return prev;
           return [...prev, e.record];
         });
-        setNewMsgIds(prev => new Set([...prev, e.record.id]));
-        if (!open && e.record.sender_type === 'support') setUnread(n => n + 1);
+        setNewMsgIds((prev) => new Set([...prev, e.record.id]));
+        if (!open && e.record.sender_type === 'support') setUnread((n) => n + 1);
       }
     }, { requestKey: 'sc-realtime' }).catch(() => {});
     return () => { void pb.collection('support_messages').unsubscribe('*').catch(() => {}); };
-  }, [chat?.id, open]);
+  }, [chat?.id, open, isGuideMode]);
 
   useEffect(() => { if (open) setUnread(0); }, [open]);
 
-  // ── Drag handlers ──────────────────────────────────────────────────
+  // Validate onboarding steps against Supabase / main chat
+  useEffect(() => {
+    if (!isActive || !currentStep || advancingRef.current) return undefined;
+
+    let cancelled = false;
+
+    const run = async () => {
+      if (detectPrematureSale(onboarding.stepIndex, mainMessages) && !prematureWarnedRef.current) {
+        prematureWarnedRef.current = true;
+        withTyping(() => pushGuide(ORDER_BLOCK_MESSAGE), 600);
+      }
+
+      try {
+        const ok = await checkOnboardingStep(currentStep.check, user, mainMessages);
+        if (cancelled || !ok || advancingRef.current) return;
+
+        advancingRef.current = true;
+        setValidating(true);
+        const stepSnapshot = currentStep;
+        withTyping(() => {
+          pushGuide(stepSnapshot.success);
+          setCelebrateSignal((s) => s + 1);
+
+          const nextIndex = (onboarding.stepIndex || 0) + 1;
+          if (nextIndex >= ONBOARDING_STEPS.length) {
+            completeGuide();
+            setValidating(false);
+            setTimeout(() => {
+              pushGuide('Je reste disponible ici pour vos questions. Le chat principal sert à enregistrer vos opérations.');
+              advancingRef.current = false;
+            }, 700);
+            return;
+          }
+
+          advanceStep();
+          const next = ONBOARDING_STEPS[nextIndex];
+          remindCounterRef.current += 1;
+          const reminder = remindCounterRef.current % 2 === 0 ? `\n\n${ONE_DATA_REMINDER}` : '';
+          setTimeout(() => {
+            withTyping(() => {
+              pushGuide(`Étape ${next.index}/5 — ${next.title}\n\n${next.explain}${reminder}`);
+              advancingRef.current = false;
+              prematureWarnedRef.current = false;
+              setValidating(false);
+            }, 700);
+          }, 500);
+        }, 800);
+      } catch {
+        if (!cancelled) setValidating(false);
+      }
+    };
+
+    run();
+    const id = setInterval(run, 4500);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [
+    isActive,
+    currentStep,
+    onboarding?.stepIndex,
+    mainMessages,
+    mainLoading,
+    user,
+    advanceStep,
+    completeGuide,
+    pushGuide,
+    withTyping,
+  ]);
+
   const onPointerDown = useCallback((e) => {
     e.preventDefault();
     hasMoved.current = false;
-    dragStart.current = {
-      clientX: e.clientX,
-      clientY: e.clientY,
-      bx: pos.x,
-      by: pos.y,
-    };
+    dragStart.current = { clientX: e.clientX, clientY: e.clientY, bx: pos.x, by: pos.y };
     setIsDragging(true);
     setSnapTransition(false);
   }, [pos]);
 
   useEffect(() => {
     if (!isDragging) return;
-
     const onMove = (e) => {
       const client = e.touches ? e.touches[0] : e;
       const dx = client.clientX - dragStart.current.clientX;
       const dy = client.clientY - dragStart.current.clientY;
       if (Math.abs(dx) > 4 || Math.abs(dy) > 4) hasMoved.current = true;
-      const newPos = clampPos(dragStart.current.bx + dx, dragStart.current.by + dy);
-      setPos(newPos);
+      setPos(clampPos(dragStart.current.bx + dx, dragStart.current.by + dy));
     };
-
     const onUp = (e) => {
       setIsDragging(false);
       setSnapTransition(true);
       setTimeout(() => setSnapTransition(false), 500);
-      // Snap to nearest edge
-      setPos(prev => {
+      setPos(() => {
         const client = e.changedTouches ? e.changedTouches[0] : e;
         const dx = client.clientX - dragStart.current.clientX;
         const dy = client.clientY - dragStart.current.clientY;
         const raw = clampPos(dragStart.current.bx + dx, dragStart.current.by + dy);
         const snapped = snapToEdge(raw.x, raw.y);
-        const safe = avoidCriticalZones(snapped.x, snapped.y);
-        savePos(safe);
-        return safe;
+        const finalPos = avoidCriticalZones(snapped.x, snapped.y);
+        savePos(finalPos);
+        return finalPos;
       });
     };
-
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     window.addEventListener('touchmove', onMove, { passive: true });
@@ -269,81 +448,143 @@ export default function SupportChatWidget({ user }) {
   }, [isDragging]);
 
   const handleBubbleClick = useCallback(() => {
-    if (hasMoved.current) return; // was a drag, not a click
+    if (hasMoved.current) return;
     setOpen(true);
     setShowTooltip(false);
   }, []);
 
-  // ── Chat panel position (anchored relative to bubble) ──────────────
+  const handleClose = useCallback(() => {
+    if (isGuideMode) return; // stay open during tutorial
+    setOpen(false);
+  }, [isGuideMode]);
+
+  const handleStartGuide = useCallback(() => {
+    startGuide();
+    setGuideMessages((prev) =>
+      prev.map((m) => (m.id === WELCOME_ONBOARDING.id ? { ...m, actions: undefined } : m)),
+    );
+    withTyping(() => {
+      pushGuide(ORDER_RULE_MESSAGE);
+      setTimeout(() => {
+        withTyping(() => {
+          const step = ONBOARDING_STEPS[0];
+          pushGuide(`Étape ${step.index}/5 — ${step.title}\n\n${step.explain}\n\n${ONE_DATA_REMINDER}`);
+        }, 800);
+      }, 400);
+    }, 700);
+  }, [startGuide, pushGuide, withTyping]);
+
+  const handleSkipGuide = useCallback(() => {
+    skipGuide();
+    setGuideMessages((prev) =>
+      prev.map((m) => (m.id === WELCOME_ONBOARDING.id ? { ...m, actions: undefined } : m)),
+    );
+    withTyping(() => {
+      pushGuide('Pas de souci. Vous pourrez relancer le guide à tout moment dans Paramètres → Guide Ashy.');
+      setTimeout(() => setOpen(false), 1600);
+    }, 600);
+  }, [skipGuide, pushGuide, withTyping]);
+
   const getPanelStyle = () => {
     const vw = window.innerWidth;
     const panelW = Math.min(vw - 48, 384);
-    const panelH = Math.min(500, window.innerHeight - 120);
+    const panelH = Math.min(520, window.innerHeight - 120);
     const gap = 12;
-
-    // Determine horizontal side: right edge of bubble vs left edge
     let left = pos.x;
-    // If bubble is on right half, align panel to the right of bubble
-    if (pos.x + BUBBLE_SIZE + gap + panelW > vw - MARGIN) {
-      left = pos.x - panelW + BUBBLE_SIZE;
-    } else {
-      left = pos.x;
-    }
+    if (pos.x + BUBBLE_SIZE + gap + panelW > vw - MARGIN) left = pos.x - panelW + BUBBLE_SIZE;
     left = Math.max(MARGIN, Math.min(vw - panelW - MARGIN, left));
-
     let top = pos.y - panelH - gap;
     if (top < MARGIN) top = pos.y + BUBBLE_SIZE + gap;
     top = Math.max(MARGIN, Math.min(window.innerHeight - panelH - MARGIN, top));
-
     return { position: 'fixed', left, top, width: panelW, height: panelH, zIndex: 99 };
   };
 
-  // ── Send message ───────────────────────────────────────────────────
-  // Detect thanks keywords in message
-  const isThanks = (text) => {
-    const t = text.toLowerCase();
-    return ['merci', 'thank', 'super', 'parfait', 'génial', 'excellent', 'bravo', '🙏'].some(k => t.includes(k));
+  const sendGuideMessage = async (text) => {
+    pushGuideUser(text);
+    withTyping(() => {
+      if (detectPrematureSale(onboarding?.stepIndex ?? 0, [{ role: 'user', content: text }, ...mainMessages])) {
+        pushGuide(ORDER_BLOCK_MESSAGE);
+        return;
+      }
+      if (/vente|vendu/i.test(text) && (onboarding?.stepIndex ?? 0) < 2) {
+        pushGuide(ORDER_BLOCK_MESSAGE);
+        return;
+      }
+      pushGuide(
+        currentStep
+          ? `Je vous guide encore sur « ${currentStep.title} ».\nRéalisez l'action dans le chat principal, puis je vérifierai automatiquement.\n\n${ONE_DATA_REMINDER}`
+          : 'Utilisez les boutons du guide ou le chat principal pour avancer.',
+      );
+    }, 700);
+  };
+
+  const sendNormalMessage = async (text) => {
+    const activeChat = chat?.id ? chat : await initChat();
+    const decision = localAshyReply(text);
+
+    if (!activeChat) {
+      const localUser = makeLocalMsg(text, 'user');
+      setMessages((prev) => [...prev, localUser]);
+      withTyping(() => {
+        const reply = makeLocalMsg(decision.reply, 'support');
+        setMessages((prev) => [...prev, reply]);
+        setNewMsgIds((prev) => new Set([...prev, reply.id]));
+        if (decision.type === 'escalate') {
+          void escalateToTelegramSupport({ user, message: text, chatId: '' });
+        }
+      }, 900);
+      return;
+    }
+
+    try {
+      const msg = await pb.collection('support_messages').create({
+        chat: activeChat.id, content: text, sender_type: 'user', is_read: false,
+      });
+      setMessages((prev) => [...prev, msg]);
+      setNewMsgIds((prev) => new Set([...prev, msg.id]));
+      setCelebrateSignal((s) => s + 1);
+
+      withTyping(async () => {
+        try {
+          const reply = await pb.collection('support_messages').create({
+            chat: activeChat.id,
+            content: decision.reply,
+            sender_type: 'support',
+            is_read: false,
+          });
+          setMessages((prev) => [...prev, reply]);
+          setNewMsgIds((prev) => new Set([...prev, reply.id]));
+        } catch (_) {
+          const local = makeLocalMsg(decision.reply, 'support');
+          setMessages((prev) => [...prev, local]);
+        }
+
+        // Human / Telegram escalation only outside tutorial
+        if (decision.type === 'escalate') {
+          await escalateToTelegramSupport({
+            user,
+            message: text,
+            chatId: activeChat.id,
+          });
+        }
+      }, 1000 + Math.random() * 600);
+    } catch (err) {
+      console.error('Failed to send support message', err);
+    }
   };
 
   const sendMessage = async () => {
     const text = input.trim();
-    if (!text || sending || !chat) return;
+    if (!text || sending) return;
     setInput('');
     if (inputRef.current) inputRef.current.style.height = 'auto';
     setSending(true);
     try {
-      const msg = await pb.collection('support_messages').create({
-        chat: chat.id, content: text, sender_type: 'user', is_read: false,
-      });
-      setMessages(prev => [...prev, msg]);
-      setNewMsgIds(prev => new Set([...prev, msg.id]));
-      // Choose reaction: thanks → hearts, else celebrate bounce
-      if (isThanks(text)) {
-        // no-op
-      } else {
-        setCelebrateSignal(s => s + 1);
-      }
-      autoReplyTimer.current = setTimeout(() => {
-        setAgentTyping(true);
-        // thinking state
-        autoReplyTimer.current = setTimeout(async () => {
-          setAgentTyping(false);
-          // done thinking
-          try {
-            const reply = await pb.collection('support_messages').create({
-              chat: chat.id,
-              content: AUTO_REPLIES[Math.floor(Math.random() * AUTO_REPLIES.length)],
-              sender_type: 'support',
-              is_read: false,
-            });
-            setMessages(prev => [...prev, reply]);
-            setNewMsgIds(prev => new Set([...prev, reply.id]));
-
-          } catch (_) {}
-        }, 1800 + Math.random() * 1200);
-      }, 600);
-    } catch (err) { console.error('Failed to send support message', err); }
-    finally { setSending(false); }
+      if (isGuideMode) await sendGuideMessage(text);
+      else await sendNormalMessage(text);
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -356,9 +597,13 @@ export default function SupportChatWidget({ user }) {
     e.target.style.height = Math.min(e.target.scrollHeight, 88) + 'px';
   };
 
+  const headerTitle = isGuideMode ? 'Ashy · Guide interactif' : 'Ashy';
+  const headerSub = isGuideMode
+    ? (validating ? 'Vérification en cours…' : 'Je vous accompagne pas à pas')
+    : 'Assistant financier · En ligne';
+
   return (
     <>
-      {/* Chat panel */}
       <AnimatePresence>
         {open && (
           <motion.div
@@ -370,27 +615,30 @@ export default function SupportChatWidget({ user }) {
             style={getPanelStyle()}
             className="rounded-2xl shadow-2xl overflow-hidden flex flex-col"
           >
-            {/* Header */}
             <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0" style={{ backgroundColor: '#FF6B00' }}>
               <div className="relative flex-shrink-0">
                 <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-white/40">
-                  <img src={SUPPORT_AVATAR} alt="Support" className="w-full h-full object-cover" />
+                  <img src={SUPPORT_AVATAR} alt="Ashy" className="w-full h-full object-cover" />
                 </div>
                 <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-orange-600" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-white font-semibold text-sm leading-tight">Support Ash Ledger</p>
-                <p className="text-orange-100 text-[11px] mt-0.5">En ligne · Répond rapidement</p>
+                <p className="text-white font-semibold text-sm leading-tight">{headerTitle}</p>
+                <p className="text-orange-100 text-[11px] mt-0.5">{headerSub}</p>
               </div>
-              <button
-                onClick={() => setOpen(false)}
-                className="w-7 h-7 flex items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/15 transition-colors"
-              >
-                <ChevronDown size={18} />
-              </button>
+              {!isGuideMode && (
+                <button
+                  onClick={handleClose}
+                  className="w-7 h-7 flex items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/15 transition-colors"
+                  aria-label="Réduire"
+                >
+                  <ChevronDown size={18} />
+                </button>
+              )}
             </div>
 
-            {/* Messages area */}
+            <ProgressBar progress={progress} visible={isActive} />
+
             <div
               className="flex-1 overflow-y-auto py-3 px-3 space-y-1.5"
               style={{
@@ -400,7 +648,7 @@ export default function SupportChatWidget({ user }) {
               }}
             >
               <AnimatePresence initial={false}>
-                {messages.map(msg => {
+                {displayMessages.map((msg) => {
                   const isUser = msg.sender_type === 'user';
                   const isNew = newMsgIds.has(msg.id);
                   return (
@@ -413,11 +661,11 @@ export default function SupportChatWidget({ user }) {
                     >
                       {!isUser && (
                         <div className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 mb-1 border border-white/60">
-                          <img src={SUPPORT_AVATAR} alt="Support" className="w-full h-full object-cover" />
+                          <img src={SUPPORT_AVATAR} alt="Ashy" className="w-full h-full object-cover" />
                         </div>
                       )}
                       <div
-                        className={`max-w-[80%] px-3 py-2 shadow-sm text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                        className={`max-w-[85%] px-3 py-2 shadow-sm text-sm leading-relaxed whitespace-pre-wrap break-words ${
                           isUser
                             ? 'rounded-2xl rounded-br-sm text-white'
                             : 'rounded-2xl rounded-bl-sm text-gray-800 bg-white'
@@ -425,6 +673,28 @@ export default function SupportChatWidget({ user }) {
                         style={isUser ? { backgroundColor: '#FF6B00' } : {}}
                       >
                         {msg.content}
+                        {Array.isArray(msg.actions) && msg.actions.length > 0 && (
+                          <div className="mt-3 flex flex-col gap-2">
+                            {msg.actions.map((action) => (
+                              <button
+                                key={action.id}
+                                type="button"
+                                onClick={() => {
+                                  if (action.id === 'start') handleStartGuide();
+                                  if (action.id === 'skip') handleSkipGuide();
+                                }}
+                                className={`w-full text-sm font-semibold py-2 px-3 rounded-xl transition-all active:scale-[0.98] ${
+                                  action.variant === 'ghost'
+                                    ? 'bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100'
+                                    : 'text-white'
+                                }`}
+                                style={action.variant === 'ghost' ? undefined : { backgroundColor: '#FF6B00' }}
+                              >
+                                {action.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                         <div className="flex items-center justify-end gap-0.5 mt-0.5">
                           <span className={`text-[10px] tabular-nums ${isUser ? 'text-orange-200' : 'text-gray-400'}`}>
                             {getTime(msg.created)}
@@ -437,7 +707,6 @@ export default function SupportChatWidget({ user }) {
                 })}
               </AnimatePresence>
 
-              {/* Agent typing indicator */}
               <AnimatePresence>
                 {agentTyping && (
                   <motion.div
@@ -449,7 +718,7 @@ export default function SupportChatWidget({ user }) {
                     className="flex items-end gap-1.5"
                   >
                     <div className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 border border-white/60">
-                      <img src={SUPPORT_AVATAR} alt="Support" className="w-full h-full object-cover" />
+                      <img src={SUPPORT_AVATAR} alt="Ashy" className="w-full h-full object-cover" />
                     </div>
                     <div className="bg-white rounded-2xl rounded-bl-sm px-3 py-2 shadow-sm">
                       <div className="flex gap-1 items-center" style={{ minWidth: 28 }}>
@@ -468,7 +737,6 @@ export default function SupportChatWidget({ user }) {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input bar */}
             <div
               className="flex-shrink-0 px-3 py-2.5 flex items-end gap-2"
               style={{ backgroundColor: '#F0EBE2', borderTop: '1px solid rgba(0,0,0,0.06)' }}
@@ -479,7 +747,7 @@ export default function SupportChatWidget({ user }) {
                   value={input}
                   onChange={handleTextarea}
                   onKeyDown={handleKeyDown}
-                  placeholder="Votre message…"
+                  placeholder={isGuideMode ? 'Posez une question à Ashy…' : 'Votre message…'}
                   rows={1}
                   className="w-full resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none leading-relaxed"
                   style={{ minHeight: 20, maxHeight: 88 }}
@@ -499,7 +767,6 @@ export default function SupportChatWidget({ user }) {
         )}
       </AnimatePresence>
 
-      {/* Draggable floating bubble */}
       <AnimatePresence>
         {!open && (
           <motion.div
@@ -518,7 +785,6 @@ export default function SupportChatWidget({ user }) {
             }}
             className="flex flex-col items-end gap-2"
           >
-            {/* Tooltip */}
             <AnimatePresence>
               {showTooltip && !isDragging && (
                 <motion.div
@@ -535,7 +801,6 @@ export default function SupportChatWidget({ user }) {
               )}
             </AnimatePresence>
 
-            {/* Bubble */}
             <motion.button
               onPointerDown={onPointerDown}
               onClick={handleBubbleClick}
@@ -555,8 +820,6 @@ export default function SupportChatWidget({ user }) {
               whileTap={{ scale: 0.91 }}
             >
               <Ashy size={100} onOpenChat={handleBubbleClick} celebrateSignal={celebrateSignal} thinkingSignal={thinkingSignal} />
-
-              {/* Unread badge */}
               <AnimatePresence>
                 {unread > 0 && (
                   <motion.span
@@ -571,8 +834,6 @@ export default function SupportChatWidget({ user }) {
                   </motion.span>
                 )}
               </AnimatePresence>
-
-              {/* Drag hint ring — only while dragging */}
               {isDragging && (
                 <span className="absolute inset-0 rounded-full border-2 border-white/40 animate-ping pointer-events-none" />
               )}

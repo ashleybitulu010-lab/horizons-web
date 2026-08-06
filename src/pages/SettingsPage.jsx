@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
-import { ArrowLeft, Bell, Globe, Lock, Trash2, Eye, EyeOff, ChevronRight, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Bell, Globe, Lock, Trash2, Eye, EyeOff, ChevronRight, AlertTriangle, Sparkles } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import pb from '@/lib/pocketbaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
+import { requestRelaunchGuide, readOnboardingState } from '@/hooks/useOnboarding';
 
 function Toast({ message, onDismiss }) {
   useEffect(() => {
@@ -89,6 +90,7 @@ export default function SettingsPage() {
   const [toast, setToast] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [guideStatus, setGuideStatus] = useState(null);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -99,7 +101,16 @@ export default function SettingsPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+    const onboarding = readOnboardingState(user.id);
+    setGuideStatus(onboarding?.status || 'pending');
   }, [user?.id]);
+
+  const relaunchGuide = () => {
+    requestRelaunchGuide();
+    setGuideStatus('pending');
+    setToast({ type: 'success', text: 'Guide Ashy relancé — retournez au chat.' });
+    setTimeout(() => navigate('/chat'), 600);
+  };
 
   const savePreferences = async () => {
     setSaving(true);
@@ -242,6 +253,35 @@ export default function SettingsPage() {
             </div>
           ) : (
             <>
+              {/* Ashy guide */}
+              <div>
+                <SectionTitle>Guide Ashy</SectionTitle>
+                <div className="bg-white rounded-2xl shadow-sm">
+                  <button
+                    type="button"
+                    onClick={relaunchGuide}
+                    className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-orange-50/60 transition-colors rounded-2xl"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center flex-shrink-0">
+                      <Sparkles size={17} className="text-orange-500" strokeWidth={1.8} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-800">Relancer le guide interactif</p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {guideStatus === 'completed'
+                          ? 'Revoir les bases avec Ashy (produit → stock → vente…)'
+                          : guideStatus === 'skipped'
+                            ? 'Vous avez passé le guide — vous pouvez le reprendre ici'
+                            : guideStatus === 'active'
+                              ? 'Guide en cours — reprendre avec Ashy'
+                              : 'Découvrir Ash Ledger en moins de 5 minutes'}
+                      </p>
+                    </div>
+                    <ChevronRight size={18} className="text-gray-300 flex-shrink-0" />
+                  </button>
+                </div>
+              </div>
+
               {/* Preferences */}
               <div>
                 <SectionTitle>Préférences</SectionTitle>

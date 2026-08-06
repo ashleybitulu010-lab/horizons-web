@@ -4,6 +4,7 @@ import { Helmet } from 'react-helmet';
 import { Eye, EyeOff, Mail, Lock, User } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
+import { writeOnboardingState, defaultOnboardingState } from '@/hooks/useOnboarding';
 
 const ASH_LOGO = 'https://horizons-cdn.hostinger.com/29358ba6-568b-49c6-9aac-6ece4b30fac6/a93f12ddd85a0d01d0715ee252158d85.png';
 
@@ -38,7 +39,13 @@ export default function SignupPage() {
     setErrors({});
     setLoading(true);
     try {
-      await signup(form.email, form.firstName, form.lastName, form.password);
+      const createdUser = await signup(form.email, form.firstName, form.lastName, form.password);
+      if (createdUser?.id) {
+        writeOnboardingState(createdUser.id, {
+          ...defaultOnboardingState(new Date().toISOString()),
+          status: 'pending',
+        });
+      }
       navigate('/chat');
     } catch (err) {
       const data = err?.data?.data || err?.response?.data?.data || {};
