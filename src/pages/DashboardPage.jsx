@@ -340,7 +340,7 @@ function LoadingDashboard() {
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const navigate = useNavigate();
   const {
     metrics,
@@ -357,7 +357,7 @@ export default function DashboardPage() {
     lastUpdated,
     realtimeStatus,
     refresh,
-  } = useDashboardData(user);
+  } = useDashboardData(user, token);
 
   const metricCards = useMemo(() => [
     {

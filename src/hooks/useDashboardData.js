@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildDashboardAnalytics } from '@/lib/dashboardAnalytics';
-import { resolveOrCreateClientId, supabase, supabaseConfigured } from '@/lib/supabaseRest';
+import { createDashboardSession, supabase, supabaseConfigured } from '@/lib/supabaseRest';
 
 const DASHBOARD_TABLES = ['produits', 'stocks', 'ventes', 'depenses'];
 
@@ -11,10 +11,8 @@ const EMPTY_DATA = {
   depenses: [],
 };
 
-export function useDashboardData(user) {
+export function useDashboardData(user, authToken) {
   const userId = user?.id;
-  const userEmail = user?.email;
-  const userAirtableId = user?.airtableId;
   const [clientId, setClientId] = useState(null);
   const [data, setData] = useState(EMPTY_DATA);
   const [loading, setLoading] = useState(true);
@@ -41,12 +39,17 @@ export function useDashboardData(user) {
       setLoading(false);
       return () => { active = false; };
     }
+    if (!authToken) {
+      setError('Votre session a expiré. Veuillez vous reconnecter.');
+      setLoading(false);
+      return () => { active = false; };
+    }
 
-    resolveOrCreateClientId({ id: userId, email: userEmail, airtableId: userAirtableId })
+    createDashboardSession(authToken)
       .then((resolvedId) => {
         if (!active) return;
         if (!resolvedId) {
-          setError('Impossible d’initialiser votre espace Supabase.');
+          setError('Impossible d’ouvrir votre espace Supabase.');
           setLoading(false);
           return;
         }
@@ -54,12 +57,12 @@ export function useDashboardData(user) {
       })
       .catch(() => {
         if (!active) return;
-        setError('Impossible d’initialiser votre espace Supabase. Veuillez réessayer.');
+        setError('Impossible d’ouvrir votre espace Supabase. Veuillez réessayer.');
         setLoading(false);
       });
 
     return () => { active = false; };
-  }, [userId, userEmail, userAirtableId, resolutionAttempt]);
+  }, [userId, authToken, resolutionAttempt]);
 
   const fetchData = useCallback(async ({ silent = false } = {}) => {
     if (!clientId || !supabase) return;

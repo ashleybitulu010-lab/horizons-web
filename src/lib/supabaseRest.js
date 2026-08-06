@@ -7,15 +7,11 @@ export function supabaseConfigured() {
   return Boolean(SUPABASE_URL && SUPABASE_ANON);
 }
 
-/**
- * Supabase is used as a data client only: application authentication remains
- * in PocketBase and every dashboard request is explicitly scoped by client_id.
- */
 export const supabase = supabaseConfigured()
   ? createClient(SUPABASE_URL, SUPABASE_ANON, {
     auth: {
       persistSession: false,
-      autoRefreshToken: false,
+      autoRefreshToken: true,
       detectSessionInUrl: false,
     },
   })
@@ -25,10 +21,12 @@ export async function supabaseSelect(table, query) {
   if (!supabaseConfigured()) return null;
   const qs = query.startsWith('?') ? query : `?${query}`;
   try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const authorization = sessionData.session?.access_token || SUPABASE_ANON;
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${qs}`, {
       headers: {
         apikey: SUPABASE_ANON,
-        Authorization: `Bearer ${SUPABASE_ANON}`,
+        Authorization: `Bearer ${authorization}`,
         Accept: 'application/json',
       },
     });
@@ -54,28 +52,35 @@ export async function resolveClientId(user) {
 }
 
 /**
- * PocketBase owns authentication while Supabase owns business data. Existing
- * users may therefore need their Supabase client row initialized on first use.
+ * Exchange the current PocketBase session for a short-lived Supabase session.
+ * The Edge Function validates PocketBase before linking the matching client.
  */
-export async function resolveOrCreateClientId(user) {
-  const existingId = await resolveClientId(user);
-  if (existingId) return existingId;
-  if (!supabase || !user) return null;
+export async function createDashboardSession(pocketBaseToken) {
+  if (!supabase || !pocketBaseToken) {
+    throw new Error('PocketBase authentication is required');
+  }
 
-  const externalUserId = user.airtableId || user.id || user.email;
-  if (!externalUserId) return null;
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/dashboard-session`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_ANON,
+      Authorization: `Bearer ${pocketBaseToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: '{}',
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Unable to create dashboard session');
+  }
+  if (!payload.access_token || !payload.refresh_token || !payload.client_id) {
+    throw new Error('Dashboard session response is incomplete');
+  }
 
-  const { data, error } = await supabase
-    .from('clients')
-    .insert({ user_id: externalUserId })
-    .select('id')
-    .single();
-
-  if (data?.id) return data.id;
-
-  // A concurrent request may have created the same association.
-  const concurrentId = await resolveClientId(user);
-  if (concurrentId) return concurrentId;
-
-  throw error || new Error('Supabase client initialization failed');
+  const { error } = await supabase.auth.setSession({
+    access_token: payload.access_token,
+    refresh_token: payload.refresh_token,
+  });
+  if (error) throw error;
+  return payload.client_id;
 }
