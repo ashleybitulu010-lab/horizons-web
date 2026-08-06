@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
-import { Send, Menu, X, User, CreditCard, BarChart2, Settings, LogOut, Sparkles } from 'lucide-react';
+import { Send, Menu, X, User, CreditCard, BarChart2, LayoutDashboard, Settings, LogOut, Sparkles } from 'lucide-react';
 import SupportChatWidget from '@/components/SupportChatWidget';
 import { useAuth } from '@/hooks/useAuth';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -128,6 +128,7 @@ function DateDivider({ label }) {
 /* ── Side drawer ── */
 const MENU_ITEMS = [
   { icon: Sparkles, label: 'Guide Ashy', action: 'guide' },
+  { icon: LayoutDashboard, label: 'Tableau de bord', route: '/dashboard' },
   { icon: User, label: 'Mon profil', route: '/profile' },
   { icon: CreditCard, label: 'Mon abonnement', route: '/subscription' },
   { icon: BarChart2, label: 'Mes rapports', route: '/reports' },

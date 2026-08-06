@@ -1,9 +1,25 @@
+import { createClient } from '@supabase/supabase-js';
+
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://knrwplidgvuvjnuqqmrt.supabase.co';
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 export function supabaseConfigured() {
   return Boolean(SUPABASE_URL && SUPABASE_ANON);
 }
+
+/**
+ * Supabase is used as a data client only: application authentication remains
+ * in PocketBase and every dashboard request is explicitly scoped by client_id.
+ */
+export const supabase = supabaseConfigured()
+  ? createClient(SUPABASE_URL, SUPABASE_ANON, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  })
+  : null;
 
 export async function supabaseSelect(table, query) {
   if (!supabaseConfigured()) return null;
