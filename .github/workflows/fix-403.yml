@@ -1,0 +1,50 @@
+name: Fix 403 Error
+
+on:
+  push:
+    branches:
+      - fix-403-urgent
+
+jobs:
+  fix:
+    runs-on: self-hosted
+    timeout-minutes: 5
+    steps:
+      - name: Diagnose and fix permissions
+        shell: bash
+        run: |
+          set -x
+          echo "=== Diagnosing ==="
+          ls -la /opt/ashledger/ || true
+          ls -la /opt/ashledger/dist/ 2>/dev/null | head -10 || true
+          ls -d /opt/ashledger/.dist-backup-* 2>/dev/null || true
+          nginx -T 2>/dev/null | rg -i "root|ashledger|dist" || true
+          cat /etc/nginx/sites-enabled/* 2>/dev/null | rg -i "root|ashledger" || true
+          
+          echo "=== Fixing permissions ==="
+          chmod -R u=rwX,go=rX /opt/ashledger/dist 2>/dev/null || true
+          
+          echo "=== Checking if dist is valid ==="
+          if [ ! -f /opt/ashledger/dist/index.html ]; then
+            echo "dist/index.html missing, attempting restore from backup"
+            LATEST=$(ls -td /opt/ashledger/.dist-backup-* 2>/dev/null | head -1)
+            if [ -n "$LATEST" ]; then
+              echo "Found backup: $LATEST"
+              rm -rf /opt/ashledger/dist
+              cp -a "$LATEST" /opt/ashledger/dist
+              chmod -R u=rwX,go=rX /opt/ashledger/dist
+            else
+              echo "No backup found"
+            fi
+          fi
+          
+          echo "=== Reloading nginx ==="
+          nginx -t && systemctl reload nginx || true
+          
+          echo "=== Verifying ==="
+          curl -sS -o /dev/null -w "Local port 3000: %{http_code}\n" http://127.0.0.1:3000/ || true
+          curl -sS -o /dev/null -w "Local port 80: %{http_code}\n" http://127.0.0.1/ || true
+          curl -sS -o /dev/null -w "Public HTTPS: %{http_code}\n" https://ashledger.tech/ || true
+          
+          echo "=== Final dist listing ==="
+          ls -la /opt/ashledger/dist/ | head -20 || true
