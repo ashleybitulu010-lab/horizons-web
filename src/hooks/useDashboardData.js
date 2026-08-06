@@ -12,6 +12,9 @@ const EMPTY_DATA = {
 };
 
 export function useDashboardData(user) {
+  const userId = user?.id;
+  const userEmail = user?.email;
+  const userAirtableId = user?.airtableId;
   const [clientId, setClientId] = useState(null);
   const [data, setData] = useState(EMPTY_DATA);
   const [loading, setLoading] = useState(true);
@@ -28,7 +31,7 @@ export function useDashboardData(user) {
     setClientId(null);
     setData(EMPTY_DATA);
 
-    if (!user?.id) {
+    if (!userId) {
       setLoading(false);
       return () => { active = false; };
     }
@@ -38,7 +41,7 @@ export function useDashboardData(user) {
       return () => { active = false; };
     }
 
-    resolveClientId(user).then((resolvedId) => {
+    resolveClientId({ id: userId, email: userEmail, airtableId: userAirtableId }).then((resolvedId) => {
       if (!active) return;
       if (!resolvedId) {
         setError('Aucun compte Supabase associé à cet utilisateur.');
@@ -49,7 +52,7 @@ export function useDashboardData(user) {
     });
 
     return () => { active = false; };
-  }, [user?.id, user?.email, user?.airtableId]);
+  }, [userId, userEmail, userAirtableId]);
 
   const fetchData = useCallback(async ({ silent = false } = {}) => {
     if (!clientId || !supabase) return;
