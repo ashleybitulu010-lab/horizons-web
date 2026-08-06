@@ -9,8 +9,21 @@ const DATE_FIELDS = {
 
 const PRODUCT_NAME_FIELDS = ['nom_produit', 'nom', 'name', 'libelle', 'designation'];
 const PRODUCT_CATEGORY_FIELDS = ['categorie', 'category', 'nom_categorie', 'type'];
-const PRODUCT_PURCHASE_PRICE_FIELDS = ['prix_achat', 'cout_achat', 'purchase_price', 'cost_price', 'cout_unitaire'];
-const PRODUCT_SALE_PRICE_FIELDS = ['prix_vente', 'sale_price', 'selling_price', 'prix_unitaire'];
+const PRODUCT_PURCHASE_PRICE_FIELDS = [
+  'prix_achat_unitaire',
+  'prix_achat',
+  'cout_achat',
+  'purchase_price',
+  'cost_price',
+  'cout_unitaire',
+];
+const PRODUCT_SALE_PRICE_FIELDS = [
+  'prix_vente_unitaire',
+  'prix_vente',
+  'sale_price',
+  'selling_price',
+  'prix_unitaire',
+];
 const PRODUCT_STOCK_FIELDS = [
   'stock_actuel',
   'quantite_stock',
@@ -27,6 +40,7 @@ const STOCK_CURRENT_FIELDS = [
   'current_stock',
 ];
 const STOCK_QUANTITY_FIELDS = [
+  'entrees',
   'quantite_ajoutee',
   'quantite_entree',
   'quantite',
@@ -35,16 +49,28 @@ const STOCK_QUANTITY_FIELDS = [
 ];
 const SALE_QUANTITY_FIELDS = ['quantite', 'quantity', 'quantite_vendue', 'qte', 'units'];
 const SALE_AMOUNT_FIELDS = [
+  'total_brut',
   'montant_total',
   'total_vente',
   'total',
   'montant',
+  'montant_paye',
   'chiffre_affaires',
   'amount',
 ];
 const SALE_UNIT_PRICE_FIELDS = ['prix_unitaire', 'prix_vente', 'unit_price', 'sale_price'];
-const EXPENSE_AMOUNT_FIELDS = ['montant', 'montant_total', 'total', 'amount', 'valeur'];
-const EXPENSE_NAME_FIELDS = ['libelle', 'description', 'motif', 'nom_depense', 'categorie', 'category', 'type'];
+const EXPENSE_AMOUNT_FIELDS = ['montant_depense', 'montant', 'montant_total', 'total', 'amount', 'valeur'];
+const EXPENSE_NAME_FIELDS = [
+  'libelle_depense',
+  'type_depense',
+  'libelle',
+  'description',
+  'motif',
+  'nom_depense',
+  'categorie',
+  'category',
+  'type',
+];
 const PRODUCT_ID_FIELDS = ['produit_id', 'product_id', 'id_produit'];
 
 function firstValue(row, fields) {
@@ -79,7 +105,7 @@ function firstNumber(row, fields) {
 }
 
 function rowId(row) {
-  return String(row?.id ?? row?.uuid ?? '');
+  return String(row?.id ?? row?.uuid ?? row?.numero ?? '');
 }
 
 function relatedProductId(row) {
@@ -217,7 +243,8 @@ function calculateInventory(products, stocks, ventes, productById) {
 
     const safeQuantity = Math.max(0, quantity ?? 0);
     const purchasePrice = Math.max(0, firstNumber(product, PRODUCT_PURCHASE_PRICE_FIELDS) ?? 0);
-    const configuredThreshold = firstNumber(product, ['seuil_alerte', 'stock_minimum', 'seuil_stock', 'reorder_level']);
+    const configuredThreshold = firstNumber(product, ['seuil_alerte', 'stock_minimum', 'seuil_stock', 'reorder_level'])
+      ?? (stockRows.length ? firstNumber(stockRows[0], ['seuil_alerte', 'stock_minimum', 'seuil_stock']) : null);
     const soldLastWeek = sum(
       ventes.filter((sale) => relatedProductId(sale) === id
         && inPeriod(parseDate(sale, 'ventes'), Date.now() - (7 * DAY_MS), Date.now() + 1)),
