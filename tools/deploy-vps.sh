@@ -7,6 +7,10 @@ BRANCH="${BRANCH:-master}"
 
 export PATH="/usr/local/bin:/usr/bin:$HOME/.npm-global/bin:$PATH"
 
+if [ -d "$APP_DIR/dist" ] && [ ! -r "$APP_DIR/dist/index.html" ]; then
+  chmod -R u=rwX,go=rX "$APP_DIR/dist" 2>/dev/null || true
+fi
+
 cd "$APP_DIR"
 git config --global --add safe.directory "$APP_DIR" || true
 git fetch origin
@@ -38,6 +42,7 @@ if ! mv "$BUILD_DIR" "$APP_DIR/dist"; then
 fi
 
 BUILD_DIR=""
+chmod -R u=rwX,go=rX "$APP_DIR/dist"
 rm -rf "$BACKUP_DIR" 2>/dev/null || echo "WARN: previous dist could not be removed"
 
 if command -v nginx >/dev/null 2>&1; then

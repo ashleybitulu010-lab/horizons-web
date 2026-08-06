@@ -21,4 +21,11 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL || 'https://knrwplidgvuvjnuqqmrt.supabase.co' }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
-        run: bash tools/deploy-vps.sh
+        run: |
+          set -euo pipefail
+          APP_DIR=/opt/ashledger
+          cd "$APP_DIR"
+          git fetch origin
+          git checkout master
+          git reset --hard origin/master
+          bash "$APP_DIR/tools/deploy-vps.sh"
