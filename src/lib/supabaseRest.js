@@ -52,3 +52,30 @@ export async function resolveClientId(user) {
   }
   return null;
 }
+
+/**
+ * PocketBase owns authentication while Supabase owns business data. Existing
+ * users may therefore need their Supabase client row initialized on first use.
+ */
+export async function resolveOrCreateClientId(user) {
+  const existingId = await resolveClientId(user);
+  if (existingId) return existingId;
+  if (!supabase || !user) return null;
+
+  const externalUserId = user.airtableId || user.id || user.email;
+  if (!externalUserId) return null;
+
+  const { data, error } = await supabase
+    .from('clients')
+    .insert({ user_id: externalUserId })
+    .select('id')
+    .single();
+
+  if (data?.id) return data.id;
+
+  // A concurrent request may have created the same association.
+  const concurrentId = await resolveClientId(user);
+  if (concurrentId) return concurrentId;
+
+  throw error || new Error('Supabase client initialization failed');
+}

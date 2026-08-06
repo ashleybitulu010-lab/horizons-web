@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildDashboardAnalytics } from '@/lib/dashboardAnalytics';
-import { resolveClientId, supabase, supabaseConfigured } from '@/lib/supabaseRest';
+import { resolveOrCreateClientId, supabase, supabaseConfigured } from '@/lib/supabaseRest';
 
 const DASHBOARD_TABLES = ['produits', 'stocks', 'ventes', 'depenses'];
 
@@ -22,6 +22,7 @@ export function useDashboardData(user) {
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [realtimeStatus, setRealtimeStatus] = useState('connecting');
+  const [resolutionAttempt, setResolutionAttempt] = useState(0);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
@@ -41,18 +42,24 @@ export function useDashboardData(user) {
       return () => { active = false; };
     }
 
-    resolveClientId({ id: userId, email: userEmail, airtableId: userAirtableId }).then((resolvedId) => {
-      if (!active) return;
-      if (!resolvedId) {
-        setError('Aucun compte Supabase associé à cet utilisateur.');
+    resolveOrCreateClientId({ id: userId, email: userEmail, airtableId: userAirtableId })
+      .then((resolvedId) => {
+        if (!active) return;
+        if (!resolvedId) {
+          setError('Impossible d’initialiser votre espace Supabase.');
+          setLoading(false);
+          return;
+        }
+        setClientId(resolvedId);
+      })
+      .catch(() => {
+        if (!active) return;
+        setError('Impossible d’initialiser votre espace Supabase. Veuillez réessayer.');
         setLoading(false);
-        return;
-      }
-      setClientId(resolvedId);
-    });
+      });
 
     return () => { active = false; };
-  }, [userId, userEmail, userAirtableId]);
+  }, [userId, userEmail, userAirtableId, resolutionAttempt]);
 
   const fetchData = useCallback(async ({ silent = false } = {}) => {
     if (!clientId || !supabase) return;
@@ -145,6 +152,12 @@ export function useDashboardData(user) {
     error,
     lastUpdated,
     realtimeStatus,
-    refresh: () => fetchData({ silent: true }),
+    refresh: () => {
+      if (clientId) return fetchData({ silent: true });
+      setError(null);
+      setLoading(true);
+      setResolutionAttempt((attempt) => attempt + 1);
+      return undefined;
+    },
   };
 }
