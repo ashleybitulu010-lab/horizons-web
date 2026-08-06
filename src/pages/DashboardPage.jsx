@@ -42,14 +42,14 @@ import {
 } from 'recharts';
 import { useAuth } from '@/hooks/useAuth';
 import { useDashboardData } from '@/hooks/useDashboardData';
+import {
+  convertCurrency,
+  formatCompactCurrency,
+  formatCurrency,
+} from '@/lib/currency';
 
 const ACCENT = '#FF6B00';
 const PIE_COLORS = ['#FF6B00', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899'];
-
-function formatMoney(value) {
-  const amount = Number.isFinite(Number(value)) ? Number(value) : 0;
-  return `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(amount)} FC`;
-}
 
 function formatNumber(value) {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value || 0);
@@ -130,7 +130,16 @@ function EmptyChart() {
   );
 }
 
-function FinancialChart({ title, subtitle, data, dataKey, color, icon: Icon, area = false }) {
+function FinancialChart({
+  title,
+  subtitle,
+  data,
+  dataKey,
+  color,
+  currency,
+  icon: Icon,
+  area = false,
+}) {
   const Chart = area ? AreaChart : LineChart;
   return (
     <SectionCard>
@@ -158,10 +167,10 @@ function FinancialChart({ title, subtitle, data, dataKey, color, icon: Icon, are
                 tickLine={false}
                 width={50}
                 tick={{ fill: '#A8A29E', fontSize: 10 }}
-                tickFormatter={(value) => Intl.NumberFormat('fr-FR', { notation: 'compact' }).format(value)}
+                tickFormatter={(value) => formatCompactCurrency(value, currency)}
               />
               <Tooltip
-                formatter={(value) => [formatMoney(value), title]}
+                formatter={(value) => [formatCurrency(value, currency), title]}
                 contentStyle={{
                   border: '1px solid #F3E8DE',
                   borderRadius: 14,
@@ -237,7 +246,7 @@ const ACTIVITY_STYLE = {
   stock: { icon: PackagePlus, color: 'text-violet-600', background: 'bg-violet-50' },
 };
 
-function RecentActivities({ activities }) {
+function RecentActivities({ activities, currencySettings }) {
   return (
     <SectionCard className="h-full">
       <div className="flex items-center justify-between px-5 pb-3 pt-5 sm:px-6">
@@ -266,7 +275,11 @@ function RecentActivities({ activities }) {
                 <div className="shrink-0 text-right">
                   {activity.amount !== null && (
                     <p className={`text-xs font-bold ${activity.type === 'depense' ? 'text-rose-600' : 'text-emerald-600'}`}>
-                      {activity.type === 'depense' ? '−' : '+'}{formatMoney(activity.amount)}
+                      {activity.type === 'depense' ? '−' : '+'}
+                      {formatCurrency(
+                        convertCurrency(activity.amount, currencySettings),
+                        currencySettings.displayCurrency,
+                      )}
                     </p>
                   )}
                   <p className="mt-0.5 text-[10px] text-stone-300">{formatRelativeDate(activity.date)}</p>
@@ -356,14 +369,27 @@ export default function DashboardPage() {
     error,
     lastUpdated,
     realtimeStatus,
+    currencySettings,
     refresh,
   } = useDashboardData(user, token);
+
+  const displayCurrency = currencySettings.displayCurrency;
+  const displayTimeline = useMemo(() => timeline.map((point) => ({
+    ...point,
+    ventes: convertCurrency(point.ventes, currencySettings),
+    depenses: convertCurrency(point.depenses, currencySettings),
+    benefice: convertCurrency(point.benefice, currencySettings),
+  })), [timeline, currencySettings]);
+  const displayCategorySales = useMemo(() => categorySales.map((category) => ({
+    ...category,
+    value: convertCurrency(category.value, currencySettings),
+  })), [categorySales, currencySettings]);
 
   const metricCards = useMemo(() => [
     {
       icon: BadgeDollarSign,
       label: 'Chiffre d’affaires',
-      value: formatMoney(metrics.revenue),
+      value: formatCurrency(convertCurrency(metrics.revenue, currencySettings), displayCurrency),
       color: '#059669',
       background: '#ECFDF5',
       change: trends.salesChange,
@@ -371,7 +397,7 @@ export default function DashboardPage() {
     {
       icon: WalletCards,
       label: 'Dépenses',
-      value: formatMoney(metrics.expenses),
+      value: formatCurrency(convertCurrency(metrics.expenses, currencySettings), displayCurrency),
       color: '#E11D48',
       background: '#FFF1F2',
       change: trends.expenseChange,
@@ -379,7 +405,7 @@ export default function DashboardPage() {
     {
       icon: TrendingUp,
       label: 'Bénéfice estimé',
-      value: formatMoney(metrics.profit),
+      value: formatCurrency(convertCurrency(metrics.profit, currencySettings), displayCurrency),
       color: '#2563EB',
       background: '#EFF6FF',
       change: trends.profitChange,
@@ -387,7 +413,7 @@ export default function DashboardPage() {
     {
       icon: Boxes,
       label: 'Valeur du stock',
-      value: formatMoney(metrics.stockValue),
+      value: formatCurrency(convertCurrency(metrics.stockValue, currencySettings), displayCurrency),
       color: '#7C3AED',
       background: '#F5F3FF',
     },
@@ -405,7 +431,7 @@ export default function DashboardPage() {
       color: '#EA580C',
       background: '#FFF7ED',
     },
-  ], [metrics, trends]);
+  ], [metrics, trends, currencySettings, displayCurrency]);
 
   return (
     <>
@@ -498,25 +524,28 @@ export default function DashboardPage() {
               <FinancialChart
                 title="Évolution des ventes"
                 subtitle="Chiffre d’affaires par jour"
-                data={timeline}
+                data={displayTimeline}
                 dataKey="ventes"
                 color="#10B981"
+                currency={displayCurrency}
                 icon={CircleDollarSign}
               />
               <FinancialChart
                 title="Évolution des dépenses"
                 subtitle="Dépenses enregistrées par jour"
-                data={timeline}
+                data={displayTimeline}
                 dataKey="depenses"
                 color="#F43F5E"
+                currency={displayCurrency}
                 icon={ReceiptText}
               />
               <FinancialChart
                 title="Évolution du bénéfice"
                 subtitle="Estimation quotidienne"
-                data={timeline}
+                data={displayTimeline}
                 dataKey="benefice"
                 color="#3B82F6"
+                currency={displayCurrency}
                 icon={TrendingUp}
                 area
               />
@@ -570,12 +599,12 @@ export default function DashboardPage() {
                   title="Ventes par catégorie"
                   subtitle="Répartition du chiffre d’affaires"
                 />
-                {!categorySales.length ? <EmptyChart /> : (
+                {!displayCategorySales.length ? <EmptyChart /> : (
                   <div className="h-[300px] w-full pb-5">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
-                          data={categorySales}
+                          data={displayCategorySales}
                           dataKey="value"
                           nameKey="name"
                           innerRadius={58}
@@ -583,12 +612,12 @@ export default function DashboardPage() {
                           paddingAngle={3}
                           stroke="none"
                         >
-                          {categorySales.map((entry, index) => (
+                          {displayCategorySales.map((entry, index) => (
                             <Cell key={entry.name} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                           ))}
                         </Pie>
                         <Tooltip
-                          formatter={(value) => [formatMoney(value), 'Ventes']}
+                          formatter={(value) => [formatCurrency(value, displayCurrency), 'Ventes']}
                           contentStyle={{
                             border: '1px solid #F3E8DE',
                             borderRadius: 14,
@@ -604,12 +633,13 @@ export default function DashboardPage() {
             </div>
 
             <div className="grid items-start gap-4 lg:grid-cols-2">
-              <RecentActivities activities={activities} />
+              <RecentActivities activities={activities} currencySettings={currencySettings} />
               <SmartAlerts alerts={alerts} />
             </div>
 
             <p className="pb-2 text-center text-[11px] text-stone-400">
-              Toutes les valeurs sont calculées à partir des données Supabase associées à votre compte.
+              Affichage en {displayCurrency} · 1 USD = {formatNumber(currencySettings.usdCdfRate)} CDF ·
+              {' '}Données synchronisées avec Supabase.
             </p>
           </main>
         )}
