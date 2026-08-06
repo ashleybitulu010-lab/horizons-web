@@ -668,12 +668,13 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
         {open && (
           <motion.div
             key="support-panel"
+            data-support-panel
             initial={{ opacity: 0, y: 12, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.97 }}
             transition={{ type: 'spring', damping: 28, stiffness: 340 }}
             style={getPanelStyle()}
-            className="rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            className="support-panel-mobile rounded-2xl shadow-2xl overflow-hidden flex flex-col"
           >
             <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0" style={{ backgroundColor: '#FF6B00' }}>
               <div className="relative flex-shrink-0">
@@ -843,6 +844,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
         {!open && (
           <motion.div
             key="bubble-wrapper"
+            data-support-bubble
             initial={{ opacity: 0, scale: 0.7 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.7 }}
@@ -862,7 +864,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
               touchAction: isMobile ? 'auto' : 'none',
               transition: snapTransition ? 'left 0.4s cubic-bezier(0.34,1.56,0.64,1), top 0.4s cubic-bezier(0.34,1.56,0.64,1)' : undefined,
             }}
-            className="flex flex-col items-end gap-2"
+            className="support-bubble-mobile flex flex-col items-end gap-2"
           >
             <AnimatePresence>
               {showTooltip && !isDragging && !isMobile && (

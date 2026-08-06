@@ -53,6 +53,25 @@ textarea {
   font-feature-settings: normal !important;
 }
 
+@media (max-width: 767px) {
+  .support-bubble-mobile {
+    right: 12px !important;
+    bottom: calc(84px + env(safe-area-inset-bottom)) !important;
+    left: auto !important;
+    top: auto !important;
+  }
+
+  .support-panel-mobile {
+    inset:
+      max(8px, env(safe-area-inset-top))
+      8px
+      max(8px, env(safe-area-inset-bottom))
+      8px !important;
+    width: auto !important;
+    height: auto !important;
+  }
+}
+
 /* Robot mascot eye blink */
 @keyframes robot-blink {
   0%, 90%, 100% { transform: scaleY(1); }
