@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import apiServerClient from '@/lib/apiServerClient';
+import { readStoredCurrencyPreference } from '@/lib/currency';
 
 export const WELCOME_MESSAGE = {
   id: 'welcome',
@@ -164,6 +165,7 @@ export function ChatProvider({ children }) {
   const persist = useCallback(async (role, content) => {
     if (!stableId) return;
     try {
+      const currency = readStoredCurrencyPreference(user?.id);
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
       await apiServerClient.fetch('/thread/message', {
@@ -179,6 +181,9 @@ export function ChatProvider({ children }) {
           email: user?.email || '',
           firstName: user?.firstName || '',
           lastName: user?.lastName || '',
+          currency: currency.displayCurrency,
+          ledgerCurrency: currency.ledgerCurrency,
+          usdCdfRate: currency.usdCdfRate,
         }),
       });
     } catch {
@@ -207,6 +212,7 @@ export function ChatProvider({ children }) {
     persist('user', body);
 
     try {
+      const currency = readStoredCurrencyPreference(user?.id);
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
       const res = await apiServerClient.fetch('/chat', {
@@ -222,6 +228,9 @@ export function ChatProvider({ children }) {
           firstName: user?.firstName || user?.name?.split(' ')[0] || '',
           lastName: user?.lastName || user?.name?.split(' ').slice(1).join(' ') || '',
           email: user?.email || '',
+          currency: currency.displayCurrency,
+          ledgerCurrency: currency.ledgerCurrency,
+          usdCdfRate: currency.usdCdfRate,
         }),
       });
       const data = await res.json();

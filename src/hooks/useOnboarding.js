@@ -14,8 +14,8 @@ export const ONBOARDING_STEPS = [
 
 Exemple :
 Nom : Craie scolaire
-Prix d'achat : 800 FC
-Prix de vente : 1800 FC
+Prix d'achat : $5
+Prix de vente : $8
 
 Écrivez une seule information à la fois dans le chat principal.`,
     success: 'Bravo ! Votre premier produit est enregistré.',
@@ -59,9 +59,9 @@ Aucune syntaxe particulière n'est demandée. Ashy comprend automatiquement.`,
     title: 'Enregistrer une dépense',
     explain: `Même principe pour les dépenses — écrivez naturellement :
 
-• J'ai payé le transport 5000 FC.
-• J'ai acheté des cartons 12000 FC.
-• Paiement électricité 30000 FC.
+• J'ai payé le transport $10.
+• J'ai acheté des cartons $20.
+• Paiement électricité $30.
 
 Aucune structure rigide n'est demandée. Une seule dépense à la fois.`,
     success: 'Super ! Votre dépense est enregistrée.',

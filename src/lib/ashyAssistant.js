@@ -22,7 +22,7 @@ Rappel : produit → stock → vente.`,
 • Prix d'achat
 • Prix de vente
 
-Exemple : « Nouveau produit : Craie scolaire, achat 800 FC, vente 1800 FC ».`,
+Exemple : « Nouveau produit : Craie scolaire, achat $5, vente $8 ».`,
   },
   {
     test: /comment\s+(ajouter|mettre|enregistrer).*(stock)/i,
@@ -36,7 +36,7 @@ Sans produit, le stock ne peut pas être enregistré.`,
     test: /comment\s+(modifier|changer)\s+(un\s+)?produit/i,
     reply: `Demandez la modification naturellement dans le chat principal, par exemple :
 
-« Modifie le prix de vente de Craie scolaire à 2000 FC »
+« Modifie le prix de vente de Craie scolaire à $9 »
 « Change le nom du produit X en Y »`,
   },
   {
@@ -51,8 +51,8 @@ Je prépare le rapport à partir de vos ventes, dépenses et stocks.`,
     test: /comment\s+(ajouter|enregistrer)\s+(une\s+)?d[ée]pense/i,
     reply: `Écrivez vos dépenses naturellement :
 
-• « J'ai payé le transport 5000 FC »
-• « Paiement électricité 30000 FC »
+• « J'ai payé le transport $10 »
+• « Paiement électricité $30 »
 
 Une dépense à la fois.`,
   },
