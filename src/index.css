@@ -21,7 +21,6 @@ body {
     "Apple Color Emoji",
     "Segoe UI Emoji",
     sans-serif;
-  font-variant-emoji: emoji;
   overflow-x: clip;
 }
 
@@ -39,7 +38,7 @@ textarea {
     "Apple Color Emoji",
     "Segoe UI Emoji",
     sans-serif;
-  font-variant-emoji: emoji;
+  font-variant-emoji: emoji !important;
   letter-spacing: 0;
   word-spacing: 0;
 }
@@ -50,6 +49,7 @@ textarea {
   letter-spacing: 0 !important;
   word-spacing: 0 !important;
   font-variant-numeric: normal !important;
+  font-variant-emoji: text !important;
   font-feature-settings: normal !important;
 }
 
