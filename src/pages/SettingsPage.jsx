@@ -1,11 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
-import { ArrowLeft, Bell, Globe, Lock, Trash2, Eye, EyeOff, ChevronRight, AlertTriangle, Sparkles } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Bell,
+  ChevronRight,
+  CircleDollarSign,
+  Eye,
+  EyeOff,
+  Globe,
+  Lock,
+  Sparkles,
+  Trash2,
+} from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import pb from '@/lib/pocketbaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { persistRelaunchGuide, readOnboardingState } from '@/hooks/useOnboarding';
+import {
+  DEFAULT_USD_CDF_RATE,
+  loadCurrencyPreference,
+  saveCurrencyPreference,
+} from '@/lib/currency';
 
 function Toast({ message, onDismiss }) {
   useEffect(() => {
@@ -74,7 +91,7 @@ function Input({ label, value, onChange, type = 'text', right }) {
 }
 
 export default function SettingsPage() {
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -82,6 +99,10 @@ export default function SettingsPage() {
   const [deleting, setDeleting] = useState(false);
   const [notifications, setNotifications] = useState(true);
   const [language, setLanguage] = useState('fr');
+  const [currency, setCurrency] = useState('USD');
+  const [ledgerCurrency, setLedgerCurrency] = useState('USD');
+  const [usdCdfRate, setUsdCdfRate] = useState(DEFAULT_USD_CDF_RATE);
+  const [currencyClientId, setCurrencyClientId] = useState(null);
   const [oldPwd, setOldPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
@@ -94,16 +115,38 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!user?.id) return;
-    pb.collection('users').getOne(user.id)
-      .then((rec) => {
-        setNotifications(rec.notifications_enabled !== false); // default true
-        setLanguage(rec.language || 'fr');
+    let active = true;
+    setLoading(true);
+
+    const profileRequest = pb.collection('users').getOne(user.id);
+    const currencyRequest = token
+      ? loadCurrencyPreference(token, user.id)
+      : Promise.reject(new Error('Missing authentication token'));
+
+    Promise.allSettled([profileRequest, currencyRequest])
+      .then(([profileResult, currencyResult]) => {
+        if (!active) return;
+        if (profileResult.status === 'fulfilled') {
+          setNotifications(profileResult.value.notifications_enabled !== false);
+          setLanguage(profileResult.value.language || 'fr');
+        }
+        if (currencyResult.status === 'fulfilled') {
+          setCurrencyClientId(currencyResult.value.clientId);
+          setCurrency(currencyResult.value.displayCurrency);
+          setLedgerCurrency(currencyResult.value.ledgerCurrency);
+          setUsdCdfRate(currencyResult.value.usdCdfRate);
+        } else {
+          setToast({ type: 'error', text: 'Impossible de charger votre devise.' });
+        }
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
     const onboarding = readOnboardingState(user.id);
     setGuideStatus(onboarding?.status || 'pending');
-  }, [user?.id]);
+    return () => { active = false; };
+  }, [user?.id, token]);
 
   const relaunchGuide = () => {
     if (!user?.id) return;
@@ -114,12 +157,33 @@ export default function SettingsPage() {
   };
 
   const savePreferences = async () => {
+    const rate = Number(usdCdfRate);
+    if (!Number.isFinite(rate) || rate <= 0) {
+      setToast({ type: 'error', text: 'Saisissez un taux USD/CDF valide.' });
+      return;
+    }
     setSaving(true);
     try {
       await pb.collection('users').update(user.id, {
         notifications_enabled: notifications,
         language,
       });
+      let clientId = currencyClientId;
+      if (!clientId) {
+        const preference = await loadCurrencyPreference(token, user.id);
+        clientId = preference.clientId;
+        setCurrencyClientId(clientId);
+        setLedgerCurrency(preference.ledgerCurrency);
+      }
+      const savedCurrency = await saveCurrencyPreference({
+        clientId,
+        userId: user.id,
+        displayCurrency: currency,
+        usdCdfRate: rate,
+      });
+      setCurrency(savedCurrency.displayCurrency);
+      setLedgerCurrency(savedCurrency.ledgerCurrency);
+      setUsdCdfRate(savedCurrency.usdCdfRate);
       setToast({ type: 'success', text: 'Préférences enregistrées !' });
     } catch {
       setToast({ type: 'error', text: 'Erreur lors de l\'enregistrement.' });
@@ -316,6 +380,55 @@ export default function SettingsPage() {
                       <option value="fr">Français</option>
                       <option value="en">English</option>
                     </select>
+                  </div>
+
+                  {/* Currency */}
+                  <div className="flex items-center gap-4 px-5 py-4">
+                    <div className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center flex-shrink-0">
+                      <CircleDollarSign size={17} className="text-orange-400" strokeWidth={1.8} />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-gray-800">Devise d’affichage</p>
+                      <p className="text-xs text-gray-400 mt-0.5">Appliquée au tableau de bord et aux rapports</p>
+                    </div>
+                    <select
+                      value={currency}
+                      onChange={e => setCurrency(e.target.value)}
+                      className="text-sm font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 outline-none focus:border-orange-400 cursor-pointer"
+                    >
+                      <option value="USD">USD ($)</option>
+                      <option value="CDF">CDF (FC)</option>
+                    </select>
+                  </div>
+
+                  {/* Exchange rate */}
+                  <div className="px-5 py-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">Taux USD → CDF</p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          1 USD équivaut à combien de francs congolais ?
+                        </p>
+                      </div>
+                      <div className="relative w-32 flex-shrink-0">
+                        <input
+                          type="number"
+                          min="1"
+                          step="0.01"
+                          inputMode="decimal"
+                          value={usdCdfRate}
+                          onChange={e => setUsdCdfRate(e.target.value)}
+                          className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2 pl-3 pr-10 text-right text-sm font-semibold text-gray-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400">
+                          CDF
+                        </span>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-[11px] leading-relaxed text-gray-400">
+                      Devise comptable de vos données existantes : {ledgerCurrency}.
+                      Les conversions n’altèrent jamais les montants enregistrés.
+                    </p>
                   </div>
                 </div>
 

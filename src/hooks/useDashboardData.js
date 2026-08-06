@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildDashboardAnalytics } from '@/lib/dashboardAnalytics';
+import { DEFAULT_CURRENCY_SETTINGS, normalizeCurrencySettings } from '@/lib/currency';
 import { createDashboardSession, supabase, supabaseConfigured } from '@/lib/supabaseRest';
 
 const DASHBOARD_TABLES = ['produits', 'stocks', 'ventes', 'depenses'];
@@ -21,6 +22,7 @@ export function useDashboardData(user, authToken) {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [realtimeStatus, setRealtimeStatus] = useState('connecting');
   const [resolutionAttempt, setResolutionAttempt] = useState(0);
+  const [currencySettings, setCurrencySettings] = useState(DEFAULT_CURRENCY_SETTINGS);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
@@ -29,6 +31,7 @@ export function useDashboardData(user, authToken) {
     setError(null);
     setClientId(null);
     setData(EMPTY_DATA);
+    setCurrencySettings(DEFAULT_CURRENCY_SETTINGS);
 
     if (!userId) {
       setLoading(false);
@@ -72,18 +75,25 @@ export function useDashboardData(user, authToken) {
     setError(null);
 
     try {
-      const results = await Promise.all(
-        DASHBOARD_TABLES.map(async (table) => {
+      const [results, currencyResult] = await Promise.all([
+        Promise.all(DASHBOARD_TABLES.map(async (table) => {
           const { data: rows, error: queryError } = await supabase
             .from(table)
             .select('*')
             .eq('client_id', clientId);
           if (queryError) throw queryError;
           return [table, rows || []];
-        }),
-      );
+        })),
+        supabase
+          .from('clients')
+          .select('currency_preference,ledger_currency,usd_cdf_rate')
+          .eq('id', clientId)
+          .single(),
+      ]);
+      if (currencyResult.error) throw currencyResult.error;
       if (requestId !== requestIdRef.current) return;
       setData(Object.fromEntries(results));
+      setCurrencySettings(normalizeCurrencySettings(currencyResult.data));
       setLastUpdated(new Date());
     } catch (queryError) {
       if (requestId !== requestIdRef.current) return;
@@ -155,6 +165,7 @@ export function useDashboardData(user, authToken) {
     error,
     lastUpdated,
     realtimeStatus,
+    currencySettings,
     refresh: () => {
       if (clientId) return fetchData({ silent: true });
       setError(null);
