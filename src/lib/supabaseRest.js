@@ -27,7 +27,7 @@ export async function supabaseSelect(table, query) {
       headers: {
         apikey: SUPABASE_ANON,
         Authorization: `Bearer ${authorization}`,
-        Accept: 'application/json',
+        Accept: 'application/json; charset=UTF-8',
       },
     });
     if (!res.ok) return null;
@@ -65,7 +65,8 @@ export async function createDashboardSession(pocketBaseToken) {
     headers: {
       apikey: SUPABASE_ANON,
       Authorization: `Bearer ${pocketBaseToken}`,
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/json; charset=UTF-8',
+      Accept: 'application/json; charset=UTF-8',
     },
     body: '{}',
   });

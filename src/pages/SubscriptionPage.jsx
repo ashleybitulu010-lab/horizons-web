@@ -109,7 +109,8 @@ async function fetchSupabaseRpc(userId) {
       headers: {
         apikey: SUPABASE_ANON,
         Authorization: `Bearer ${SUPABASE_ANON}`,
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json; charset=UTF-8',
+        Accept: 'application/json; charset=UTF-8',
       },
       body: JSON.stringify({ p_user_id: userId }),
     });
@@ -125,7 +126,9 @@ async function fetchN8nSubscription(userId) {
   if (!userId) return null;
   try {
     const url = `${N8N_SUBSCRIPTION_URL}?user_id=${encodeURIComponent(userId)}`;
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json; charset=UTF-8' },
+    });
     if (!res.ok) return null;
     const data = await res.json();
     return rowFromSubscriptionPayload(data.subscription || data);

@@ -93,7 +93,10 @@ export async function escalateToTelegramSupport({ user, message, chatId }) {
   try {
     const res = await fetch(TELEGRAM_WEBHOOK, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: {
+        'Content-Type': 'application/json; charset=UTF-8',
+        Accept: 'application/json; charset=UTF-8',
+      },
       body: JSON.stringify({
         source: 'ashy-support',
         userId: user?.id || '',

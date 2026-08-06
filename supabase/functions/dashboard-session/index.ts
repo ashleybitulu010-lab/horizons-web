@@ -40,7 +40,7 @@ function corsHeaders(request: Request) {
     'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Cache-Control': 'no-store',
-    'Content-Type': 'application/json',
+    'Content-Type': 'application/json; charset=UTF-8',
     Vary: 'Origin',
   };
 }
@@ -73,7 +73,7 @@ async function validatePocketBaseToken(authorization: string) {
       method: 'POST',
       headers: {
         Authorization: authorization,
-        Accept: 'application/json',
+        Accept: 'application/json; charset=UTF-8',
       },
       signal: AbortSignal.timeout(10_000),
     },
