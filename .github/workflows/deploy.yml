@@ -40,6 +40,7 @@ jobs:
           BACKUP_DIR="$APP_DIR/.dist-backup-${GITHUB_RUN_ID}"
           trap 'rm -rf "${BUILD_DIR:-}" 2>/dev/null || true' EXIT
           npx vite build --outDir "$BUILD_DIR"
+          chmod -R u=rwX,go=rX "$BUILD_DIR"
 
           if [ -d "$APP_DIR/dist" ]; then
             mv "$APP_DIR/dist" "$BACKUP_DIR"
