@@ -196,12 +196,18 @@ export default function SupportChatWidget({ user }) {
     }, delay);
   }, []);
 
-  // Auto-open for new / in-progress guide
+  // Auto-open for new / in-progress guide (also ?guide=1 from Settings)
   useEffect(() => {
     if (!user?.id) return;
-    if ((isPending || isActive) && !autoOpenedRef.current) {
+    const forceGuide = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('guide') === '1';
+    if ((isPending || isActive || forceGuide) && !autoOpenedRef.current) {
       autoOpenedRef.current = true;
       setOpen(true);
+      if (forceGuide && window.history?.replaceState) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('guide');
+        window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+      }
     }
   }, [user?.id, isPending, isActive]);
 
@@ -215,6 +221,7 @@ export default function SupportChatWidget({ user }) {
       }),
     ]);
     setWelcomeShown(true);
+    setOpen(true);
   }, [isPending, welcomeShown]);
 
   // Resume active guide UI if panel reopens with empty local transcript
@@ -228,7 +235,7 @@ export default function SupportChatWidget({ user }) {
     ]);
   }, [isActive, currentStep, guideMessages.length]);
 
-  // Relaunch from Settings
+  // Relaunch from Settings / menu (widget already mounted on ChatPage)
   useEffect(() => {
     const onRelaunch = () => {
       restartGuide();
@@ -237,8 +244,19 @@ export default function SupportChatWidget({ user }) {
       advancingRef.current = false;
       prematureWarnedRef.current = false;
       remindCounterRef.current = 0;
-      autoOpenedRef.current = true;
+      autoOpenedRef.current = false;
       setOpen(true);
+      // Seed immediately so the user sees the welcome without waiting another tick
+      setTimeout(() => {
+        setGuideMessages([
+          makeLocalMsg(WELCOME_ONBOARDING.content, 'support', {
+            id: WELCOME_ONBOARDING.id,
+            actions: WELCOME_ONBOARDING.actions,
+          }),
+        ]);
+        setWelcomeShown(true);
+        autoOpenedRef.current = true;
+      }, 0);
     };
     window.addEventListener(ONBOARDING_RELAUNCH_EVENT, onRelaunch);
     return () => window.removeEventListener(ONBOARDING_RELAUNCH_EVENT, onRelaunch);

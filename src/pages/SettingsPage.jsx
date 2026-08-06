@@ -5,7 +5,7 @@ import { ArrowLeft, Bell, Globe, Lock, Trash2, Eye, EyeOff, ChevronRight, AlertT
 import { useAuth } from '@/hooks/useAuth';
 import pb from '@/lib/pocketbaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
-import { requestRelaunchGuide, readOnboardingState } from '@/hooks/useOnboarding';
+import { persistRelaunchGuide, readOnboardingState } from '@/hooks/useOnboarding';
 
 function Toast({ message, onDismiss }) {
   useEffect(() => {
@@ -106,10 +106,11 @@ export default function SettingsPage() {
   }, [user?.id]);
 
   const relaunchGuide = () => {
-    requestRelaunchGuide();
+    if (!user?.id) return;
+    persistRelaunchGuide(user.id);
     setGuideStatus('pending');
-    setToast({ type: 'success', text: 'Guide Ashy relancé — retournez au chat.' });
-    setTimeout(() => navigate('/chat'), 600);
+    setToast({ type: 'success', text: 'Guide Ashy ouvert…' });
+    navigate('/chat?guide=1');
   };
 
   const savePreferences = async () => {

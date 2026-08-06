@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
-import { Send, Menu, X, User, CreditCard, BarChart2, Settings, LogOut } from 'lucide-react';
+import { Send, Menu, X, User, CreditCard, BarChart2, Settings, LogOut, Sparkles } from 'lucide-react';
 import SupportChatWidget from '@/components/SupportChatWidget';
 import { useAuth } from '@/hooks/useAuth';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useChat } from '@/context/ChatContext';
+import { persistRelaunchGuide } from '@/hooks/useOnboarding';
 
 const ASH_AVATAR = 'https://horizons-cdn.hostinger.com/29358ba6-568b-49c6-9aac-6ece4b30fac6/ca8bd733c63d36fa2caff0db62fb3057.png';
 
@@ -122,13 +123,14 @@ function DateDivider({ label }) {
 
 /* ── Side drawer ── */
 const MENU_ITEMS = [
+  { icon: Sparkles, label: 'Guide Ashy', action: 'guide' },
   { icon: User, label: 'Mon profil', route: '/profile' },
   { icon: CreditCard, label: 'Mon abonnement', route: '/subscription' },
   { icon: BarChart2, label: 'Mes rapports', route: '/reports' },
   { icon: Settings, label: 'Paramètres', route: '/settings' },
 ];
 
-function SideDrawer({ open, onClose, onLogout, onNavigate, user }) {
+function SideDrawer({ open, onClose, onLogout, onNavigate, onGuide, user }) {
   return (
     <AnimatePresence>
       {open && (
@@ -176,10 +178,14 @@ function SideDrawer({ open, onClose, onLogout, onNavigate, user }) {
 
             {/* Menu items */}
             <nav className="flex-1 py-4 px-3 flex flex-col gap-1">
-              {MENU_ITEMS.map(({ icon: Icon, label, route }) => (
+              {MENU_ITEMS.map(({ icon: Icon, label, route, action }) => (
                 <button
                   key={label}
-                  onClick={() => { onClose(); onNavigate(route); }}
+                  onClick={() => {
+                    onClose();
+                    if (action === 'guide') onGuide?.();
+                    else if (route) onNavigate(route);
+                  }}
                   className="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors text-sm font-medium active:scale-[0.98] group"
                 >
                   <span className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 group-hover:bg-orange-100 transition-colors">
@@ -666,7 +672,16 @@ export default function ChatPage() {
       </div>
 
       {/* ── Side drawer ── */}
-      <SideDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onLogout={handleLogout} onNavigate={(route) => navigate(route)} user={user} />
+      <SideDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onLogout={handleLogout}
+        onNavigate={(route) => navigate(route)}
+        onGuide={() => {
+          if (user?.id) persistRelaunchGuide(user.id);
+        }}
+        user={user}
+      />
 
       {/* ── Support chat widget ── */}
       <SupportChatWidget user={user} />

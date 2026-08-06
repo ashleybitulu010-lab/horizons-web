@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-export const ONBOARDING_STORAGE_PREFIX = 'ash_onboarding_';
+// v2: force one fresh pending state for all users after guide launch
+export const ONBOARDING_STORAGE_PREFIX = 'ash_onboarding_v2_';
 export const ONBOARDING_RELAUNCH_EVENT = 'ash:relaunch-guide';
 
 export const ONBOARDING_STEPS = [
@@ -136,22 +137,8 @@ export function writeOnboardingState(userId, state) {
   }
 }
 
-export function defaultOnboardingState(userCreatedAt) {
-  const createdMs = userCreatedAt ? new Date(userCreatedAt).getTime() : Date.now();
-  const ageMs = Number.isFinite(createdMs) ? Date.now() - createdMs : 0;
-  // Existing accounts (older than 48h) without saved progress skip auto-tutorial.
-  const isLikelyNew = ageMs < 48 * 60 * 60 * 1000;
-
-  if (!isLikelyNew) {
-    return {
-      status: 'completed',
-      stepIndex: ONBOARDING_STEPS.length - 1,
-      completedAt: new Date().toISOString(),
-      skippedAt: null,
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
+export function defaultOnboardingState(_userCreatedAt) {
+  // No saved progress → start the interactive guide (user can skip).
   return {
     status: 'pending',
     stepIndex: 0,
@@ -159,6 +146,19 @@ export function defaultOnboardingState(userCreatedAt) {
     skippedAt: null,
     updatedAt: new Date().toISOString(),
   };
+}
+
+/** Persist a pending restart so ChatPage can pick it up after navigation. */
+export function persistRelaunchGuide(userId) {
+  if (!userId) return;
+  writeOnboardingState(userId, {
+    status: 'pending',
+    stepIndex: 0,
+    completedAt: null,
+    skippedAt: null,
+    updatedAt: new Date().toISOString(),
+  });
+  requestRelaunchGuide();
 }
 
 export function getCurrentStep(state) {
