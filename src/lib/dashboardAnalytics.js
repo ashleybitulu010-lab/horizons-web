@@ -7,6 +7,7 @@ const DATE_FIELDS = {
   depenses: ['date_depense', 'spent_at', 'date', 'created_at', 'created'],
   produits: ['created_at', 'created', 'date_creation', 'date'],
   stocks: ['date_stock', 'date_mouvement', 'created_at', 'created', 'date'],
+  paiements_dettes: ['paid_at', 'date_paiement', 'created_at', 'created', 'date'],
 };
 
 const PRODUCT_NAME_FIELDS = ['nom_produit', 'nom', 'name', 'libelle', 'designation'];
@@ -57,6 +58,7 @@ const SALE_AMOUNT_FIELDS = [
 ];
 const SALE_UNIT_PRICE_FIELDS = ['prix_unitaire', 'prix_vente', 'unit_price', 'sale_price'];
 const EXPENSE_AMOUNT_FIELDS = ['montant_depense', 'montant', 'montant_total', 'total', 'amount', 'valeur'];
+const PAYMENT_AMOUNT_FIELDS = ['montant', 'montant_paye', 'amount', 'payment_amount'];
 const EXPENSE_NAME_FIELDS = [
   'libelle_depense',
   'type_depense',
@@ -151,10 +153,51 @@ function expenseAmount(expense) {
   return Math.max(0, firstNumber(expense, EXPENSE_AMOUNT_FIELDS) ?? 0);
 }
 
+function paymentAmount(payment) {
+  return Math.max(0, firstNumber(payment, PAYMENT_AMOUNT_FIELDS) ?? 0);
+}
+
 function saleCost(sale, product) {
   const directCost = firstNumber(sale, ['cout_total', 'total_cost', 'cout_achat_total']);
   if (directCost !== null) return Math.max(0, directCost);
   return saleQuantity(sale) * Math.max(0, firstNumber(product, PRODUCT_PURCHASE_PRICE_FIELDS) ?? 0);
+}
+
+function buildDebtMetrics(ventes, payments) {
+  const debtSales = ventes
+    .map((sale) => ({
+      sale,
+      total: Math.max(0, firstNumber(sale, ['total_brut', 'montant_total', 'total']) ?? saleAmount(sale)),
+      remaining: Math.max(0, firstNumber(sale, ['reste_a_payer', 'montant_restant', 'remaining']) ?? 0),
+    }))
+    .filter(({ remaining }) => remaining > 0);
+
+  const debtorKeys = new Set(debtSales.map(({ sale }) => String(
+    firstValue(sale, [
+      'debiteur_id',
+      'client_debiteur_id',
+      'nom_client_debiteur',
+      'nom_debiteur',
+    ]) || rowId(sale),
+  )));
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const endOfToday = new Date(startOfToday);
+  endOfToday.setDate(endOfToday.getDate() + 1);
+
+  return {
+    totalDebt: sum(debtSales, ({ total }) => total),
+    debtorCount: debtorKeys.size,
+    collectedToday: sum(
+      payments.filter((payment) => inPeriod(
+        parseDate(payment, 'paiements_dettes'),
+        startOfToday.getTime(),
+        endOfToday.getTime(),
+      )),
+      paymentAmount,
+    ),
+    remaining: sum(debtSales, ({ remaining }) => remaining),
+  };
 }
 
 function movementQuantity(stock) {
@@ -288,8 +331,7 @@ function buildTimeline(ventes, depenses, productById) {
   });
 
   return Array.from(days.values())
-    .sort((a, b) => a.key.localeCompare(b.key))
-    .slice(-30);
+    .sort((a, b) => a.key.localeCompare(b.key));
 }
 
 function buildTopProducts(ventes, productById) {
@@ -322,7 +364,8 @@ function buildCategorySales(ventes, productById) {
     .sort((a, b) => b.value - a.value);
 }
 
-function buildActivities(ventes, depenses, products, stocks, productById) {
+function buildActivities(ventes, depenses, products, stocks, payments, productById) {
+  const saleById = new Map(ventes.map((sale) => [rowId(sale), sale]));
   const salesActivities = ventes.map((sale) => {
     const product = productById.get(relatedProductId(sale));
     const quantity = saleQuantity(sale);
@@ -366,12 +409,31 @@ function buildActivities(ventes, depenses, products, stocks, productById) {
     };
   });
 
-  return [...salesActivities, ...expenseActivities, ...productActivities, ...stockActivities]
+  const paymentActivities = payments.map((payment) => {
+    const sale = saleById.get(String(firstValue(payment, ['vente_id', 'sale_id']) || ''));
+    const product = sale ? productById.get(relatedProductId(sale)) : null;
+    return {
+      id: `paiement-${rowId(payment)}`,
+      type: 'paiement',
+      title: 'Paiement reçu',
+      detail: sale ? `Dette · ${saleProductName(sale, product)}` : 'Remboursement client',
+      amount: paymentAmount(payment),
+      date: parseDate(payment, 'paiements_dettes'),
+    };
+  });
+
+  return [
+    ...salesActivities,
+    ...expenseActivities,
+    ...productActivities,
+    ...stockActivities,
+    ...paymentActivities,
+  ]
     .sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0))
-    .slice(0, 10);
+    .slice(0, 5);
 }
 
-function buildAlerts(inventory, trends, depenses) {
+function buildAlerts(inventory, trends, depenses, metrics, debts) {
   const alerts = inventory
     .filter((item) => item.isLow)
     .sort((a, b) => a.quantity - b.quantity)
@@ -403,6 +465,27 @@ function buildAlerts(inventory, trends, depenses) {
     }
   }
 
+  if (metrics.profit < 0) {
+    alerts.push({
+      id: 'negative-profit',
+      type: 'benefice',
+      tone: 'danger',
+      title: 'Bénéfice négatif',
+      message: 'Vos dépenses et coûts dépassent actuellement votre chiffre d’affaires.',
+    });
+  }
+
+  if (debts.remaining > 0) {
+    const isImportant = debts.remaining >= Math.max(metrics.revenue * 0.25, 1);
+    alerts.push({
+      id: 'client-debt',
+      type: 'dette',
+      tone: isImportant ? 'danger' : 'warning',
+      title: isImportant ? 'Dettes clients importantes' : 'Dettes clients',
+      message: `${debts.debtorCount} client${debts.debtorCount > 1 ? 's' : ''} débiteur${debts.debtorCount > 1 ? 's' : ''} à relancer.`,
+    });
+  }
+
   if (trends.salesChange !== null) {
     alerts.push({
       id: 'sales-trend',
@@ -426,7 +509,7 @@ function buildAlerts(inventory, trends, depenses) {
   return alerts;
 }
 
-function buildInsights(inventory, trends, topProducts) {
+function buildInsights(inventory, trends, topProducts, debts) {
   const insights = [];
 
   if (trends.salesChange !== null) {
@@ -447,6 +530,10 @@ function buildInsights(inventory, trends, topProducts) {
     insights.push(`Votre bénéfice estimé ${trends.profitChange >= 0 ? 'progresse' : 'recule'} par rapport à la semaine précédente.`);
   }
 
+  if (debts.remaining > 0) {
+    insights.push(`${debts.debtorCount} client${debts.debtorCount > 1 ? 's ont' : ' a'} encore un paiement à régulariser.`);
+  }
+
   if (topProducts[0]) {
     insights.push(`« ${topProducts[0].name} » est actuellement votre produit le plus vendu.`);
   }
@@ -454,7 +541,13 @@ function buildInsights(inventory, trends, topProducts) {
   return insights.slice(0, 4);
 }
 
-export function buildDashboardAnalytics({ produits = [], stocks = [], ventes = [], depenses = [] }) {
+export function buildDashboardAnalytics({
+  produits = [],
+  stocks = [],
+  ventes = [],
+  depenses = [],
+  paiements_dettes = [],
+}) {
   const productById = new Map(produits.map((product) => [rowId(product), product]));
   const revenue = sum(ventes, (sale) => saleAmount(sale, productById.get(relatedProductId(sale))));
   const expenses = sum(depenses, expenseAmount);
@@ -462,6 +555,7 @@ export function buildDashboardAnalytics({ produits = [], stocks = [], ventes = [
   const inventory = calculateInventory(produits, stocks, ventes, productById);
   const trends = periodTotals(ventes, depenses, productById, Date.now());
   const topProducts = buildTopProducts(ventes, productById);
+  const debts = buildDebtMetrics(ventes, paiements_dettes);
   const recentTopProducts = buildTopProducts(
     ventes.filter((sale) => inPeriod(
       parseDate(sale, 'ventes'),
@@ -478,6 +572,7 @@ export function buildDashboardAnalytics({ produits = [], stocks = [], ventes = [
     stockValue: sum(inventory, (item) => item.value),
     productCount: produits.length,
     stockQuantity: sum(inventory, (item) => item.quantity),
+    clientDebt: debts.remaining,
   };
 
   return {
@@ -486,9 +581,17 @@ export function buildDashboardAnalytics({ produits = [], stocks = [], ventes = [
     timeline: buildTimeline(ventes, depenses, productById),
     topProducts,
     categorySales: buildCategorySales(ventes, productById),
-    activities: buildActivities(ventes, depenses, produits, stocks, productById),
-    alerts: buildAlerts(inventory, trends, depenses),
-    insights: buildInsights(inventory, trends, recentTopProducts),
+    activities: buildActivities(
+      ventes,
+      depenses,
+      produits,
+      stocks,
+      paiements_dettes,
+      productById,
+    ),
+    alerts: buildAlerts(inventory, trends, depenses, metrics, debts),
+    insights: buildInsights(inventory, trends, recentTopProducts, debts),
+    debts,
     inventory,
   };
 }

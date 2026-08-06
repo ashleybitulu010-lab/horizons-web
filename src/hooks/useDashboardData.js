@@ -3,13 +3,20 @@ import { buildDashboardAnalytics } from '@/lib/dashboardAnalytics';
 import { DEFAULT_CURRENCY_SETTINGS, normalizeCurrencySettings } from '@/lib/currency';
 import { createDashboardSession, supabase, supabaseConfigured } from '@/lib/supabaseRest';
 
-const DASHBOARD_TABLES = ['produits', 'stocks', 'ventes', 'depenses'];
+const DASHBOARD_TABLES = [
+  'produits',
+  'stocks',
+  'ventes',
+  'depenses',
+  'paiements_dettes',
+];
 
 const EMPTY_DATA = {
   produits: [],
   stocks: [],
   ventes: [],
   depenses: [],
+  paiements_dettes: [],
 };
 
 function rowKey(table, row) {
@@ -109,25 +116,17 @@ export function useDashboardData(user, authToken) {
     setError(null);
 
     try {
-      const [results, currencyResult] = await Promise.all([
-        Promise.all(DASHBOARD_TABLES.map(async (table) => {
-          const { data: rows, error: queryError } = await supabase
-            .from(table)
-            .select('*')
-            .eq('client_id', clientId);
-          if (queryError) throw queryError;
-          return [table, rows || []];
-        })),
-        supabase
-          .from('clients')
-          .select('currency_preference,ledger_currency,usd_cdf_rate')
-          .eq('id', clientId)
-          .single(),
-      ]);
-      if (currencyResult.error) throw currencyResult.error;
+      const { data: snapshot, error: snapshotError } = await supabase
+        .rpc('get_dashboard_snapshot');
+      if (snapshotError) throw snapshotError;
       if (requestId !== requestIdRef.current) return;
-      setData(Object.fromEntries(results));
-      setCurrencySettings(normalizeCurrencySettings(currencyResult.data));
+      setData(Object.fromEntries(
+        DASHBOARD_TABLES.map((table) => [
+          table,
+          Array.isArray(snapshot?.[table]) ? snapshot[table] : [],
+        ]),
+      ));
+      setCurrencySettings(normalizeCurrencySettings(snapshot?.client));
       setLastUpdated(new Date());
     } catch (queryError) {
       if (requestId !== requestIdRef.current) return;
