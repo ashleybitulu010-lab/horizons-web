@@ -127,11 +127,11 @@ function productCategory(product) {
 }
 
 function saleProductName(sale, product) {
-  return cleanUtf8Text(firstValue(sale, PRODUCT_NAME_FIELDS) || (product ? productName(product) : 'Produit'));
+  return cleanUtf8Text(product ? productName(product) : firstValue(sale, PRODUCT_NAME_FIELDS) || 'Produit');
 }
 
 function saleCategory(sale, product) {
-  return cleanUtf8Text(firstValue(sale, PRODUCT_CATEGORY_FIELDS) || (product ? productCategory(product) : 'Non catégorisé'));
+  return cleanUtf8Text(product ? productCategory(product) : firstValue(sale, PRODUCT_CATEGORY_FIELDS) || 'Non catégorisé');
 }
 
 function saleQuantity(sale) {
