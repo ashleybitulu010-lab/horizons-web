@@ -16,7 +16,7 @@ jobs:
     runs-on: [self-hosted, ashledger]
     timeout-minutes: 20
     steps:
-      - name: Update app, restart PM2, verify HTTP 200
+      - name: Build static app, reload nginx, verify HTTP 200
         shell: bash
         run: |
           set -euo pipefail
@@ -34,16 +34,29 @@ jobs:
           node tools/generate-llms.js || true
           npx vite build --outDir dist
 
-          if pm2 describe ashledger >/dev/null 2>&1; then
-            pm2 restart ashledger
-          else
-            pm2 start npx --name ashledger -- vite preview --outDir dist --host 0.0.0.0 --port "$APP_PORT"
+          # nginx serves /opt/ashledger/dist directly — rebuild is enough (no process restart).
+          # Keep PM2 fallback only if nginx/PocketBase stack is not present.
+          if ! curl -fsS "http://127.0.0.1:${APP_PORT}/hcgi/platform/api/health" >/dev/null 2>&1; then
+            if pm2 describe ashledger >/dev/null 2>&1; then
+              pm2 restart ashledger
+            else
+              pm2 start npx --name ashledger -- vite preview --outDir dist --host 0.0.0.0 --port "$APP_PORT"
+            fi
+            pm2 save
           fi
-          pm2 save
 
-          sleep 3
+          sleep 2
           HTTP_CODE=$(curl -sS -o /tmp/ashledger_health_body -w '%{http_code}' "http://127.0.0.1:${APP_PORT}/")
           echo "HTTP_CODE=${HTTP_CODE}"
           head -c 200 /tmp/ashledger_health_body || true
           echo
           test "$HTTP_CODE" = "200"
+
+          PB_CODE=$(curl -sS -o /tmp/pb_health_body -w '%{http_code}' "http://127.0.0.1:${APP_PORT}/hcgi/platform/api/health" || true)
+          echo "PB_CODE=${PB_CODE}"
+          head -c 200 /tmp/pb_health_body || true
+          echo
+          # Soft-check: do not fail deploy if PB briefly restarts
+          if [ "$PB_CODE" != "200" ]; then
+            echo "WARN: PocketBase proxy health returned ${PB_CODE}"
+          fi
