@@ -72,3 +72,10 @@ export function normalizeMessageText(value, currencySettings = {}) {
   text = text.replace(/\bEUR\b|€/gu, currency === 'CDF' ? 'CDF' : '$');
   return text;
 }
+
+export function compactSpacedDigits(value) {
+  return cleanUtf8Text(value).replace(
+    /\b\d(?:[ \u00A0]+\d){2,}\b/gu,
+    (digits) => digits.replace(/[ \u00A0]+/gu, ''),
+  );
+}

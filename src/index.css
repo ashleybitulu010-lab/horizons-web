@@ -32,6 +32,27 @@ textarea {
   font-family: inherit;
 }
 
+.emoji-glyph {
+  display: inline;
+  font-family:
+    "Noto Color Emoji",
+    "Apple Color Emoji",
+    "Segoe UI Emoji",
+    sans-serif;
+  font-variant-emoji: emoji;
+  letter-spacing: 0;
+  word-spacing: 0;
+}
+
+.chat-text,
+.chat-time,
+.chat-input {
+  letter-spacing: 0 !important;
+  word-spacing: 0 !important;
+  font-variant-numeric: normal !important;
+  font-feature-settings: normal !important;
+}
+
 /* Robot mascot eye blink */
 @keyframes robot-blink {
   0%, 90%, 100% { transform: scaleY(1); }

@@ -3,11 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { Send, Menu, X, User, CreditCard, BarChart2, LayoutDashboard, Settings, LogOut, Sparkles } from 'lucide-react';
 import SupportChatWidget from '@/components/SupportChatWidget';
+import EmojiText from '@/components/EmojiText';
 import { useAuth } from '@/hooks/useAuth';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useChat } from '@/context/ChatContext';
 import { readStoredCurrencyPreference } from '@/lib/currency';
-import { cleanUtf8Text, normalizeMessageText } from '@/lib/textEncoding';
+import {
+  cleanUtf8Text,
+  compactSpacedDigits,
+  normalizeMessageText,
+} from '@/lib/textEncoding';
 import {
   persistRelaunchGuide,
   useOnboarding,
@@ -84,9 +89,11 @@ function TypingIndicator() {
 /* ── Single message ── */
 function Message({ message, isNew, currencySettings }) {
   const isUser = message.role === 'user';
-  const content = isUser
-    ? cleanUtf8Text(message.content)
-    : normalizeMessageText(message.content, currencySettings);
+  const content = compactSpacedDigits(
+    isUser
+      ? cleanUtf8Text(message.content)
+      : normalizeMessageText(message.content, currencySettings),
+  );
   return (
     <motion.div
       initial={isNew ? { opacity: 0, y: 10, scale: 0.97 } : false}
@@ -107,9 +114,14 @@ function Message({ message, isNew, currencySettings }) {
         }`}
         style={isUser ? { backgroundColor: '#FF6B00' } : { backgroundColor: '#FFFFFF' }}
       >
-        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{content}</p>
+        <p className="chat-text text-sm leading-relaxed whitespace-pre-wrap break-words">
+          <EmojiText>{content}</EmojiText>
+        </p>
         <div className="flex items-center justify-end gap-0.5 mt-1">
-          <span className={`text-[10px] select-none font-medium tabular-nums ${isUser ? 'text-orange-200' : 'text-gray-400'}`}>
+          <span
+            dir="ltr"
+            className={`chat-time text-[10px] select-none font-medium ${isUser ? 'text-orange-200' : 'text-gray-400'}`}
+          >
             {message.time}
           </span>
           {isUser && <StatusTicks status={message.status || 'sent'} />}
@@ -636,7 +648,7 @@ export default function ChatPage() {
           </div>
 
           {/* Content above background */}
-          <div ref={messagesInnerRef} className="relative pb-4" style={{ zIndex: 1 }}>
+          <div ref={messagesInnerRef} className="relative pb-24 sm:pb-4" style={{ zIndex: 1 }}>
             {historyLoading && (
               <div className="flex flex-col items-center justify-center gap-4 px-4 py-10">
                 <div className="flex gap-1.5 items-center">
@@ -697,7 +709,7 @@ export default function ChatPage() {
               placeholder={historyLoading ? 'Chargement de l\'historique…' : 'Message…'}
               rows={1}
               disabled={historyLoading}
-              className="w-full resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none leading-relaxed max-h-36 disabled:opacity-50"
+              className="chat-input w-full resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none leading-relaxed max-h-36 disabled:opacity-50"
               style={{ minHeight: 22 }}
             />
           </div>
