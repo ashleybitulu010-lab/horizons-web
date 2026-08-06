@@ -82,5 +82,6 @@ export async function createDashboardSession(pocketBaseToken) {
     refresh_token: payload.refresh_token,
   });
   if (error) throw error;
+  await supabase.realtime.setAuth(payload.access_token);
   return payload.client_id;
 }
