@@ -120,7 +120,7 @@ function ProgressBar({ progress, visible }) {
   );
 }
 
-export default function SupportChatWidget({ user }) {
+export default function SupportChatWidget({ user, forceOpen = false }) {
   const { messages: mainMessages, loading: mainLoading } = useChat();
   const {
     state: onboarding,
@@ -136,7 +136,7 @@ export default function SupportChatWidget({ user }) {
     restartGuide,
   } = useOnboarding(user?.id, user?.created);
 
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(Boolean(forceOpen));
   const [chat, setChat] = useState(null);
   const [messages, setMessages] = useState([]);
   const [guideMessages, setGuideMessages] = useState([]);
@@ -199,17 +199,24 @@ export default function SupportChatWidget({ user }) {
   // Auto-open for new / in-progress guide (also ?guide=1 from Settings)
   useEffect(() => {
     if (!user?.id) return;
-    const forceGuide = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('guide') === '1';
+    const forceGuide =
+      forceOpen ||
+      (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('guide') === '1');
     if ((isPending || isActive || forceGuide) && !autoOpenedRef.current) {
       autoOpenedRef.current = true;
       setOpen(true);
-      if (forceGuide && window.history?.replaceState) {
+      if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('guide') === '1' && window.history?.replaceState) {
         const url = new URL(window.location.href);
         url.searchParams.delete('guide');
         window.history.replaceState({}, '', url.pathname + url.search + url.hash);
       }
     }
-  }, [user?.id, isPending, isActive]);
+  }, [user?.id, isPending, isActive, forceOpen]);
+
+  // Keep panel open while guide is pending/active
+  useEffect(() => {
+    if (forceOpen || isPending || isActive) setOpen(true);
+  }, [forceOpen, isPending, isActive]);
 
   // Seed welcome when pending
   useEffect(() => {

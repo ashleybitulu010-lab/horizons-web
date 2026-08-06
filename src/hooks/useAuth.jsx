@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import pb from '@/lib/pocketbaseClient';
-import { writeOnboardingState, defaultOnboardingState } from '@/hooks/useOnboarding';
+import {
+  writeOnboardingState,
+  defaultOnboardingState,
+  readOnboardingState,
+} from '@/hooks/useOnboarding';
 
 function getRecord() {
   return pb.authStore.record ?? pb.authStore.model ?? null;
@@ -77,6 +81,13 @@ export function useAuth() {
         password,
       );
       persistSession(authData.record, authData.token);
+      // First login after feature launch: start guide if no saved progress
+      if (authData.record?.id && !readOnboardingState(authData.record.id)) {
+        writeOnboardingState(authData.record.id, {
+          ...defaultOnboardingState(authData.record.created || new Date().toISOString()),
+          status: 'pending',
+        });
+      }
       return mapUser(authData.record);
     } catch (err) {
       throw new Error(err?.status === 400 ? 'Email ou mot de passe incorrect.' : (err?.message || 'Erreur de connexion'));

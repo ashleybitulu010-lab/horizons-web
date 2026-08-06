@@ -6,7 +6,11 @@ import SupportChatWidget from '@/components/SupportChatWidget';
 import { useAuth } from '@/hooks/useAuth';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useChat } from '@/context/ChatContext';
-import { persistRelaunchGuide } from '@/hooks/useOnboarding';
+import {
+  persistRelaunchGuide,
+  useOnboarding,
+  ONBOARDING_RELAUNCH_EVENT,
+} from '@/hooks/useOnboarding';
 
 const ASH_AVATAR = 'https://horizons-cdn.hostinger.com/29358ba6-568b-49c6-9aac-6ece4b30fac6/ca8bd733c63d36fa2caff0db62fb3057.png';
 
@@ -221,6 +225,7 @@ export default function ChatPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { messages, newIds, input, setInput, loading, historyLoading, sendMessage } = useChat();
+  const { isGuideMode, isPending, isActive } = useOnboarding(user?.id, user?.created);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
@@ -347,6 +352,35 @@ export default function ChatPage() {
             <Menu size={22} strokeWidth={2} />
           </button>
         </header>
+
+        {isGuideMode && (
+          <div
+            className="flex-shrink-0 px-4 py-3 flex items-center gap-3 border-b"
+            style={{ backgroundColor: '#FFF4EB', borderColor: 'rgba(255,107,0,0.18)' }}
+          >
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-orange-700">
+                {isPending ? 'Ashy est prêt à vous guider' : 'Guide Ashy en cours'}
+              </p>
+              <p className="text-xs text-orange-600/80 mt-0.5">
+                Ouvrez le panneau Ashy en bas à droite pour commencer (produit → stock → vente…).
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (user?.id) persistRelaunchGuide(user.id);
+                try {
+                  window.dispatchEvent(new CustomEvent(ONBOARDING_RELAUNCH_EVENT));
+                } catch { /* ignore */ }
+              }}
+              className="flex-shrink-0 px-3 py-2 rounded-xl text-white text-xs font-semibold active:scale-95"
+              style={{ backgroundColor: '#FF6B00' }}
+            >
+              Ouvrir Ashy
+            </button>
+          </div>
+        )}
 
         {/* ── Messages area ── */}
         <div
@@ -684,7 +718,7 @@ export default function ChatPage() {
       />
 
       {/* ── Support chat widget ── */}
-      <SupportChatWidget user={user} />
+      <SupportChatWidget user={user} forceOpen={isPending || isActive} />
     </>
   );
 }
