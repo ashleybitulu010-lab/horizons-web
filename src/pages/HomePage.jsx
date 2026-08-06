@@ -79,7 +79,12 @@ const HomePage = () => {
     }
   };
   const onKeyDown = e => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (
+      e.key === 'Enter'
+      && !e.shiftKey
+      && (e.ctrlKey || e.metaKey)
+      && !e.nativeEvent?.isComposing
+    ) {
       e.preventDefault();
       send();
     }
@@ -141,7 +146,7 @@ const HomePage = () => {
 
                 {/* Composer */}
                 <div className="flex items-end gap-2 bg-[#202c33] px-3 py-3">
-                    <textarea ref={textareaRef} rows={1} value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKeyDown} placeholder="Écrivez un message" className="max-h-32 flex-1 resize-none rounded-2xl bg-[#2a3942] px-4 py-2.5 text-[15px] text-[#e9edef] placeholder:text-[#8696a0] focus:outline-none" />
+                    <textarea ref={textareaRef} rows={1} value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKeyDown} enterKeyHint="enter" placeholder="Écrivez un message" className="max-h-32 flex-1 resize-none rounded-2xl bg-[#2a3942] px-4 py-2.5 text-[15px] text-[#e9edef] placeholder:text-[#8696a0] focus:outline-none" />
                     <button onClick={send} disabled={!input.trim() || sending} aria-label="Envoyer" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#00a884] text-white transition active:scale-95 disabled:opacity-40">
                         <Send className="h-5 w-5" strokeWidth={2} />
                     </button>

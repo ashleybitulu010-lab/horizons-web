@@ -613,7 +613,15 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    if (
+      e.key === 'Enter'
+      && !e.shiftKey
+      && (e.ctrlKey || e.metaKey)
+      && !e.nativeEvent?.isComposing
+    ) {
+      e.preventDefault();
+      sendMessage();
+    }
   };
 
   const handleTextarea = (e) => {
@@ -772,6 +780,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
                   value={input}
                   onChange={handleTextarea}
                   onKeyDown={handleKeyDown}
+                  enterKeyHint="enter"
                   placeholder={isGuideMode ? 'Posez une question à Ashy…' : 'Votre message…'}
                   rows={1}
                   className="w-full resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none leading-relaxed"

@@ -296,7 +296,15 @@ export default function ChatPage() {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+    if (
+      e.key === 'Enter'
+      && !e.shiftKey
+      && (e.ctrlKey || e.metaKey)
+      && !e.nativeEvent?.isComposing
+    ) {
+      e.preventDefault();
+      submit();
+    }
   };
 
   const handleTextareaChange = (e) => {
@@ -674,6 +682,7 @@ export default function ChatPage() {
               onChange={handleTextareaChange}
               onFocus={handleTextareaFocus}
               onKeyDown={handleKeyDown}
+              enterKeyHint="enter"
               placeholder={historyLoading ? 'Chargement de l\'historique…' : 'Message…'}
               rows={1}
               disabled={historyLoading}
