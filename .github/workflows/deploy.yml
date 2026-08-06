@@ -18,6 +18,9 @@ jobs:
     steps:
       - name: Build static app, reload nginx, verify HTTP 200
         shell: bash
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL || 'https://knrwplidgvuvjnuqqmrt.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
         run: |
           set -euo pipefail
           export PATH="/usr/local/bin:/usr/bin:$HOME/.npm-global/bin:$PATH"
@@ -29,6 +32,11 @@ jobs:
           git fetch origin
           git checkout master
           git reset --hard origin/master
+
+          if [ -z "${VITE_SUPABASE_ANON_KEY:-}" ]; then
+            echo "::error::VITE_SUPABASE_ANON_KEY is missing from GitHub Actions secrets or variables."
+            exit 1
+          fi
 
           npm install
           node tools/generate-llms.js || true
