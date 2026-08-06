@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -9,8 +9,8 @@ import {
   BarChart3,
   Box,
   Boxes,
-  CircleDollarSign,
   Clock3,
+  HandCoins,
   Lightbulb,
   Package,
   PackagePlus,
@@ -25,16 +25,10 @@ import {
   WifiOff,
 } from 'lucide-react';
 import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
   CartesianGrid,
-  Cell,
+  Legend,
   Line,
   LineChart,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -48,8 +42,12 @@ import {
   formatCurrency,
 } from '@/lib/currency';
 
-const ACCENT = '#FF6B00';
-const PIE_COLORS = ['#FF6B00', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899'];
+const PERIOD_OPTIONS = [
+  { id: 'today', label: 'Aujourd’hui' },
+  { id: 'week', label: 'Semaine' },
+  { id: 'month', label: 'Mois' },
+  { id: 'year', label: 'Année' },
+];
 
 function formatNumber(value) {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value || 0);
@@ -79,15 +77,15 @@ function MetricCard({ icon: Icon, label, value, color, background, change }) {
     <motion.article
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="relative overflow-hidden rounded-3xl border border-white/80 bg-white p-5 shadow-[0_12px_35px_rgba(99,73,46,0.07)]"
+      className="relative overflow-hidden rounded-3xl border border-white/80 bg-white p-4 shadow-[0_12px_35px_rgba(99,73,46,0.07)]"
     >
       <div
         className="absolute -right-8 -top-8 h-24 w-24 rounded-full opacity-40"
         style={{ background }}
       />
       <div className="relative">
-        <div className="mb-5 flex items-start justify-between gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl" style={{ color, background }}>
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-2xl" style={{ color, background }}>
             <Icon size={21} strokeWidth={1.9} />
           </span>
           {hasChange && (
@@ -106,54 +104,58 @@ function MetricCard({ icon: Icon, label, value, color, background, change }) {
   );
 }
 
-function ChartHeader({ icon: Icon, title, subtitle }) {
-  return (
-    <div className="flex items-start gap-3 px-5 pb-2 pt-5 sm:px-6">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-        <Icon size={17} strokeWidth={2} />
-      </span>
-      <div>
-        <h2 className="text-sm font-bold text-stone-800">{title}</h2>
-        <p className="mt-0.5 text-xs text-stone-400">{subtitle}</p>
-      </div>
-    </div>
-  );
+function filterTimelineByPeriod(timeline, period) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  if (period === 'week') start.setDate(start.getDate() - 6);
+  if (period === 'month') start.setDate(1);
+  if (period === 'year') start.setMonth(0, 1);
+
+  return timeline.filter((point) => {
+    const date = new Date(`${point.key}T00:00:00`);
+    return !Number.isNaN(date.getTime()) && date >= start;
+  });
 }
 
-function EmptyChart() {
-  return (
-    <div className="flex h-[230px] flex-col items-center justify-center px-6 text-center">
-      <BarChart3 size={28} className="mb-3 text-stone-200" />
-      <p className="text-sm font-semibold text-stone-400">Aucune donnée disponible</p>
-      <p className="mt-1 text-xs text-stone-300">Le graphique apparaîtra après vos premières opérations.</p>
-    </div>
-  );
-}
-
-function FinancialChart({
-  title,
-  subtitle,
-  data,
-  dataKey,
-  color,
-  currency,
-  icon: Icon,
-  area = false,
-}) {
-  const Chart = area ? AreaChart : LineChart;
+function FinancialChart({ data, currency, period, onPeriodChange }) {
   return (
     <SectionCard>
-      <ChartHeader icon={Icon} title={title} subtitle={subtitle} />
-      {!data.length ? <EmptyChart /> : (
-        <div className="h-[260px] w-full px-2 pb-4 pr-4">
+      <div className="flex flex-col gap-3 px-5 pb-1 pt-5 sm:flex-row sm:items-start sm:justify-between sm:px-6">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
+            <BarChart3 size={17} strokeWidth={2} />
+          </span>
+          <div>
+            <h2 className="text-sm font-bold text-stone-800">Évolution financière</h2>
+            <p className="mt-0.5 text-xs text-stone-400">Chiffre d’affaires, dépenses et bénéfice</p>
+          </div>
+        </div>
+        <div className="flex gap-1 overflow-x-auto rounded-xl bg-stone-50 p-1">
+          {PERIOD_OPTIONS.map((option) => (
+            <button
+              type="button"
+              key={option.id}
+              onClick={() => onPeriodChange(option.id)}
+              className={`whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition ${
+                period === option.id
+                  ? 'bg-white text-orange-600 shadow-sm'
+                  : 'text-stone-400 hover:text-stone-600'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {!data.length ? (
+        <div className="flex h-[165px] flex-col items-center justify-center px-6 text-center">
+          <BarChart3 size={25} className="mb-2 text-stone-200" />
+          <p className="text-sm font-semibold text-stone-400">Aucune opération sur cette période</p>
+        </div>
+      ) : (
+        <div className="h-[200px] w-full px-2 pb-3 pr-4">
           <ResponsiveContainer width="100%" height="100%">
-            <Chart data={data} margin={{ top: 12, right: 4, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id={`fill-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={color} stopOpacity={0.3} />
-                  <stop offset="95%" stopColor={color} stopOpacity={0.01} />
-                </linearGradient>
-              </defs>
+            <LineChart data={data} margin={{ top: 12, right: 4, left: 0, bottom: 0 }}>
               <CartesianGrid stroke="#F2EEE9" strokeDasharray="4 4" vertical={false} />
               <XAxis
                 dataKey="date"
@@ -165,12 +167,19 @@ function FinancialChart({
               <YAxis
                 axisLine={false}
                 tickLine={false}
-                width={50}
+                width={58}
                 tick={{ fill: '#A8A29E', fontSize: 10 }}
                 tickFormatter={(value) => formatCompactCurrency(value, currency)}
               />
               <Tooltip
-                formatter={(value) => [formatCurrency(value, currency), title]}
+                formatter={(value, name) => [
+                  formatCurrency(value, currency),
+                  {
+                    ventes: 'Chiffre d’affaires',
+                    depenses: 'Dépenses',
+                    benefice: 'Bénéfice',
+                  }[name] || name,
+                ]}
                 contentStyle={{
                   border: '1px solid #F3E8DE',
                   borderRadius: 14,
@@ -178,26 +187,20 @@ function FinancialChart({
                   fontSize: 12,
                 }}
               />
-              {area ? (
-                <Area
-                  type="monotone"
-                  dataKey={dataKey}
-                  stroke={color}
-                  strokeWidth={2.5}
-                  fill={`url(#fill-${dataKey})`}
-                  activeDot={{ r: 4, strokeWidth: 0 }}
-                />
-              ) : (
-                <Line
-                  type="monotone"
-                  dataKey={dataKey}
-                  stroke={color}
-                  strokeWidth={2.5}
-                  dot={false}
-                  activeDot={{ r: 4, strokeWidth: 0 }}
-                />
-              )}
-            </Chart>
+              <Legend
+                iconType="circle"
+                iconSize={7}
+                formatter={(value) => ({
+                  ventes: 'Chiffre d’affaires',
+                  depenses: 'Dépenses',
+                  benefice: 'Bénéfice',
+                }[value] || value)}
+                wrapperStyle={{ fontSize: 10 }}
+              />
+              <Line type="monotone" dataKey="ventes" stroke="#10B981" strokeWidth={2.3} dot={data.length === 1} />
+              <Line type="monotone" dataKey="depenses" stroke="#F43F5E" strokeWidth={2.3} dot={data.length === 1} />
+              <Line type="monotone" dataKey="benefice" stroke="#3B82F6" strokeWidth={2.3} dot={data.length === 1} />
+            </LineChart>
           </ResponsiveContainer>
         </div>
       )}
@@ -207,23 +210,23 @@ function FinancialChart({
 
 function InsightsCard({ insights }) {
   return (
-    <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#FF6B00] via-[#F4771D] to-[#F59E0B] p-6 text-white shadow-[0_18px_50px_rgba(255,107,0,0.25)] sm:p-7">
+    <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#FF6B00] via-[#F4771D] to-[#F59E0B] p-5 text-white shadow-[0_18px_50px_rgba(255,107,0,0.25)]">
       <div className="absolute -right-14 -top-20 h-52 w-52 rounded-full bg-white/10" />
       <div className="absolute -bottom-16 left-1/3 h-40 w-40 rounded-full bg-white/5" />
       <div className="relative">
-        <div className="mb-5 flex items-center gap-3">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20 shadow-inner ring-1 ring-white/30 backdrop-blur">
-            <Sparkles size={23} />
+        <div className="mb-3 flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20 shadow-inner ring-1 ring-white/30 backdrop-blur">
+            <Sparkles size={20} />
           </span>
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-orange-100">Analyse automatique</p>
-            <h2 className="text-xl font-bold">Ashy Insights</h2>
+            <h2 className="text-lg font-bold">Ashy Insights</h2>
           </div>
         </div>
         {insights.length ? (
-          <div className="grid gap-2.5 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-2">
             {insights.map((insight) => (
-              <div key={insight} className="flex gap-2.5 rounded-2xl bg-white/12 p-3.5 ring-1 ring-white/15 backdrop-blur-sm">
+              <div key={insight} className="flex gap-2.5 rounded-2xl bg-white/12 p-3 ring-1 ring-white/15 backdrop-blur-sm">
                 <Lightbulb size={16} className="mt-0.5 shrink-0 text-amber-100" />
                 <p className="text-sm font-medium leading-relaxed text-white/95">{insight}</p>
               </div>
@@ -241,6 +244,7 @@ function InsightsCard({ insights }) {
 
 const ACTIVITY_STYLE = {
   vente: { icon: ShoppingBag, color: 'text-emerald-600', background: 'bg-emerald-50' },
+  paiement: { icon: HandCoins, color: 'text-cyan-600', background: 'bg-cyan-50' },
   depense: { icon: ReceiptText, color: 'text-rose-600', background: 'bg-rose-50' },
   produit: { icon: Package, color: 'text-blue-600', background: 'bg-blue-50' },
   stock: { icon: PackagePlus, color: 'text-violet-600', background: 'bg-violet-50' },
@@ -338,16 +342,56 @@ function SmartAlerts({ alerts }) {
   );
 }
 
+function DebtSummary({ debts, currencySettings }) {
+  const money = (value) => formatCurrency(
+    convertCurrency(value, currencySettings),
+    currencySettings.displayCurrency,
+  );
+  const hasDebt = debts.remaining > 0;
+
+  return (
+    <SectionCard>
+      <div className="flex items-center justify-between px-5 pb-3 pt-5 sm:px-6">
+        <div>
+          <h2 className="text-base font-bold text-stone-800">Dettes clients</h2>
+          <p className="mt-0.5 text-xs text-stone-400">Créances et paiements synchronisés</p>
+        </div>
+        <span className={`flex h-10 w-10 items-center justify-center rounded-2xl ${
+          hasDebt ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
+        }`}>
+          <HandCoins size={19} />
+        </span>
+      </div>
+      {!hasDebt && (
+        <div className="mx-5 mb-3 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 sm:mx-6">
+          ✅ Aucun client débiteur
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-b-3xl bg-stone-100 sm:grid-cols-4">
+        {[
+          ['Montant total', money(debts.totalDebt)],
+          ['Clients débiteurs', formatNumber(debts.debtorCount)],
+          ['Encaissé aujourd’hui', money(debts.collectedToday)],
+          ['Reste à récupérer', money(debts.remaining)],
+        ].map(([label, value]) => (
+          <div key={label} className="bg-white px-5 py-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">{label}</p>
+            <p className="mt-1 text-lg font-bold text-stone-800">{value}</p>
+          </div>
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+
 function LoadingDashboard() {
   return (
     <div className="mx-auto w-full max-w-7xl animate-pulse space-y-5 px-4 py-6 sm:px-6 lg:px-8">
       <div className="h-40 rounded-[28px] bg-orange-100" />
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
-        {Array.from({ length: 6 }, (_, index) => <div key={index} className="h-36 rounded-3xl bg-white" />)}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
+        {Array.from({ length: 7 }, (_, index) => <div key={index} className="h-32 rounded-3xl bg-white" />)}
       </div>
-      <div className="grid gap-4 lg:grid-cols-3">
-        {Array.from({ length: 3 }, (_, index) => <div key={index} className="h-80 rounded-3xl bg-white" />)}
-      </div>
+      <div className="h-64 rounded-3xl bg-white" />
     </div>
   );
 }
@@ -355,15 +399,15 @@ function LoadingDashboard() {
 export default function DashboardPage() {
   const { user, token } = useAuth();
   const navigate = useNavigate();
+  const [chartPeriod, setChartPeriod] = useState('month');
   const {
     metrics,
     trends,
     timeline,
-    topProducts,
-    categorySales,
     activities,
     alerts,
     insights,
+    debts,
     loading,
     refreshing,
     error,
@@ -380,10 +424,10 @@ export default function DashboardPage() {
     depenses: convertCurrency(point.depenses, currencySettings),
     benefice: convertCurrency(point.benefice, currencySettings),
   })), [timeline, currencySettings]);
-  const displayCategorySales = useMemo(() => categorySales.map((category) => ({
-    ...category,
-    value: convertCurrency(category.value, currencySettings),
-  })), [categorySales, currencySettings]);
+  const filteredTimeline = useMemo(
+    () => filterTimelineByPeriod(displayTimeline, chartPeriod),
+    [displayTimeline, chartPeriod],
+  );
 
   const metricCards = useMemo(() => [
     {
@@ -430,6 +474,13 @@ export default function DashboardPage() {
       value: formatNumber(metrics.stockQuantity),
       color: '#EA580C',
       background: '#FFF7ED',
+    },
+    {
+      icon: HandCoins,
+      label: 'Dettes clients',
+      value: formatCurrency(convertCurrency(metrics.clientDebt, currencySettings), displayCurrency),
+      color: '#CA8A04',
+      background: '#FEFCE8',
     },
   ], [metrics, trends, currencySettings, displayCurrency]);
 
@@ -516,121 +567,18 @@ export default function DashboardPage() {
 
             <InsightsCard insights={insights} />
 
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
               {metricCards.map((card) => <MetricCard key={card.label} {...card} />)}
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-3">
-              <FinancialChart
-                title="Évolution des ventes"
-                subtitle="Chiffre d’affaires par jour"
-                data={displayTimeline}
-                dataKey="ventes"
-                color="#10B981"
-                currency={displayCurrency}
-                icon={CircleDollarSign}
-              />
-              <FinancialChart
-                title="Évolution des dépenses"
-                subtitle="Dépenses enregistrées par jour"
-                data={displayTimeline}
-                dataKey="depenses"
-                color="#F43F5E"
-                currency={displayCurrency}
-                icon={ReceiptText}
-              />
-              <FinancialChart
-                title="Évolution du bénéfice"
-                subtitle="Estimation quotidienne"
-                data={displayTimeline}
-                dataKey="benefice"
-                color="#3B82F6"
-                currency={displayCurrency}
-                icon={TrendingUp}
-                area
-              />
-            </div>
+            <FinancialChart
+              data={filteredTimeline}
+              currency={displayCurrency}
+              period={chartPeriod}
+              onPeriodChange={setChartPeriod}
+            />
 
-            <div className="grid gap-4 lg:grid-cols-5">
-              <SectionCard className="lg:col-span-3">
-                <ChartHeader
-                  icon={ShoppingBag}
-                  title="Produits les plus vendus"
-                  subtitle="Classement par quantité vendue"
-                />
-                {!topProducts.length ? <EmptyChart /> : (
-                  <div className="h-[300px] w-full px-3 pb-5 pr-6">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={topProducts} layout="vertical" margin={{ top: 8, right: 8, left: 18, bottom: 0 }}>
-                        <CartesianGrid stroke="#F2EEE9" strokeDasharray="4 4" horizontal={false} />
-                        <XAxis
-                          type="number"
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fill: '#A8A29E', fontSize: 10 }}
-                        />
-                        <YAxis
-                          type="category"
-                          dataKey="name"
-                          width={105}
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fill: '#78716C', fontSize: 10 }}
-                        />
-                        <Tooltip
-                          formatter={(value) => [`${formatNumber(value)} unité${value > 1 ? 's' : ''}`, 'Quantité vendue']}
-                          contentStyle={{
-                            border: '1px solid #F3E8DE',
-                            borderRadius: 14,
-                            boxShadow: '0 10px 30px rgba(70,50,30,.12)',
-                            fontSize: 12,
-                          }}
-                        />
-                        <Bar dataKey="quantite" fill={ACCENT} radius={[0, 8, 8, 0]} barSize={18} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </SectionCard>
-
-              <SectionCard className="lg:col-span-2">
-                <ChartHeader
-                  icon={BarChart3}
-                  title="Ventes par catégorie"
-                  subtitle="Répartition du chiffre d’affaires"
-                />
-                {!displayCategorySales.length ? <EmptyChart /> : (
-                  <div className="h-[300px] w-full pb-5">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={displayCategorySales}
-                          dataKey="value"
-                          nameKey="name"
-                          innerRadius={58}
-                          outerRadius={90}
-                          paddingAngle={3}
-                          stroke="none"
-                        >
-                          {displayCategorySales.map((entry, index) => (
-                            <Cell key={entry.name} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          formatter={(value) => [formatCurrency(value, displayCurrency), 'Ventes']}
-                          contentStyle={{
-                            border: '1px solid #F3E8DE',
-                            borderRadius: 14,
-                            boxShadow: '0 10px 30px rgba(70,50,30,.12)',
-                            fontSize: 12,
-                          }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </SectionCard>
-            </div>
+            <DebtSummary debts={debts} currencySettings={currencySettings} />
 
             <div className="grid items-start gap-4 lg:grid-cols-2">
               <RecentActivities activities={activities} currencySettings={currencySettings} />
