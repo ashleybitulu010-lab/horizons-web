@@ -12,6 +12,40 @@ const EMPTY_DATA = {
   depenses: [],
 };
 
+function rowKey(table, row) {
+  return table === 'stocks' ? row?.numero : row?.id;
+}
+
+function applyRealtimeChange(currentData, table, payload) {
+  const rows = currentData[table] || [];
+  const eventType = payload.eventType;
+  const record = eventType === 'DELETE' ? payload.old : payload.new;
+  const key = rowKey(table, record);
+  if (key === undefined || key === null) return currentData;
+
+  if (eventType === 'DELETE') {
+    return {
+      ...currentData,
+      [table]: rows.filter((row) => rowKey(table, row) !== key),
+    };
+  }
+
+  const existingIndex = rows.findIndex((row) => rowKey(table, row) === key);
+  if (existingIndex === -1) {
+    return {
+      ...currentData,
+      [table]: [...rows, record],
+    };
+  }
+
+  const nextRows = rows.slice();
+  nextRows[existingIndex] = { ...nextRows[existingIndex], ...record };
+  return {
+    ...currentData,
+    [table]: nextRows,
+  };
+}
+
 export function useDashboardData(user, authToken) {
   const userId = user?.id;
   const [clientId, setClientId] = useState(null);
@@ -120,7 +154,7 @@ export function useDashboardData(user, authToken) {
     let refreshTimer;
     const scheduleRefresh = () => {
       window.clearTimeout(refreshTimer);
-      refreshTimer = window.setTimeout(() => fetchData({ silent: true }), 180);
+      refreshTimer = window.setTimeout(() => fetchData({ silent: true }), 100);
     };
 
     let channel = supabase.channel(`dashboard-${clientId}`);
@@ -133,25 +167,39 @@ export function useDashboardData(user, authToken) {
           table,
           filter: `client_id=eq.${clientId}`,
         },
-        scheduleRefresh,
+        (payload) => {
+          setData((currentData) => applyRealtimeChange(currentData, table, payload));
+          setLastUpdated(new Date());
+          scheduleRefresh();
+        },
       );
     });
 
     channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') setRealtimeStatus('connected');
+      if (status === 'SUBSCRIBED') {
+        setRealtimeStatus('connected');
+        // Close the gap between the initial fetch and channel subscription.
+        scheduleRefresh();
+      }
       else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') setRealtimeStatus('error');
       else if (status === 'CLOSED') setRealtimeStatus('disconnected');
       else setRealtimeStatus('connecting');
     });
 
-    const refreshOnFocus = () => {
+    const refreshWhenActive = () => {
       if (document.visibilityState === 'visible') scheduleRefresh();
     };
-    document.addEventListener('visibilitychange', refreshOnFocus);
+    const fallbackRefresh = window.setInterval(scheduleRefresh, 15_000);
+    document.addEventListener('visibilitychange', refreshWhenActive);
+    window.addEventListener('focus', refreshWhenActive);
+    window.addEventListener('online', refreshWhenActive);
 
     return () => {
       window.clearTimeout(refreshTimer);
-      document.removeEventListener('visibilitychange', refreshOnFocus);
+      window.clearInterval(fallbackRefresh);
+      document.removeEventListener('visibilitychange', refreshWhenActive);
+      window.removeEventListener('focus', refreshWhenActive);
+      window.removeEventListener('online', refreshWhenActive);
       supabase.removeChannel(channel);
     };
   }, [clientId, fetchData]);
