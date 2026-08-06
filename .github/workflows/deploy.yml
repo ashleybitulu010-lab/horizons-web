@@ -32,7 +32,24 @@ jobs:
 
           npm install
           node tools/generate-llms.js || true
-          npx vite build --outDir dist
+
+          # Build beside the live directory, then swap it atomically. Some
+          # legacy assets can be owned by another deployment user, so asking
+          # Vite to empty the live directory can fail with EACCES.
+          BUILD_DIR=$(mktemp -d "$APP_DIR/.dist-build-XXXXXX")
+          BACKUP_DIR="$APP_DIR/.dist-backup-${GITHUB_RUN_ID}"
+          trap 'rm -rf "${BUILD_DIR:-}" 2>/dev/null || true' EXIT
+          npx vite build --outDir "$BUILD_DIR"
+
+          if [ -d "$APP_DIR/dist" ]; then
+            mv "$APP_DIR/dist" "$BACKUP_DIR"
+          fi
+          if ! mv "$BUILD_DIR" "$APP_DIR/dist"; then
+            [ -d "$BACKUP_DIR" ] && mv "$BACKUP_DIR" "$APP_DIR/dist"
+            exit 1
+          fi
+          BUILD_DIR=""
+          rm -rf "$BACKUP_DIR" 2>/dev/null || echo "WARN: previous dist could not be removed"
 
           # nginx serves /opt/ashledger/dist directly — rebuild is enough (no process restart).
           # Keep PM2 fallback only if nginx/PocketBase stack is not present.
