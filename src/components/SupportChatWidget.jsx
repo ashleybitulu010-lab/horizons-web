@@ -3,7 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Send, ChevronDown } from 'lucide-react';
 import pb from '@/lib/pocketbaseClient';
 import Ashy from '@/components/Ashy';
+import EmojiText from '@/components/EmojiText';
 import { useChat } from '@/context/ChatContext';
+import { useIsMobile } from '@/hooks/use-mobile';
 import {
   useOnboarding,
   WELCOME_ONBOARDING,
@@ -16,7 +18,11 @@ import {
 import { checkOnboardingStep, detectPrematureSale } from '@/lib/onboardingChecks';
 import { localAshyReply, escalateToTelegramSupport } from '@/lib/ashyAssistant';
 import { readStoredCurrencyPreference } from '@/lib/currency';
-import { cleanUtf8Text, normalizeMessageText } from '@/lib/textEncoding';
+import {
+  cleanUtf8Text,
+  compactSpacedDigits,
+  normalizeMessageText,
+} from '@/lib/textEncoding';
 
 const SUPPORT_AVATAR = 'https://horizons-cdn.hostinger.com/29358ba6-568b-49c6-9aac-6ece4b30fac6/ca8bd733c63d36fa2caff0db62fb3057.png';
 
@@ -124,6 +130,8 @@ function ProgressBar({ progress, visible }) {
 
 export default function SupportChatWidget({ user, forceOpen = false }) {
   const { messages: mainMessages, loading: mainLoading } = useChat();
+  const isMobile = useIsMobile();
+  const bubbleSize = isMobile ? 56 : BUBBLE_SIZE;
   const currencySettings = readStoredCurrencyPreference(user?.id);
   const {
     state: onboarding,
@@ -432,12 +440,16 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
   ]);
 
   const onPointerDown = useCallback((e) => {
+    if (isMobile) {
+      hasMoved.current = false;
+      return;
+    }
     e.preventDefault();
     hasMoved.current = false;
     dragStart.current = { clientX: e.clientX, clientY: e.clientY, bx: pos.x, by: pos.y };
     setIsDragging(true);
     setSnapTransition(false);
-  }, [pos]);
+  }, [isMobile, pos]);
 
   useEffect(() => {
     if (!isDragging) return;
@@ -514,6 +526,18 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
   }, [skipGuide, pushGuide, withTyping]);
 
   const getPanelStyle = () => {
+    if (isMobile) {
+      return {
+        position: 'fixed',
+        left: 8,
+        right: 8,
+        top: 'max(8px, env(safe-area-inset-top))',
+        bottom: 'max(8px, env(safe-area-inset-bottom))',
+        width: 'auto',
+        height: 'auto',
+        zIndex: 99,
+      };
+    }
     const vw = window.innerWidth;
     const panelW = Math.min(vw - 48, 384);
     const panelH = Math.min(520, window.innerHeight - 120);
@@ -708,9 +732,15 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
                         }`}
                         style={isUser ? { backgroundColor: '#FF6B00' } : {}}
                       >
-                        {isUser
-                          ? cleanUtf8Text(msg.content)
-                          : normalizeMessageText(msg.content, currencySettings)}
+                        <span className="chat-text">
+                          <EmojiText>
+                            {compactSpacedDigits(
+                              isUser
+                                ? cleanUtf8Text(msg.content)
+                                : normalizeMessageText(msg.content, currencySettings),
+                            )}
+                          </EmojiText>
+                        </span>
                         {Array.isArray(msg.actions) && msg.actions.length > 0 && (
                           <div className="mt-3 flex flex-col gap-2">
                             {msg.actions.map((action) => (
@@ -734,7 +764,10 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
                           </div>
                         )}
                         <div className="flex items-center justify-end gap-0.5 mt-0.5">
-                          <span className={`text-[10px] tabular-nums ${isUser ? 'text-orange-200' : 'text-gray-400'}`}>
+                          <span
+                            dir="ltr"
+                            className={`chat-time text-[10px] ${isUser ? 'text-orange-200' : 'text-gray-400'}`}
+                          >
                             {getTime(msg.created)}
                           </span>
                           {isUser && <ReadTicks isRead={msg.is_read} />}
@@ -788,7 +821,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
                   enterKeyHint="enter"
                   placeholder={isGuideMode ? 'Posez une question à Ashy…' : 'Votre message…'}
                   rows={1}
-                  className="w-full resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none leading-relaxed"
+                  className="chat-input w-full resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none leading-relaxed"
                   style={{ minHeight: 20, maxHeight: 88 }}
                 />
               </div>
@@ -816,16 +849,23 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
             transition={{ type: 'spring', damping: 22, stiffness: 300 }}
             style={{
               position: 'fixed',
-              left: pos.x,
-              top: pos.y,
+              ...(isMobile
+                ? {
+                  right: 12,
+                  bottom: 'calc(84px + env(safe-area-inset-bottom))',
+                }
+                : {
+                  left: pos.x,
+                  top: pos.y,
+                }),
               zIndex: 100,
-              touchAction: 'none',
+              touchAction: isMobile ? 'auto' : 'none',
               transition: snapTransition ? 'left 0.4s cubic-bezier(0.34,1.56,0.64,1), top 0.4s cubic-bezier(0.34,1.56,0.64,1)' : undefined,
             }}
             className="flex flex-col items-end gap-2"
           >
             <AnimatePresence>
-              {showTooltip && !isDragging && (
+              {showTooltip && !isDragging && !isMobile && (
                 <motion.div
                   key="tooltip"
                   initial={{ opacity: 0, y: 6, scale: 0.94 }}
@@ -845,20 +885,25 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
               onClick={handleBubbleClick}
               className="relative flex items-center justify-center select-none"
               style={{
-                width: BUBBLE_SIZE,
-                height: BUBBLE_SIZE,
+                width: bubbleSize,
+                height: bubbleSize,
                 borderRadius: '50%',
                 background: 'transparent',
                 border: 'none',
                 padding: 0,
                 margin: 0,
                 boxShadow: 'none',
-                cursor: isDragging ? 'grabbing' : 'grab',
+                cursor: isMobile ? 'pointer' : isDragging ? 'grabbing' : 'grab',
               }}
               whileHover={{ scale: isDragging ? 1 : 1.08 }}
               whileTap={{ scale: 0.91 }}
             >
-              <Ashy size={100} onOpenChat={handleBubbleClick} celebrateSignal={celebrateSignal} thinkingSignal={thinkingSignal} />
+              <Ashy
+                size={isMobile ? 60 : 100}
+                onOpenChat={handleBubbleClick}
+                celebrateSignal={celebrateSignal}
+                thinkingSignal={thinkingSignal}
+              />
               <AnimatePresence>
                 {unread > 0 && (
                   <motion.span
