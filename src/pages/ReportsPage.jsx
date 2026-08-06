@@ -5,6 +5,7 @@ import { ArrowLeft, FileText, Download, BarChart2, TrendingUp, Calendar, FileBar
 import { useAuth } from '@/hooks/useAuth';
 import pb from '@/lib/pocketbaseClient';
 import { motion } from 'framer-motion';
+import { cleanUtf8Text } from '@/lib/textEncoding';
 
 const TYPE_LABELS = {
   monthly: 'Rapport mensuel',
@@ -126,7 +127,9 @@ export default function ReportsPage() {
                       <Icon size={22} strokeWidth={1.8} style={{ color }} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-800 truncate">{report.title}</p>
+                      <p className="text-sm font-semibold text-gray-800 truncate">
+                        {cleanUtf8Text(report.title)}
+                      </p>
                       <p className="text-xs text-gray-400 font-medium mt-0.5">
                         {TYPE_LABELS[report.type] || 'Rapport'}
                       </p>

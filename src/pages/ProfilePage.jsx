@@ -5,6 +5,7 @@ import { ArrowLeft, Save, Eye, EyeOff, User } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import pb from '@/lib/pocketbaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
+import { cleanUtf8Text } from '@/lib/textEncoding';
 
 function Toast({ message, onDismiss }) {
   useEffect(() => {
@@ -74,8 +75,8 @@ export default function ProfilePage() {
     pb.collection('users').getOne(user.id)
       .then((rec) => {
         setProfile(rec);
-        setFirstName(rec.firstName || '');
-        setLastName(rec.lastName || '');
+        setFirstName(cleanUtf8Text(rec.firstName || ''));
+        setLastName(cleanUtf8Text(rec.lastName || ''));
       })
       .catch(() => setToast({ type: 'error', text: 'Erreur lors du chargement du profil.' }))
       .finally(() => setLoading(false));

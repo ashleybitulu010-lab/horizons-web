@@ -5,6 +5,7 @@ import {
   defaultOnboardingState,
   readOnboardingState,
 } from '@/hooks/useOnboarding';
+import { cleanUtf8Text } from '@/lib/textEncoding';
 
 function getRecord() {
   return pb.authStore.record ?? pb.authStore.model ?? null;
@@ -12,8 +13,8 @@ function getRecord() {
 
 function mapUser(record) {
   if (!record) return null;
-  const firstName = record.firstName || '';
-  const lastName = record.lastName || '';
+  const firstName = cleanUtf8Text(record.firstName || '');
+  const lastName = cleanUtf8Text(record.lastName || '');
   const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
   return {
     id: record.id,

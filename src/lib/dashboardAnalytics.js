@@ -1,3 +1,5 @@
+import { cleanUtf8Text } from '@/lib/textEncoding';
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const DATE_FIELDS = {
@@ -122,19 +124,19 @@ function parseDate(row, type) {
 }
 
 function productName(product) {
-  return String(firstValue(product, PRODUCT_NAME_FIELDS) || 'Produit sans nom');
+  return cleanUtf8Text(firstValue(product, PRODUCT_NAME_FIELDS) || 'Produit sans nom');
 }
 
 function productCategory(product) {
-  return String(firstValue(product, PRODUCT_CATEGORY_FIELDS) || 'Non catégorisé');
+  return cleanUtf8Text(firstValue(product, PRODUCT_CATEGORY_FIELDS) || 'Non catégorisé');
 }
 
 function saleProductName(sale, product) {
-  return String(firstValue(sale, PRODUCT_NAME_FIELDS) || (product ? productName(product) : 'Produit'));
+  return cleanUtf8Text(firstValue(sale, PRODUCT_NAME_FIELDS) || (product ? productName(product) : 'Produit'));
 }
 
 function saleCategory(sale, product) {
-  return String(firstValue(sale, PRODUCT_CATEGORY_FIELDS) || (product ? productCategory(product) : 'Non catégorisé'));
+  return cleanUtf8Text(firstValue(sale, PRODUCT_CATEGORY_FIELDS) || (product ? productCategory(product) : 'Non catégorisé'));
 }
 
 function saleQuantity(sale) {
@@ -353,7 +355,7 @@ function buildActivities(ventes, depenses, products, stocks, productById) {
     id: `depense-${rowId(expense)}`,
     type: 'depense',
     title: 'Dépense enregistrée',
-    detail: String(firstValue(expense, EXPENSE_NAME_FIELDS) || 'Dépense'),
+    detail: cleanUtf8Text(firstValue(expense, EXPENSE_NAME_FIELDS) || 'Dépense'),
     amount: expenseAmount(expense),
     date: parseDate(expense, 'depenses'),
   }));
@@ -411,7 +413,7 @@ function buildAlerts(inventory, trends, depenses) {
         type: 'depense',
         tone: 'danger',
         title: 'Dépense inhabituelle',
-        message: `${String(firstValue(unusual.expense, EXPENSE_NAME_FIELDS) || 'Une dépense')} dépasse nettement votre moyenne habituelle.`,
+        message: `${cleanUtf8Text(firstValue(unusual.expense, EXPENSE_NAME_FIELDS) || 'Une dépense')} dépasse nettement votre moyenne habituelle.`,
       });
     }
   }
