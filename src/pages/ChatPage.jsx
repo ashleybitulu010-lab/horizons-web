@@ -6,6 +6,8 @@ import SupportChatWidget from '@/components/SupportChatWidget';
 import { useAuth } from '@/hooks/useAuth';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useChat } from '@/context/ChatContext';
+import { readStoredCurrencyPreference } from '@/lib/currency';
+import { cleanUtf8Text, normalizeMessageText } from '@/lib/textEncoding';
 import {
   persistRelaunchGuide,
   useOnboarding,
@@ -80,8 +82,11 @@ function TypingIndicator() {
 }
 
 /* ── Single message ── */
-function Message({ message, isNew }) {
+function Message({ message, isNew, currencySettings }) {
   const isUser = message.role === 'user';
+  const content = isUser
+    ? cleanUtf8Text(message.content)
+    : normalizeMessageText(message.content, currencySettings);
   return (
     <motion.div
       initial={isNew ? { opacity: 0, y: 10, scale: 0.97 } : false}
@@ -102,7 +107,7 @@ function Message({ message, isNew }) {
         }`}
         style={isUser ? { backgroundColor: '#FF6B00' } : { backgroundColor: '#FFFFFF' }}
       >
-        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{message.content}</p>
+        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{content}</p>
         <div className="flex items-center justify-end gap-0.5 mt-1">
           <span className={`text-[10px] select-none font-medium tabular-nums ${isUser ? 'text-orange-200' : 'text-gray-400'}`}>
             {message.time}
@@ -224,6 +229,7 @@ function SideDrawer({ open, onClose, onLogout, onNavigate, onGuide, user }) {
 /* ── Main chat page ── */
 export default function ChatPage() {
   const { user, logout } = useAuth();
+  const currencySettings = readStoredCurrencyPreference(user?.id);
   const navigate = useNavigate();
   const { messages, newIds, input, setInput, loading, historyLoading, sendMessage } = useChat();
   const { isGuideMode, isPending, isActive } = useOnboarding(user?.id, user?.created);
@@ -435,7 +441,7 @@ export default function ChatPage() {
                 <symbol id="ic-coin" viewBox="0 0 32 32">
                   <circle cx="16" cy="16" r="13" stroke="#CC8844" strokeWidth="1.8" fill="none"/>
                   <circle cx="16" cy="16" r="9" stroke="#CC8844" strokeWidth="1" fill="none"/>
-                  <text x="16" y="21" textAnchor="middle" fontSize="10" fontWeight="bold" fill="#CC8844">€</text>
+                  <text x="16" y="21" textAnchor="middle" fontSize="10" fontWeight="bold" fill="#CC8844">$</text>
                 </symbol>
                 {/* Wallet icon */}
                 <symbol id="ic-wallet" viewBox="0 0 32 32">
@@ -656,7 +662,12 @@ export default function ChatPage() {
             <DateDivider label="Aujourd'hui" />
             <AnimatePresence initial={false}>
               {messages.map(msg => (
-                <Message key={msg.id} message={msg} isNew={newIds.has(msg.id)} />
+                <Message
+                  key={msg.id}
+                  message={msg}
+                  isNew={newIds.has(msg.id)}
+                  currencySettings={currencySettings}
+                />
               ))}
             </AnimatePresence>
             <AnimatePresence>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Send, Bot, CheckCheck } from 'lucide-react';
 import apiServerClient from '@/lib/apiServerClient';
+import { normalizeMessageText } from '@/lib/textEncoding';
 const SESSION_KEY = 'n8n-chat-session';
 function getSessionId() {
   let id = localStorage.getItem(SESSION_KEY);
@@ -48,7 +49,8 @@ const HomePage = () => {
       const res = await apiServerClient.fetch('/chat', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json; charset=UTF-8',
+          Accept: 'application/json; charset=UTF-8',
         },
         body: JSON.stringify({
           message: text,
@@ -57,7 +59,11 @@ const HomePage = () => {
       });
       const data = await res.json().catch(() => ({}));
       const errorText = (data && data.error && typeof data.error === 'object' ? data.error.message : data.error) || (typeof data?.message === 'string' ? data.message : null) || "L'assistant n'est pas encore configuré (webhook n8n manquant). Réessayez plus tard.";
-      const reply = res.ok ? typeof data.reply === 'string' ? data.reply : "Je n'ai pas reçu de réponse de l'agent." : errorText;
+      const reply = normalizeMessageText(
+        res.ok
+          ? typeof data.reply === 'string' ? data.reply : "Je n'ai pas reçu de réponse de l'agent."
+          : errorText,
+      );
       setMessages(prev => [...prev, {
         id: 'b-' + Date.now(),
         from: 'bot',

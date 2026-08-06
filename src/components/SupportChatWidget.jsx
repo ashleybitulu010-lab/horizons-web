@@ -15,6 +15,8 @@ import {
 } from '@/hooks/useOnboarding';
 import { checkOnboardingStep, detectPrematureSale } from '@/lib/onboardingChecks';
 import { localAshyReply, escalateToTelegramSupport } from '@/lib/ashyAssistant';
+import { readStoredCurrencyPreference } from '@/lib/currency';
+import { cleanUtf8Text, normalizeMessageText } from '@/lib/textEncoding';
 
 const SUPPORT_AVATAR = 'https://horizons-cdn.hostinger.com/29358ba6-568b-49c6-9aac-6ece4b30fac6/ca8bd733c63d36fa2caff0db62fb3057.png';
 
@@ -122,6 +124,7 @@ function ProgressBar({ progress, visible }) {
 
 export default function SupportChatWidget({ user, forceOpen = false }) {
   const { messages: mainMessages, loading: mainLoading } = useChat();
+  const currencySettings = readStoredCurrencyPreference(user?.id);
   const {
     state: onboarding,
     progress,
@@ -705,7 +708,9 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
                         }`}
                         style={isUser ? { backgroundColor: '#FF6B00' } : {}}
                       >
-                        {msg.content}
+                        {isUser
+                          ? cleanUtf8Text(msg.content)
+                          : normalizeMessageText(msg.content, currencySettings)}
                         {Array.isArray(msg.actions) && msg.actions.length > 0 && (
                           <div className="mt-3 flex flex-col gap-2">
                             {msg.actions.map((action) => (

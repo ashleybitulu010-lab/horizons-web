@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useRef, useCallback, useEff
 import { useAuth } from '@/hooks/useAuth';
 import apiServerClient from '@/lib/apiServerClient';
 import { readStoredCurrencyPreference } from '@/lib/currency';
+import { cleanUtf8Text, normalizeMessageText } from '@/lib/textEncoding';
 
 export const WELCOME_MESSAGE = {
   id: 'welcome',
@@ -55,11 +56,13 @@ function clearStoredMessages(userId) {
   if (key) localStorage.removeItem(key);
 }
 
-function mapApiMessages(apiMessages) {
+function mapApiMessages(apiMessages, currencySettings) {
   return apiMessages.map((m, i) => ({
     id: m.id || `loaded-${i}`,
     role: m.role === 'user' ? 'user' : 'assistant',
-    content: m.content || m.message || '',
+    content: m.role === 'user'
+      ? cleanUtf8Text(m.content || m.message || '')
+      : normalizeMessageText(m.content || m.message || '', currencySettings),
     time: m.timestamp
       ? new Date(m.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
       : '',
@@ -122,13 +125,17 @@ export function ChatProvider({ children }) {
 
     (async () => {
       try {
-        const headers = { 'Content-Type': 'application/json' };
+        const currency = readStoredCurrencyPreference(user?.id);
+        const headers = {
+          'Content-Type': 'application/json; charset=UTF-8',
+          Accept: 'application/json; charset=UTF-8',
+        };
         if (token) headers.Authorization = `Bearer ${token}`;
 
         const res = await apiServerClient.fetch('/history', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ user_id: stableId }),
+          body: JSON.stringify({ user_id: stableId, encoding: 'UTF-8' }),
         });
 
         if (!res.ok || cancelled) return;
@@ -137,7 +144,7 @@ export function ChatProvider({ children }) {
         if (cancelled) return;
 
         const remote = data.success && Array.isArray(data.messages) && data.messages.length > 0
-          ? mapApiMessages(data.messages)
+          ? mapApiMessages(data.messages, currency)
           : [];
 
         const localOnly = (readStoredMessages(stableId) || []).filter((m) => m.id !== 'welcome');
@@ -155,7 +162,7 @@ export function ChatProvider({ children }) {
     })();
 
     return () => { cancelled = true; };
-  }, [stableId, token]);
+  }, [stableId, token, user?.id]);
 
   useEffect(() => {
     if (!stableId || messages.length <= 1) return;
@@ -166,7 +173,10 @@ export function ChatProvider({ children }) {
     if (!stableId) return;
     try {
       const currency = readStoredCurrencyPreference(user?.id);
-      const headers = { 'Content-Type': 'application/json' };
+      const headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        Accept: 'application/json; charset=UTF-8',
+      };
       if (token) headers.Authorization = `Bearer ${token}`;
       await apiServerClient.fetch('/thread/message', {
         method: 'POST',
@@ -184,6 +194,8 @@ export function ChatProvider({ children }) {
           currency: currency.displayCurrency,
           ledgerCurrency: currency.ledgerCurrency,
           usdCdfRate: currency.usdCdfRate,
+          encoding: 'UTF-8',
+          emojiFont: 'Noto Color Emoji',
         }),
       });
     } catch {
@@ -213,7 +225,10 @@ export function ChatProvider({ children }) {
 
     try {
       const currency = readStoredCurrencyPreference(user?.id);
-      const headers = { 'Content-Type': 'application/json' };
+      const headers = {
+        'Content-Type': 'application/json; charset=UTF-8',
+        Accept: 'application/json; charset=UTF-8',
+      };
       if (token) headers.Authorization = `Bearer ${token}`;
       const res = await apiServerClient.fetch('/chat', {
         method: 'POST',
@@ -231,12 +246,23 @@ export function ChatProvider({ children }) {
           currency: currency.displayCurrency,
           ledgerCurrency: currency.ledgerCurrency,
           usdCdfRate: currency.usdCdfRate,
+          encoding: 'UTF-8',
+          responseEncoding: 'UTF-8',
+          emojiFont: 'Noto Color Emoji',
+          pdfEncoding: 'UTF-8',
+          pdfEmojiFonts: [
+            'Noto Color Emoji',
+            'Apple Color Emoji',
+            'Segoe UI Emoji',
+          ],
+          reportCurrency: currency.displayCurrency,
         }),
       });
       const data = await res.json();
-      const replyText = res.ok
+      const rawReplyText = res.ok
         ? (data.reply || data.output || data.message || data.text || "Je n'ai pas reçu de réponse.")
         : (typeof data.error === 'string' ? data.error : data.error?.message || data.message || 'Une erreur est survenue. Veuillez réessayer.');
+      const replyText = normalizeMessageText(rawReplyText, currency);
 
       const replyId = Date.now() + 1;
       setMessages((prev) => {
