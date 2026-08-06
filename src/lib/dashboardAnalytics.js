@@ -26,25 +26,20 @@ const PRODUCT_SALE_PRICE_FIELDS = [
   'selling_price',
   'prix_unitaire',
 ];
-const PRODUCT_STOCK_FIELDS = [
-  'stock_actuel',
-  'quantite_stock',
-  'quantite_disponible',
-  'quantite_restante',
-  'current_stock',
-  'stock',
-];
-const STOCK_CURRENT_FIELDS = [
-  'stock_apres',
-  'nouvelle_quantite',
-  'quantite_restante',
-  'stock_actuel',
-  'current_stock',
-];
-const STOCK_QUANTITY_FIELDS = [
+const STOCK_INITIAL_FIELDS = ['stock_initial', 'initial_stock', 'quantite_initiale'];
+const STOCK_ENTRY_FIELDS = [
   'entrees',
   'quantite_ajoutee',
   'quantite_entree',
+  'entries',
+];
+const STOCK_EXIT_FIELDS = [
+  'sorties',
+  'quantite_sortie',
+  'quantite_retiree',
+  'exits',
+];
+const STOCK_FALLBACK_QUANTITY_FIELDS = [
   'quantite',
   'quantity',
   'mouvement',
@@ -163,7 +158,14 @@ function saleCost(sale, product) {
 }
 
 function movementQuantity(stock) {
-  const quantity = firstNumber(stock, STOCK_QUANTITY_FIELDS) ?? 0;
+  const initial = firstNumber(stock, STOCK_INITIAL_FIELDS);
+  const entries = firstNumber(stock, STOCK_ENTRY_FIELDS);
+  const exits = firstNumber(stock, STOCK_EXIT_FIELDS);
+  if (initial !== null || entries !== null || exits !== null) {
+    return (initial ?? 0) + (entries ?? 0) - (exits ?? 0);
+  }
+
+  const quantity = firstNumber(stock, STOCK_FALLBACK_QUANTITY_FIELDS) ?? 0;
   const movementType = String(firstValue(stock, ['type_mouvement', 'movement_type', 'type']) || '').toLowerCase();
   return /(sortie|retrait|vente|decrease|out)/.test(movementType)
     ? -Math.abs(quantity)
@@ -212,7 +214,6 @@ function periodTotals(ventes, depenses, productById, now) {
 
 function calculateInventory(products, stocks, ventes, productById) {
   const stockRowsByProduct = new Map();
-  const soldByProduct = new Map();
 
   stocks.forEach((stock) => {
     const id = relatedProductId(stock);
@@ -222,28 +223,12 @@ function calculateInventory(products, stocks, ventes, productById) {
     stockRowsByProduct.set(id, rows);
   });
 
-  ventes.forEach((sale) => {
-    const id = relatedProductId(sale);
-    if (!id) return;
-    soldByProduct.set(id, (soldByProduct.get(id) || 0) + saleQuantity(sale));
-  });
-
   return products.map((product) => {
     const id = rowId(product);
-    const directStock = firstNumber(product, PRODUCT_STOCK_FIELDS);
     const stockRows = (stockRowsByProduct.get(id) || [])
       .slice()
       .sort((a, b) => (parseDate(b, 'stocks')?.getTime() || 0) - (parseDate(a, 'stocks')?.getTime() || 0));
-
-    let quantity = directStock;
-    if (quantity === null) {
-      const latestCurrent = stockRows.length ? firstNumber(stockRows[0], STOCK_CURRENT_FIELDS) : null;
-      quantity = latestCurrent !== null
-        ? latestCurrent
-        : sum(stockRows, movementQuantity) - (soldByProduct.get(id) || 0);
-    }
-
-    const safeQuantity = Math.max(0, quantity ?? 0);
+    const safeQuantity = Math.max(0, sum(stockRows, movementQuantity));
     const purchasePrice = Math.max(0, firstNumber(product, PRODUCT_PURCHASE_PRICE_FIELDS) ?? 0);
     const configuredThreshold = firstNumber(product, ['seuil_alerte', 'stock_minimum', 'seuil_stock', 'reorder_level'])
       ?? (stockRows.length ? firstNumber(stockRows[0], ['seuil_alerte', 'stock_minimum', 'seuil_stock']) : null);
@@ -477,6 +462,14 @@ export function buildDashboardAnalytics({ produits = [], stocks = [], ventes = [
   const inventory = calculateInventory(produits, stocks, ventes, productById);
   const trends = periodTotals(ventes, depenses, productById, Date.now());
   const topProducts = buildTopProducts(ventes, productById);
+  const recentTopProducts = buildTopProducts(
+    ventes.filter((sale) => inPeriod(
+      parseDate(sale, 'ventes'),
+      Date.now() - (7 * DAY_MS),
+      Date.now() + 1,
+    )),
+    productById,
+  );
 
   const metrics = {
     revenue,
@@ -495,7 +488,7 @@ export function buildDashboardAnalytics({ produits = [], stocks = [], ventes = [
     categorySales: buildCategorySales(ventes, productById),
     activities: buildActivities(ventes, depenses, produits, stocks, productById),
     alerts: buildAlerts(inventory, trends, depenses),
-    insights: buildInsights(inventory, trends, topProducts),
+    insights: buildInsights(inventory, trends, recentTopProducts),
     inventory,
   };
 }
