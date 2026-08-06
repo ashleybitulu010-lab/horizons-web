@@ -16,6 +16,31 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 20
     steps:
+      - name: Emergency fix for 403 permissions/dist issue
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_DIR=/opt/ashledger
+          
+          # Run emergency fix first
+          if [ -f "$APP_DIR/tools/fix-dist-permissions.sh" ]; then
+            echo "Running emergency fix script..."
+            bash "$APP_DIR/tools/fix-dist-permissions.sh" || echo "Fix script failed, continuing..."
+          else
+            echo "Fix script not found, applying inline fix..."
+            # Inline emergency fix
+            chmod -R u=rwX,go=rX "$APP_DIR/dist" 2>/dev/null || true
+            if [ ! -f "$APP_DIR/dist/index.html" ]; then
+              LATEST=$(ls -td "$APP_DIR"/.dist-backup-* 2>/dev/null | head -1)
+              if [ -n "$LATEST" ]; then
+                rm -rf "$APP_DIR/dist"
+                cp -a "$LATEST" "$APP_DIR/dist"
+                chmod -R u=rwX,go=rX "$APP_DIR/dist"
+              fi
+            fi
+            nginx -t && systemctl reload nginx 2>/dev/null || true
+          fi
+          
       - name: Build static app, reload nginx, verify HTTP 200
         shell: bash
         env:
