@@ -74,6 +74,7 @@ export function initAnalytics() {
   ensureGtag();
   configGa();
   initialized = true;
+  exposeDebugAnalytics();
   trackRetentionVisit();
   startSessionClock();
 }
@@ -139,6 +140,10 @@ export function trackExpenseAdded(extra = {}) {
   trackEvent('expense_added', extra);
 }
 
+export function trackStockAdded(extra = {}) {
+  trackEvent('stock_added', extra);
+}
+
 export function trackReportGenerated(extra = {}) {
   trackEvent('report_generated', extra);
 }
@@ -153,6 +158,58 @@ export function trackSubscriptionPurchased(extra = {}) {
     value: extra.value ?? 10,
     ...extra,
   });
+}
+
+/** Business events expected in GA4 DebugView / reports. */
+export const BUSINESS_EVENTS = [
+  'sign_up',
+  'login',
+  'free_trial_started',
+  'subscription_purchased',
+  'sale_added',
+  'expense_added',
+  'stock_added',
+  'report_generated',
+];
+
+/**
+ * Fire each business event once (debug / QA). Used with ?debug_ga=1&verify_events=1.
+ * Returns the event names that were sent.
+ */
+export function verifyBusinessEventsOnce(source = 'verify_events') {
+  if (!isBrowser()) return [];
+  initAnalytics();
+
+  trackSignUp('verify');
+  trackLogin('verify');
+  // free_trial_started is included in trackSignUp; send once more under explicit name path
+  // only if signup path changes later — already fired above.
+  trackSubscriptionPurchased({ source, plan: 'premium' });
+  trackSaleAdded({ source });
+  trackExpenseAdded({ source });
+  trackStockAdded({ source });
+  trackReportGenerated({ source });
+
+  return [...BUSINESS_EVENTS];
+}
+
+/** Expose helpers in debug mode so QA can trigger events from DevTools. */
+export function exposeDebugAnalytics() {
+  if (!isBrowser() || !isDebugMode()) return;
+  window.__ASH_GA = {
+    id: GA_MEASUREMENT_ID,
+    trackEvent,
+    trackSignUp,
+    trackLogin,
+    trackSaleAdded,
+    trackExpenseAdded,
+    trackStockAdded,
+    trackReportGenerated,
+    trackSubscriptionPurchased,
+    trackFromAssistantReply,
+    verifyBusinessEventsOnce,
+    BUSINESS_EVENTS,
+  };
 }
 
 /**
@@ -264,21 +321,57 @@ function startSessionClock() {
   window.addEventListener('pagehide', onHide);
 }
 
+function matchesAny(text, patterns) {
+  return patterns.some((re) => re.test(text));
+}
+
 /** Infer business events from Ash bot replies (non-blocking). */
 export function trackFromAssistantReply(replyText) {
   const text = String(replyText || '');
   if (!text) return;
 
-  if (/vente[\s\S]{0,80}enregistr/i.test(text) || /💰[\s\S]{0,40}vente/i.test(text)) {
+  if (
+    matchesAny(text, [
+      /vente[\s\S]{0,120}(enregistr|ajout|ok|cr[éeé]{1,3}|succ[eè]s|mise? [àa] jour)/i,
+      /(enregistr|ajout)[\s\S]{0,60}vente/i,
+      /vendu[\s\S]{0,60}(enregistr|ok|succ[eè]s|\d)/i,
+      /transaction[\s\S]{0,60}enregistr/i,
+      /💰[\s\S]{0,60}vente/i,
+    ])
+  ) {
     trackSaleAdded({ source: 'chat_reply' });
   }
-  if (/d[ée]pense[\s\S]{0,80}enregistr/i.test(text) || /💸[\s\S]{0,40}d[ée]pense/i.test(text)) {
+
+  if (
+    matchesAny(text, [
+      /d[ée]pense[\s\S]{0,120}(enregistr|ajout|ok|cr[éeé]{1,3}|succ[eè]s)/i,
+      /(enregistr|ajout)[\s\S]{0,60}d[ée]pense/i,
+      /paiement[\s\S]{0,60}(enregistr|ok|succ[eè]s)/i,
+      /💸[\s\S]{0,60}d[ée]pense/i,
+    ])
+  ) {
     trackExpenseAdded({ source: 'chat_reply' });
   }
+
   if (
-    /bilan/i.test(text)
-    || /\.pdf/i.test(text)
-    || /rapport[\s\S]{0,40}(g[ée]n[ée]r|prêt|disponible)/i.test(text)
+    matchesAny(text, [
+      /stock[\s\S]{0,120}(ajout|enregistr|mis [àa] jour|prêt|ok|succ[eè]s|actualis)/i,
+      /(ajout|enregistr|mis [àa] jour)[\s\S]{0,60}stock/i,
+      /quantit[ée][\s\S]{0,60}(ajout|enregistr|ok|succ[eè]s)/i,
+      /📦[\s\S]{0,60}stock/i,
+    ])
+  ) {
+    trackStockAdded({ source: 'chat_reply' });
+  }
+
+  if (
+    matchesAny(text, [
+      /bilan/i,
+      /\.pdf/i,
+      /rapport[\s\S]{0,60}(g[ée]n[ée]r|prêt|disponible|ok)/i,
+      /https?:\/\/\S+\.pdf/i,
+      /voici[\s\S]{0,60}(votre\s+)?(bilan|rapport)/i,
+    ])
   ) {
     trackReportGenerated({ source: 'chat_reply' });
   }

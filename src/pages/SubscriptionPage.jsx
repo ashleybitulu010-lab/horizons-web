@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { createDashboardSession, supabase } from '@/lib/supabaseRest';
-import { syncSubscriptionAnalytics } from '@/lib/analytics';
+import { syncSubscriptionAnalytics, trackEvent } from '@/lib/analytics';
 
 const FEATURES = [
   'Assistant IA financier illimité',
@@ -200,6 +200,8 @@ export default function SubscriptionPage() {
   }, [subscription]);
 
   const handleSubscribe = () => {
+    // Intent signal while WhatsApp checkout completes offline.
+    trackEvent('subscription_checkout_started', { channel: 'whatsapp' });
     window.open('https://wa.me/243821386516?text=Bonjour%2C%20je%20souhaite%20m%27abonner%20%C3%A0%20Ash%20Ledger%20Premium.', '_blank', 'noopener,noreferrer');
   };
 
