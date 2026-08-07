@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { ArrowLeft, FileText, Download, BarChart2, TrendingUp, Calendar, FileBarChart } from 'lucide-react';
@@ -7,6 +7,7 @@ import pb from '@/lib/pocketbaseClient';
 import { motion } from 'framer-motion';
 import { cleanUtf8Text } from '@/lib/textEncoding';
 import { trackReportGenerated } from '@/lib/analytics';
+import { downloadLocalReport, listLocalReports } from '@/lib/saveReport';
 
 const TYPE_LABELS = {
   monthly: 'Rapport mensuel',
@@ -34,6 +35,31 @@ function formatDate(d) {
   return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+function mergeReports(remote = [], local = []) {
+  const byId = new Map();
+  remote.forEach((r) => {
+    if (r?.id) byId.set(String(r.id), { ...r, _source: 'pocketbase' });
+  });
+  local.forEach((r) => {
+    const key = String(r.id);
+    const existing = byId.get(key);
+    if (!existing) {
+      byId.set(key, { ...r, _source: 'local' });
+      return;
+    }
+    // Prefer PB metadata but keep local blob for download if PB file missing.
+    byId.set(key, {
+      ...existing,
+      blob: r.blob || existing.blob,
+      filename: r.filename || existing.filename,
+      _source: existing.file || existing.pdf_url ? 'pocketbase' : 'local',
+    });
+  });
+  return [...byId.values()].sort(
+    (a, b) => new Date(b.created || 0).getTime() - new Date(a.created || 0).getTime(),
+  );
+}
+
 export default function ReportsPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -41,29 +67,46 @@ export default function ReportsPage() {
   const [reports, setReports] = useState([]);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
+  const loadReports = useCallback(async () => {
     if (!user?.id) return;
-    pb.collection('reports')
-      .getFullList({ filter: `owner = "${user.id}"`, sort: '-created' })
-      .then(setReports)
-      .catch(() => setError('Erreur lors du chargement des rapports.'))
-      .finally(() => setLoading(false));
+    setLoading(true);
+    setError(null);
+    try {
+      const [remote, local] = await Promise.all([
+        pb.collection('reports')
+          .getFullList({ filter: `owner = "${user.id}"`, sort: '-created' })
+          .catch(() => []),
+        listLocalReports(user.id),
+      ]);
+      setReports(mergeReports(remote, local));
+    } catch {
+      setError('Erreur lors du chargement des rapports.');
+    } finally {
+      setLoading(false);
+    }
   }, [user?.id]);
 
-  const resolvePdfUrl = (report) => {
-    if (report?.pdf_url) return report.pdf_url;
-    if (report?.file) {
-      try {
-        return pb.files.getURL(report, report.file);
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  };
+  useEffect(() => {
+    loadReports();
+  }, [loadReports]);
 
   const handleDownload = (report) => {
-    const url = resolvePdfUrl(report);
+    if (report?.blob) {
+      downloadLocalReport(report);
+      trackReportGenerated({
+        source: 'reports_page_download',
+        report_type: report?.type || 'unknown',
+      });
+      return;
+    }
+    let url = report?.pdf_url || null;
+    if (!url && report?.file) {
+      try {
+        url = pb.files.getURL(report, report.file);
+      } catch {
+        url = null;
+      }
+    }
     if (url) {
       trackReportGenerated({
         source: 'reports_page_download',
@@ -138,7 +181,7 @@ export default function ReportsPage() {
               {reports.map((report, i) => {
                 const Icon = TYPE_ICONS[report.type] || FileText;
                 const color = TYPE_COLORS[report.type] || '#FF6B00';
-                const pdfUrl = resolvePdfUrl(report);
+                const canDownload = Boolean(report.blob || report.pdf_url || report.file);
                 return (
                   <motion.div
                     key={report.id}
@@ -167,10 +210,10 @@ export default function ReportsPage() {
                     </div>
                     <button
                       onClick={() => handleDownload(report)}
-                      disabled={!pdfUrl}
+                      disabled={!canDownload}
                       className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ backgroundColor: '#FFF0E6', color: '#FF6B00' }}
-                      title={pdfUrl ? 'Télécharger le PDF' : 'PDF non disponible'}
+                      title={canDownload ? 'Télécharger le PDF' : 'PDF non disponible'}
                     >
                       <Download size={13} strokeWidth={2} />
                       <span className="hidden sm:inline">PDF</span>

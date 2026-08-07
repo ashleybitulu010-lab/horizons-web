@@ -1,4 +1,4 @@
-/** Download a PDF from a base64 payload (n8n / PDFShift). */
+/** Download / convert PDF payloads (n8n / PDFShift). */
 
 export function isUsablePdfBase64(value) {
   if (typeof value !== 'string' || value.length < 200) return false;
@@ -6,17 +6,25 @@ export function isUsablePdfBase64(value) {
   return true;
 }
 
-export function downloadPdfFromBase64(base64, filename = 'bilan-ash-ledger.pdf') {
-  if (!isUsablePdfBase64(base64)) {
-    throw new Error('PDF indisponible (données binaires manquantes).');
-  }
+export function base64ToUint8Array(base64) {
   const cleaned = base64.includes(',') ? base64.split(',').pop() : base64;
   const binary = atob(cleaned);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) {
     bytes[i] = binary.charCodeAt(i);
   }
-  const blob = new Blob([bytes], { type: 'application/pdf' });
+  return bytes;
+}
+
+export function base64ToBlob(base64, mimeType = 'application/pdf') {
+  return new Blob([base64ToUint8Array(base64)], { type: mimeType });
+}
+
+export function downloadPdfFromBase64(base64, filename = 'bilan-ash-ledger.pdf') {
+  if (!isUsablePdfBase64(base64)) {
+    throw new Error('PDF indisponible (données binaires manquantes).');
+  }
+  const blob = base64ToBlob(base64);
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
@@ -25,7 +33,6 @@ export function downloadPdfFromBase64(base64, filename = 'bilan-ash-ledger.pdf')
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  // Keep blob URL briefly so the chat button can re-download.
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   return url;
 }

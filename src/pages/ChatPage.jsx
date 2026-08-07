@@ -1,10 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
-import { Send, Menu, X, User, CreditCard, BarChart2, LayoutDashboard, Settings, LogOut, Sparkles, FileDown } from 'lucide-react';
+import {
+  Send, Menu, X, User, CreditCard, BarChart2, LayoutDashboard, Settings, LogOut,
+  Sparkles, FileDown, Copy, Trash2, Forward, Check,
+} from 'lucide-react';
 import SupportChatWidget from '@/components/SupportChatWidget';
 import InstallAppBanner from '@/components/InstallAppBanner';
 import EmojiText from '@/components/EmojiText';
+import MessageActionSheet from '@/components/MessageActionSheet';
 import { useAuth } from '@/hooks/useAuth';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useChat } from '@/context/ChatContext';
@@ -20,6 +24,35 @@ import {
   useOnboarding,
   ONBOARDING_RELAUNCH_EVENT,
 } from '@/hooks/useOnboarding';
+
+const LONG_PRESS_MS = 480;
+
+async function copyText(text) {
+  const value = String(text || '');
+  if (!value) return false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
 
 const ASH_AVATAR = 'https://horizons-cdn.hostinger.com/29358ba6-568b-49c6-9aac-6ece4b30fac6/ca8bd733c63d36fa2caff0db62fb3057.png';
 
@@ -89,40 +122,123 @@ function TypingIndicator() {
 }
 
 /* ── Single message ── */
-function Message({ message, isNew, currencySettings }) {
+function Message({
+  message,
+  isNew,
+  currencySettings,
+  selectMode,
+  selected,
+  onToggleSelect,
+  onLongPress,
+}) {
   const isUser = message.role === 'user';
   const content = compactSpacedDigits(
     isUser
       ? normalizeChatIcons(message.content)
       : normalizeMessageText(message.content, currencySettings),
   );
+  const pressTimer = useRef(null);
+  const pressed = useRef(false);
+
+  const clearPress = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  };
+
+  const startPress = (e) => {
+    if (selectMode || message.id === 'welcome') return;
+    // Ignore multi-touch / right-click mouse quirks
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    pressed.current = false;
+    clearPress();
+    pressTimer.current = window.setTimeout(() => {
+      pressed.current = true;
+      try { navigator.vibrate?.(18); } catch { /* ignore */ }
+      onLongPress?.(message);
+    }, LONG_PRESS_MS);
+  };
+
+  const endPress = (e) => {
+    clearPress();
+    if (pressed.current) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+
+  const handleClick = () => {
+    if (selectMode) onToggleSelect?.(message.id);
+  };
+
   return (
     <motion.div
       initial={isNew ? { opacity: 0, y: 10, scale: 0.97 } : false}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.22, ease: 'easeOut' }}
       className={`flex items-end gap-2 px-4 py-0.5 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        if (!selectMode && message.id !== 'welcome') onLongPress?.(message);
+      }}
     >
+      {selectMode && (
+        <button
+          type="button"
+          aria-label={selected ? 'Désélectionner' : 'Sélectionner'}
+          onClick={() => onToggleSelect?.(message.id)}
+          className={`mb-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 ${
+            selected ? 'border-orange-500 bg-orange-500 text-white' : 'border-stone-300 bg-white'
+          }`}
+        >
+          {selected ? <Check size={14} strokeWidth={3} /> : null}
+        </button>
+      )}
       {!isUser && (
         <div className="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden border-2 border-white/60 shadow-sm mb-1">
           <img src={ASH_AVATAR} alt="Ash Ledger" className="w-full h-full object-cover" />
         </div>
       )}
       <div
-        className={`max-w-[72%] md:max-w-[55%] px-3.5 py-2.5 shadow-sm ${
+        role="button"
+        tabIndex={0}
+        onPointerDown={startPress}
+        onPointerUp={endPress}
+        onPointerCancel={clearPress}
+        onPointerMove={clearPress}
+        onClick={handleClick}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            if (selectMode) onToggleSelect?.(message.id);
+            else onLongPress?.(message);
+          }
+        }}
+        className={`max-w-[72%] md:max-w-[55%] px-3.5 py-2.5 shadow-sm touch-manipulation select-none ${
           isUser
             ? 'rounded-2xl rounded-br-sm text-white'
             : 'rounded-2xl rounded-bl-sm text-gray-900'
-        }`}
-        style={isUser ? { backgroundColor: '#FF6B00' } : { backgroundColor: '#FFFFFF' }}
+        } ${selected ? 'ring-2 ring-orange-400 ring-offset-1' : ''}`}
+        style={{
+          backgroundColor: isUser ? '#FF6B00' : '#FFFFFF',
+          WebkitUserSelect: 'none',
+          userSelect: 'none',
+          WebkitTouchCallout: 'none',
+        }}
       >
-        <p className="chat-text text-sm leading-relaxed whitespace-pre-wrap break-words">
+        <p
+          className="chat-text text-sm leading-relaxed whitespace-pre-wrap break-words"
+          style={{ WebkitUserSelect: 'none', userSelect: 'none' }}
+        >
           <EmojiText>{content}</EmojiText>
         </p>
         {!isUser && message.pdf?.url && (
           <a
             href={message.pdf.url}
             download={message.pdf.filename || 'bilan-ash-ledger.pdf'}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
             className="mt-2 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white"
             style={{ backgroundColor: '#FF6B00' }}
           >
@@ -291,9 +407,16 @@ export default function ChatPage() {
   const { user, logout } = useAuth();
   const currencySettings = readStoredCurrencyPreference(user?.id);
   const navigate = useNavigate();
-  const { messages, newIds, input, setInput, loading, historyLoading, sendMessage } = useChat();
+  const {
+    messages, newIds, input, setInput, loading, historyLoading, sendMessage, deleteMessages,
+  } = useChat();
   const { isGuideMode, isPending, isActive } = useOnboarding(user?.id, user?.created);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [actionMessage, setActionMessage] = useState(null);
+  const [replyTo, setReplyTo] = useState(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [toast, setToast] = useState(null);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const messagesInnerRef = useRef(null);
@@ -301,6 +424,68 @@ export default function ChatPage() {
   const prevHistoryLoadingRef = useRef(historyLoading);
   const [viewportHeight, setViewportHeight] = useState(null);
   const [viewportOffset, setViewportOffset] = useState(0);
+
+  const showToast = useCallback((text) => {
+    setToast(text);
+    window.setTimeout(() => setToast(null), 1800);
+  }, []);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  const toggleSelect = useCallback((id) => {
+    if (id === 'welcome') return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const key = String(id);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const selectedMessages = messages.filter((m) => selectedIds.has(String(m.id)));
+
+  const handleMessageAction = useCallback(async (action, message) => {
+    setActionMessage(null);
+    const text = String(message?.content || '').trim();
+
+    if (action === 'copy') {
+      const ok = await copyText(text);
+      showToast(ok ? 'Message copié' : 'Impossible de copier');
+      return;
+    }
+    if (action === 'reply') {
+      setReplyTo(message);
+      textareaRef.current?.focus();
+      return;
+    }
+    if (action === 'forward') {
+      try {
+        if (navigator.share) {
+          await navigator.share({ text });
+          return;
+        }
+      } catch {
+        /* user cancelled or share failed */
+      }
+      const ok = await copyText(text);
+      showToast(ok ? 'Message copié pour transfert' : 'Transfert impossible');
+      return;
+    }
+    if (action === 'select') {
+      setSelectMode(true);
+      setSelectedIds(new Set([String(message.id)]));
+      return;
+    }
+    if (action === 'delete') {
+      if (message?.role !== 'user' || message.id === 'welcome') return;
+      deleteMessages([message.id]);
+      showToast('Message supprimé');
+    }
+  }, [deleteMessages, showToast]);
 
   const scrollToBottom = useCallback(() => {
     const container = messagesContainerRef.current;
@@ -356,7 +541,13 @@ export default function ChatPage() {
 
   const submit = () => {
     if (!input.trim() || loading) return;
-    sendMessage(input);
+    let payload = input.trim();
+    if (replyTo?.content) {
+      const snippet = String(replyTo.content).replace(/\s+/g, ' ').slice(0, 120);
+      payload = `↩ ${snippet}${String(replyTo.content).length > 120 ? '…' : ''}\n\n${payload}`;
+    }
+    sendMessage(payload);
+    setReplyTo(null);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     scrollToBottom();
   };
@@ -465,7 +656,9 @@ export default function ChatPage() {
         {/* ── Messages area ── */}
         <div
           ref={messagesContainerRef}
-          className="flex-1 min-h-0 overflow-y-auto overscroll-contain py-3 space-y-1 relative"
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain py-3 space-y-1 relative select-none"
+          onContextMenu={(e) => e.preventDefault()}
+          style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' }}
           style={{
             overflowAnchor: 'none',
             WebkitOverflowScrolling: 'touch',
@@ -732,6 +925,10 @@ export default function ChatPage() {
                   message={msg}
                   isNew={newIds.has(msg.id)}
                   currencySettings={currencySettings}
+                  selectMode={selectMode}
+                  selected={selectedIds.has(String(msg.id))}
+                  onToggleSelect={toggleSelect}
+                  onLongPress={setActionMessage}
                 />
               ))}
             </AnimatePresence>
@@ -742,54 +939,171 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* ── Input bar ── */}
-        <div
-          className="flex-shrink-0 px-4 pt-2 flex items-end gap-3"
-          style={{
-            backgroundColor: '#F5F1EB',
-            borderTop: '1px solid rgba(0,0,0,0.06)',
-            paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
-          }}
-        >
-          <div className="flex-1 bg-white rounded-3xl shadow-sm overflow-hidden flex items-end px-4 py-2.5 border border-gray-100" style={{ minHeight: 44 }}>
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={handleTextareaChange}
-              onFocus={handleTextareaFocus}
-              onKeyDown={handleKeyDown}
-              enterKeyHint="enter"
-              placeholder={historyLoading ? 'Chargement de l\'historique…' : 'Message…'}
-              rows={1}
-              disabled={historyLoading}
-              className="chat-input w-full resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none leading-relaxed max-h-36 disabled:opacity-50"
-              style={{ minHeight: 22 }}
-            />
+        {/* ── Selection toolbar ── */}
+        {selectMode ? (
+          <div
+            className="flex-shrink-0 px-3 pt-2 flex items-center gap-2"
+            style={{
+              backgroundColor: '#1C1917',
+              paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+            }}
+          >
+            <button
+              type="button"
+              onClick={exitSelectMode}
+              className="rounded-full p-2 text-white/80 active:bg-white/10"
+              aria-label="Annuler la sélection"
+            >
+              <X size={20} />
+            </button>
+            <p className="flex-1 text-sm font-semibold text-white">
+              {selectedIds.size} sélectionné{selectedIds.size > 1 ? 's' : ''}
+            </p>
+            <button
+              type="button"
+              disabled={!selectedIds.size}
+              onClick={async () => {
+                const text = selectedMessages.map((m) => m.content).join('\n\n');
+                const ok = await copyText(text);
+                showToast(ok ? 'Copié' : 'Impossible de copier');
+              }}
+              className="rounded-full p-2 text-white disabled:opacity-40 active:bg-white/10"
+              aria-label="Copier"
+            >
+              <Copy size={18} />
+            </button>
+            <button
+              type="button"
+              disabled={!selectedIds.size}
+              onClick={async () => {
+                const text = selectedMessages.map((m) => m.content).join('\n\n');
+                try {
+                  if (navigator.share) {
+                    await navigator.share({ text });
+                    return;
+                  }
+                } catch { /* ignore */ }
+                const ok = await copyText(text);
+                showToast(ok ? 'Copié pour transfert' : 'Transfert impossible');
+              }}
+              className="rounded-full p-2 text-white disabled:opacity-40 active:bg-white/10"
+              aria-label="Transférer"
+            >
+              <Forward size={18} />
+            </button>
+            <button
+              type="button"
+              disabled={!selectedMessages.some((m) => m.role === 'user')}
+              onClick={() => {
+                const ids = selectedMessages.filter((m) => m.role === 'user').map((m) => m.id);
+                deleteMessages(ids);
+                exitSelectMode();
+                showToast('Messages supprimés');
+              }}
+              className="rounded-full p-2 text-red-300 disabled:opacity-40 active:bg-white/10"
+              aria-label="Supprimer"
+            >
+              <Trash2 size={18} />
+            </button>
           </div>
-
-          <AnimatePresence mode="wait">
-            {input.trim() ? (
-              <motion.button
-                key="send"
-                initial={{ scale: 0.7, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.7, opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                onClick={submit}
-                disabled={loading}
-                className="flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center text-white active:scale-95 transition-transform disabled:opacity-60"
-                style={{ backgroundColor: '#FF6B00', boxShadow: '0 2px 8px rgba(255,107,0,0.4)' }}
-                aria-label="Envoyer"
-              >
-                <Send style={{ width: 18, height: 18 }} strokeWidth={2.5} />
-              </motion.button>
-            ) : (
-              <div key="spacer" className="w-11 h-11 flex-shrink-0" />
+        ) : (
+          <>
+            {replyTo && (
+              <div className="flex-shrink-0 px-4 pt-2">
+                <div className="flex items-start gap-2 rounded-2xl border border-orange-100 bg-white px-3 py-2 shadow-sm">
+                  <div className="min-w-0 flex-1 border-l-2 border-orange-500 pl-2">
+                    <p className="text-[11px] font-semibold text-orange-600">
+                      {replyTo.role === 'user' ? 'Vous' : 'Ash Ledger'}
+                    </p>
+                    <p className="truncate text-xs text-stone-500">
+                      {String(replyTo.content || '').replace(/\s+/g, ' ')}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setReplyTo(null)}
+                    className="rounded-full p-1 text-stone-400 active:bg-stone-100"
+                    aria-label="Annuler la réponse"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
             )}
-          </AnimatePresence>
-        </div>
+
+            {/* ── Input bar ── */}
+            <div
+              className="flex-shrink-0 px-4 pt-2 flex items-end gap-3"
+              style={{
+                backgroundColor: '#F5F1EB',
+                borderTop: '1px solid rgba(0,0,0,0.06)',
+                paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+              }}
+            >
+              <div className="flex-1 bg-white rounded-3xl shadow-sm overflow-hidden flex items-end px-4 py-2.5 border border-gray-100" style={{ minHeight: 44 }}>
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={handleTextareaChange}
+                  onFocus={handleTextareaFocus}
+                  onKeyDown={handleKeyDown}
+                  enterKeyHint="enter"
+                  placeholder={historyLoading ? 'Chargement de l\'historique…' : 'Message…'}
+                  rows={1}
+                  disabled={historyLoading}
+                  className="chat-input w-full resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none leading-relaxed max-h-36 disabled:opacity-50"
+                  style={{ minHeight: 22 }}
+                />
+              </div>
+
+              <AnimatePresence mode="wait">
+                {input.trim() ? (
+                  <motion.button
+                    key="send"
+                    initial={{ scale: 0.7, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.7, opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                    onClick={submit}
+                    disabled={loading}
+                    className="flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center text-white active:scale-95 transition-transform disabled:opacity-60"
+                    style={{ backgroundColor: '#FF6B00', boxShadow: '0 2px 8px rgba(255,107,0,0.4)' }}
+                    aria-label="Envoyer"
+                  >
+                    <Send style={{ width: 18, height: 18 }} strokeWidth={2.5} />
+                  </motion.button>
+                ) : (
+                  <div key="spacer" className="w-11 h-11 flex-shrink-0" />
+                )}
+              </AnimatePresence>
+            </div>
+          </>
+        )}
 
       </div>
+
+      <MessageActionSheet
+        open={Boolean(actionMessage)}
+        message={actionMessage}
+        preview={actionMessage ? String(actionMessage.content || '').replace(/\s+/g, ' ').slice(0, 160) : ''}
+        onClose={() => setActionMessage(null)}
+        onAction={handleMessageAction}
+      />
+
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            className="pointer-events-none fixed inset-x-0 bottom-24 z-[95] flex justify-center px-4"
+          >
+            <div className="rounded-full bg-stone-900/90 px-4 py-2 text-xs font-semibold text-white shadow-lg">
+              {toast}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Side drawer ── */}
       <SideDrawer

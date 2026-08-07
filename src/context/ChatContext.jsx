@@ -5,6 +5,7 @@ import { readStoredCurrencyPreference } from '@/lib/currency';
 import { cleanUtf8Text, normalizeMessageText } from '@/lib/textEncoding';
 import { trackChatMessageSent, trackFromAssistantReply, trackReportGenerated } from '@/lib/analytics';
 import { downloadPdfFromBase64, isUsablePdfBase64 } from '@/lib/pdfDownload';
+import { saveGeneratedReport } from '@/lib/saveReport';
 
 export const WELCOME_MESSAGE = {
   id: 'welcome',
@@ -285,6 +286,15 @@ export function ChatProvider({ children }) {
               replyText = `${replyText}\n\n📄 ${filename}`;
             }
             trackReportGenerated({ source: 'chat_pdf_download', report_type: 'monthly' });
+            // Persist for /reports (PocketBase + local fallback).
+            if (user?.id) {
+              void saveGeneratedReport({
+                userId: user.id,
+                base64: data.pdf_base64,
+                filename,
+                type: 'monthly',
+              }).catch(() => {});
+            }
           } catch {
             replyText = `${replyText}\n\n⚠️ Le PDF a été généré mais le téléchargement a échoué. Réessaie.`;
           }
@@ -332,8 +342,33 @@ export function ChatProvider({ children }) {
     loadedForUser.current = null;
   }, []);
 
+  const deleteMessages = useCallback((ids) => {
+    const idSet = new Set((ids || []).map(String));
+    if (!idSet.size) return;
+    setMessages((prev) => {
+      const next = prev.filter((m) => !idSet.has(String(m.id)) || m.id === 'welcome');
+      if (stableId) writeStoredMessages(stableId, next);
+      return next.length ? next : [WELCOME_MESSAGE];
+    });
+    setNewIds((prev) => {
+      const next = new Set(prev);
+      idSet.forEach((id) => next.delete(id));
+      return next;
+    });
+  }, [stableId]);
+
   return (
-    <ChatContext.Provider value={{ messages, newIds, input, setInput, loading, historyLoading, sendMessage, reset }}>
+    <ChatContext.Provider value={{
+      messages,
+      newIds,
+      input,
+      setInput,
+      loading,
+      historyLoading,
+      sendMessage,
+      deleteMessages,
+      reset,
+    }}>
       {children}
     </ChatContext.Provider>
   );
