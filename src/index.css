@@ -61,14 +61,15 @@ textarea {
     top: auto !important;
   }
 
+  /* Bottom sheet: keep main chat visible above Ashy guide */
   .support-panel-mobile {
-    inset:
-      max(8px, env(safe-area-inset-top))
-      8px
-      max(8px, env(safe-area-inset-bottom))
-      8px !important;
+    top: auto !important;
+    left: 12px !important;
+    right: 12px !important;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
     width: auto !important;
-    height: auto !important;
+    height: min(48vh, 380px) !important;
+    max-height: 48vh !important;
   }
 }
 

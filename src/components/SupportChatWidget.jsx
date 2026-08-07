@@ -526,13 +526,12 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
     }, 600);
   }, [skipGuide, pushGuide, withTyping]);
 
-  // Always open as a bottom sheet so guide messages stay readable
-  // and the main chat above remains visible.
+  // Bottom sheet on all viewports (CSS !important on mobile also anchors bottom).
   const getPanelStyle = () => {
     const vh = typeof window !== 'undefined' ? window.innerHeight : 700;
     const vw = typeof window !== 'undefined' ? window.innerWidth : 400;
     const side = isMobile ? 12 : 20;
-    const bubbleClearance = bubbleSize + 14;
+    const bubbleClearance = (isMobile ? 56 : BUBBLE_SIZE) + 16;
     const panelH = isMobile
       ? Math.min(Math.round(vh * 0.48), 380)
       : Math.min(Math.round(vh * 0.42), 400);
