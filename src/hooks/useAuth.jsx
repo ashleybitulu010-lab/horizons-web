@@ -1,11 +1,27 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import pb from '@/lib/pocketbaseClient';
+import {
+  clearDashboardSession,
+  createDashboardSession,
+  supabase,
+} from '@/lib/supabaseRest';
 import {
   writeOnboardingState,
   defaultOnboardingState,
   readOnboardingState,
 } from '@/hooks/useOnboarding';
 import { cleanUtf8Text } from '@/lib/textEncoding';
+
+const AuthContext = createContext(null);
+const ASH_SESSION_KEY = 'ash_session';
 
 function getRecord() {
   return pb.authStore.record ?? pb.authStore.model ?? null;
@@ -27,53 +43,137 @@ function mapUser(record) {
   };
 }
 
-function persistSession(record, token) {
+function persistLegacySession(record, token) {
   try {
     if (record && token) {
       localStorage.setItem(
-        'ash_session',
+        ASH_SESSION_KEY,
         JSON.stringify({
           id: record.id,
           email: record.email,
           token,
           at: Date.now(),
+          rememberMe: true,
         }),
       );
     } else {
-      localStorage.removeItem('ash_session');
+      localStorage.removeItem(ASH_SESSION_KEY);
     }
   } catch {
     /* ignore */
   }
 }
 
-export function AuthProvider({ children }) {
-  return children;
+async function refreshPocketBaseSession() {
+  if (!pb.authStore.token) return false;
+  try {
+    await pb.collection('users').authRefresh();
+    return Boolean(pb.authStore.isValid && getRecord());
+  } catch {
+    return false;
+  }
 }
 
-export function useAuth() {
-  const [user, setUser] = useState(() => {
-    const rec = getRecord();
-    return pb.authStore.isValid && rec ? mapUser(rec) : null;
-  });
-  const [token, setToken] = useState(() => pb.authStore.token || null);
+async function warmSupabaseSession(pocketBaseToken) {
+  if (!pocketBaseToken) return;
+  try {
+    await createDashboardSession(pocketBaseToken);
+  } catch {
+    /* dashboard features will retry later */
+  }
+}
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const bootstrapped = useRef(false);
+
+  const syncFromStore = useCallback((record, authToken) => {
+    const valid = Boolean(authToken && record && pb.authStore.isValid);
+    const nextUser = valid ? mapUser(record) : null;
+    const nextToken = valid ? authToken : null;
+    setUser(nextUser);
+    setToken(nextToken);
+    persistLegacySession(valid ? record : null, nextToken);
+    return valid;
+  }, []);
+
+  const bootstrap = useCallback(async () => {
+    setLoading(true);
+    try {
+      // PocketBase already hydrates authStore from localStorage on construct.
+      if (pb.authStore.token) {
+        const refreshed = await refreshPocketBaseSession();
+        if (!refreshed && !pb.authStore.isValid) {
+          pb.authStore.clear();
+          persistLegacySession(null, null);
+          await clearDashboardSession();
+        }
+      }
+
+      const record = getRecord();
+      const authToken = pb.authStore.token || null;
+      const ok = syncFromStore(record, authToken);
+      if (ok && authToken) {
+        await warmSupabaseSession(authToken);
+      }
+    } finally {
+      setLoading(false);
+      bootstrapped.current = true;
+    }
+  }, [syncFromStore]);
 
   useEffect(() => {
-    const sync = () => {
-      const rec = getRecord();
-      const valid = pb.authStore.isValid && rec;
-      setUser(valid ? mapUser(rec) : null);
-      setToken(valid ? pb.authStore.token || null : null);
-      persistSession(valid ? rec : null, valid ? pb.authStore.token : null);
-    };
-    sync();
-    return pb.authStore.onChange((_token, record) => {
-      const valid = Boolean(_token && record);
-      setUser(valid ? mapUser(record) : null);
-      setToken(valid ? _token : null);
-      persistSession(valid ? record : null, valid ? _token : null);
+    void bootstrap();
+
+    const unsub = pb.authStore.onChange((authToken, record) => {
+      const ok = syncFromStore(record, authToken);
+      if (!ok) {
+        void clearDashboardSession();
+      }
     });
-  }, []);
+
+    // Keep long-lived sessions warm (WhatsApp-style).
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!pb.authStore.token) return;
+      void (async () => {
+        const ok = await refreshPocketBaseSession();
+        if (ok) {
+          syncFromStore(getRecord(), pb.authStore.token);
+          await warmSupabaseSession(pb.authStore.token);
+        } else if (!pb.authStore.isValid) {
+          pb.authStore.clear();
+          persistLegacySession(null, null);
+          await clearDashboardSession();
+          setUser(null);
+          setToken(null);
+        }
+      })();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+
+    const refreshTimer = window.setInterval(() => {
+      if (!pb.authStore.token) return;
+      void refreshPocketBaseSession().then((ok) => {
+        if (ok) syncFromStore(getRecord(), pb.authStore.token);
+      });
+      if (supabase) {
+        void supabase.auth.getSession().then(({ data }) => {
+          if (data.session) void supabase.auth.refreshSession().catch(() => {});
+        });
+      }
+    }, 12 * 60 * 1000);
+
+    return () => {
+      unsub?.();
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+      window.clearInterval(refreshTimer);
+    };
+  }, [bootstrap, syncFromStore]);
 
   const login = useCallback(async (email, password) => {
     try {
@@ -81,8 +181,8 @@ export function useAuth() {
         email.trim().toLowerCase(),
         password,
       );
-      persistSession(authData.record, authData.token);
-      // First login after feature launch: start guide if no saved progress
+      syncFromStore(authData.record, authData.token);
+      await warmSupabaseSession(authData.token);
       if (authData.record?.id && !readOnboardingState(authData.record.id)) {
         writeOnboardingState(authData.record.id, {
           ...defaultOnboardingState(authData.record.created || new Date().toISOString()),
@@ -91,9 +191,13 @@ export function useAuth() {
       }
       return mapUser(authData.record);
     } catch (err) {
-      throw new Error(err?.status === 400 ? 'Email ou mot de passe incorrect.' : (err?.message || 'Erreur de connexion'));
+      throw new Error(
+        err?.status === 400
+          ? 'Email ou mot de passe incorrect.'
+          : (err?.message || 'Erreur de connexion'),
+      );
     }
-  }, []);
+  }, [syncFromStore]);
 
   const signup = useCallback(async (email, firstName, lastName, password) => {
     await pb.collection('users').create({
@@ -107,7 +211,8 @@ export function useAuth() {
       email.trim().toLowerCase(),
       password,
     );
-    persistSession(authData.record, authData.token);
+    syncFromStore(authData.record, authData.token);
+    await warmSupabaseSession(authData.token);
     if (authData.record?.id) {
       writeOnboardingState(authData.record.id, {
         ...defaultOnboardingState(new Date().toISOString()),
@@ -115,20 +220,38 @@ export function useAuth() {
       });
     }
     return mapUser(authData.record);
-  }, []);
+  }, [syncFromStore]);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     pb.authStore.clear();
-    persistSession(null, null);
+    persistLegacySession(null, null);
+    await clearDashboardSession();
+    setUser(null);
+    setToken(null);
   }, []);
 
-  return useMemo(() => ({
+  const value = useMemo(() => ({
     user,
     token,
-    loading: false,
+    loading,
     login,
     signup,
     logout,
-    isAuthenticated: Boolean(user),
-  }), [user, token, login, signup, logout]);
+    isAuthenticated: Boolean(user && token),
+    refreshSession: bootstrap,
+  }), [user, token, loading, login, signup, logout, bootstrap]);
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
+  return ctx;
 }

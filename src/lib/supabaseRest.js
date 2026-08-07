@@ -2,27 +2,67 @@ import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://knrwplidgvuvjnuqqmrt.supabase.co';
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const SUPABASE_STORAGE_KEY = 'ash-supabase-auth';
+const CLIENT_ID_KEY = 'ash_supabase_client_id';
 
 export function supabaseConfigured() {
   return Boolean(SUPABASE_URL && SUPABASE_ANON);
 }
 
+function browserStorage() {
+  if (typeof window === 'undefined') return undefined;
+  return window.localStorage;
+}
+
+/** Persist Supabase Auth like a native app (survives reload + PWA relaunch). */
 export const supabase = supabaseConfigured()
   ? createClient(SUPABASE_URL, SUPABASE_ANON, {
     auth: {
-      persistSession: false,
+      persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: false,
+      storage: browserStorage(),
+      storageKey: SUPABASE_STORAGE_KEY,
     },
   })
   : null;
+
+function readStoredClientId() {
+  try {
+    return localStorage.getItem(CLIENT_ID_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredClientId(clientId) {
+  try {
+    if (clientId) localStorage.setItem(CLIENT_ID_KEY, clientId);
+    else localStorage.removeItem(CLIENT_ID_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function sessionStillValid(minTtlMs = 60_000) {
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data.session?.access_token) return null;
+  const expiresAtMs = (data.session.expires_at || 0) * 1000;
+  if (expiresAtMs && expiresAtMs <= Date.now() + minTtlMs) {
+    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError || !refreshed.session?.access_token) return null;
+    return refreshed.session;
+  }
+  return data.session;
+}
 
 export async function supabaseSelect(table, query) {
   if (!supabaseConfigured()) return null;
   const qs = query.startsWith('?') ? query : `?${query}`;
   try {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const authorization = sessionData.session?.access_token || SUPABASE_ANON;
+    const session = await sessionStillValid();
+    const authorization = session?.access_token || SUPABASE_ANON;
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${qs}`, {
       headers: {
         apikey: SUPABASE_ANON,
@@ -52,12 +92,19 @@ export async function resolveClientId(user) {
 }
 
 /**
- * Exchange the current PocketBase session for a short-lived Supabase session.
- * The Edge Function validates PocketBase before linking the matching client.
+ * Exchange PocketBase token for a persisted Supabase session.
+ * Reuses / refreshes an existing session when still valid (Remember me).
  */
 export async function createDashboardSession(pocketBaseToken) {
   if (!supabase || !pocketBaseToken) {
     throw new Error('PocketBase authentication is required');
+  }
+
+  const existing = await sessionStillValid(90_000);
+  const storedClientId = readStoredClientId();
+  if (existing?.access_token && storedClientId) {
+    await supabase.realtime.setAuth(existing.access_token);
+    return storedClientId;
   }
 
   const response = await fetch(`${SUPABASE_URL}/functions/v1/dashboard-session`, {
@@ -83,6 +130,19 @@ export async function createDashboardSession(pocketBaseToken) {
     refresh_token: payload.refresh_token,
   });
   if (error) throw error;
+
+  writeStoredClientId(payload.client_id);
   await supabase.realtime.setAuth(payload.access_token);
   return payload.client_id;
+}
+
+/** Clear persisted Supabase Auth (explicit logout only). */
+export async function clearDashboardSession() {
+  writeStoredClientId(null);
+  if (!supabase) return;
+  try {
+    await supabase.auth.signOut({ scope: 'local' });
+  } catch {
+    /* ignore */
+  }
 }

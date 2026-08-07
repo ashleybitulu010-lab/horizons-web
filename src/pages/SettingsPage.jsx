@@ -207,8 +207,8 @@ export default function SettingsPage() {
     setDeleting(true);
     try {
       await pb.collection('users').delete(user.id);
-      logout();
-      navigate('/login');
+      await logout();
+      navigate('/login', { replace: true });
     } catch {
       setToast({ type: 'error', text: 'Erreur lors de la suppression du compte.' });
       setDeleting(false);
