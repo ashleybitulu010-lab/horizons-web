@@ -77,16 +77,69 @@ export async function supabaseSelect(table, query) {
   }
 }
 
-/** Resolve Supabase clients.id from PocketBase / Airtable user identifiers. */
+/** Exact row count via PostgREST Content-Range (Prefer: count=exact). */
+export async function supabaseCount(table, filterQuery) {
+  if (!supabaseConfigured()) return 0;
+  const qs = (filterQuery || '').replace(/^\?/, '');
+  const url = `${SUPABASE_URL}/rest/v1/${table}?select=id${qs ? `&${qs}` : ''}`;
+  try {
+    const session = await sessionStillValid();
+    const authorization = session?.access_token || SUPABASE_ANON;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        apikey: SUPABASE_ANON,
+        Authorization: `Bearer ${authorization}`,
+        Accept: 'application/json; charset=UTF-8',
+        Prefer: 'count=exact',
+        Range: '0-0',
+      },
+    });
+    if (!res.ok) return 0;
+    const range = res.headers.get('content-range') || res.headers.get('Content-Range') || '';
+    const total = range.split('/')[1];
+    if (!total || total === '*') return 0;
+    const n = Number(total);
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Resolve Supabase clients.id from session cache or PocketBase / Airtable ids. */
 export async function resolveClientId(user) {
+  const stored = readStoredClientId();
+  if (stored) return stored;
+
   if (!user) return null;
+
+  // Prefer auth-linked client when a Supabase session exists.
+  try {
+    const session = await sessionStillValid();
+    if (session?.user?.id) {
+      const byAuth = await supabaseSelect(
+        'clients',
+        `auth_user_id=eq.${encodeURIComponent(session.user.id)}&select=id&limit=1`,
+      );
+      if (Array.isArray(byAuth) && byAuth[0]?.id) {
+        writeStoredClientId(byAuth[0].id);
+        return byAuth[0].id;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
   const candidates = [user.airtableId, user.id, user.email].filter(Boolean);
   for (const userId of candidates) {
     const rows = await supabaseSelect(
       'clients',
       `user_id=eq.${encodeURIComponent(userId)}&select=id&limit=1`,
     );
-    if (Array.isArray(rows) && rows[0]?.id) return rows[0].id;
+    if (Array.isArray(rows) && rows[0]?.id) {
+      writeStoredClientId(rows[0].id);
+      return rows[0].id;
+    }
   }
   return null;
 }

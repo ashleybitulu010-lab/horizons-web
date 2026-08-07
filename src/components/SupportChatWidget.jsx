@@ -15,7 +15,11 @@ import {
   ONBOARDING_STEPS,
   ONBOARDING_RELAUNCH_EVENT,
 } from '@/hooks/useOnboarding';
-import { checkOnboardingStep, detectPrematureSale } from '@/lib/onboardingChecks';
+import {
+  checkOnboardingStep,
+  detectPrematureSale,
+  snapshotOnboardingBaselines,
+} from '@/lib/onboardingChecks';
 import { localAshyReply, escalateToTelegramSupport } from '@/lib/ashyAssistant';
 import { readStoredCurrencyPreference } from '@/lib/currency';
 import {
@@ -145,6 +149,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
     advanceStep,
     completeGuide,
     restartGuide,
+    setBaselines,
   } = useOnboarding(user?.id, user?.created);
 
   const [open, setOpen] = useState(Boolean(forceOpen));
@@ -362,20 +367,40 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
 
   useEffect(() => { if (open) setUnread(0); }, [open]);
 
+  // Capture baselines once so existing data does not auto-skip the guide.
+  useEffect(() => {
+    if (!isActive || !user?.id || onboarding?.baselines) return undefined;
+    let cancelled = false;
+    (async () => {
+      const baselines = await snapshotOnboardingBaselines(user);
+      if (!cancelled) setBaselines(baselines);
+    })();
+    return () => { cancelled = true; };
+  }, [isActive, user, onboarding?.baselines, setBaselines]);
+
   // Validate onboarding steps against Supabase / main chat
   useEffect(() => {
     if (!isActive || !currentStep || advancingRef.current) return undefined;
+    // Wait for baselines so we don't validate against stale pre-existing rows.
+    if (!onboarding?.baselines) return undefined;
 
     let cancelled = false;
 
     const run = async () => {
+      if (advancingRef.current || cancelled) return;
+
       if (detectPrematureSale(onboarding.stepIndex, mainMessages) && !prematureWarnedRef.current) {
         prematureWarnedRef.current = true;
         withTyping(() => pushGuide(ORDER_BLOCK_MESSAGE), 600);
       }
 
+      // While the main chat is waiting for Ash, skip DB polls — recheck on reply.
+      if (mainLoading) return;
+
       try {
-        const ok = await checkOnboardingStep(currentStep.check, user, mainMessages);
+        const ok = await checkOnboardingStep(currentStep.check, user, mainMessages, {
+          baselines: onboarding.baselines,
+        });
         if (cancelled || !ok || advancingRef.current) return;
 
         advancingRef.current = true;
@@ -415,7 +440,8 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
     };
 
     run();
-    const id = setInterval(run, 4500);
+    // Faster when a reply just arrived; otherwise keep a light poll for Supabase lag.
+    const id = setInterval(run, mainLoading ? 8000 : 2500);
     return () => {
       cancelled = true;
       clearInterval(id);
@@ -424,6 +450,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
     isActive,
     currentStep,
     onboarding?.stepIndex,
+    onboarding?.baselines,
     mainMessages,
     mainLoading,
     user,
@@ -492,10 +519,13 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
   }, []);
 
   const handleStartGuide = useCallback(() => {
-    startGuide();
     setGuideMessages((prev) =>
       prev.map((m) => (m.id === WELCOME_ONBOARDING.id ? { ...m, actions: undefined } : m)),
     );
+    (async () => {
+      const baselines = await snapshotOnboardingBaselines(user);
+      startGuide({ baselines });
+    })();
     withTyping(() => {
       pushGuide(ORDER_RULE_MESSAGE);
       setTimeout(() => {
@@ -505,7 +535,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
         }, 800);
       }, 400);
     }, 700);
-  }, [startGuide, pushGuide, withTyping]);
+  }, [startGuide, pushGuide, withTyping, user]);
 
   const handleLaterGuide = useCallback(() => {
     setGuideMessages((prev) =>
@@ -536,8 +566,8 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
       ? Math.min(300, vw - 72)
       : Math.min(340, vw - 80);
     const panelH = isMobile
-      ? Math.min(400, Math.round(vh * 0.52))
-      : Math.min(420, Math.round(vh * 0.48));
+      ? Math.min(480, Math.round(vh * 0.58))
+      : Math.min(500, Math.round(vh * 0.54));
 
     return {
       position: 'fixed',
@@ -548,7 +578,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
       width: panelW,
       height: panelH,
       maxWidth: 'calc(100vw - 72px)',
-      maxHeight: isMobile ? '52vh' : '48vh',
+      maxHeight: isMobile ? '58vh' : '54vh',
       zIndex: 99,
     };
   };

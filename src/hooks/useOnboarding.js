@@ -159,6 +159,8 @@ export function persistRelaunchGuide(userId) {
     stepIndex: 0,
     completedAt: null,
     skippedAt: null,
+    baselines: null,
+    guideStartedAt: null,
     updatedAt: new Date().toISOString(),
   });
   requestRelaunchGuide();
@@ -231,14 +233,29 @@ export function useOnboarding(userId, userCreatedAt) {
     [userId],
   );
 
-  const startGuide = useCallback(() => {
+  const startGuide = useCallback((extras = {}) => {
     return persist({
       status: 'active',
       stepIndex: 0,
       completedAt: null,
       skippedAt: null,
+      baselines: extras.baselines || null,
+      guideStartedAt: new Date().toISOString(),
     });
   }, [persist]);
+
+  const setBaselines = useCallback((baselines) => {
+    setState((prev) => {
+      if (!prev) return prev;
+      const next = {
+        ...prev,
+        baselines,
+        updatedAt: new Date().toISOString(),
+      };
+      writeOnboardingState(userId, next);
+      return next;
+    });
+  }, [userId]);
 
   const skipGuide = useCallback(() => {
     return persist({
@@ -289,6 +306,8 @@ export function useOnboarding(userId, userCreatedAt) {
       stepIndex: 0,
       completedAt: null,
       skippedAt: null,
+      baselines: null,
+      guideStartedAt: null,
     });
   }, [persist]);
 
@@ -310,5 +329,6 @@ export function useOnboarding(userId, userCreatedAt) {
     advanceStep,
     completeGuide,
     restartGuide,
+    setBaselines,
   };
 }

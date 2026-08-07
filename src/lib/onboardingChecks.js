@@ -1,61 +1,126 @@
-import { resolveClientId, supabaseSelect } from '@/lib/supabaseRest';
+import { resolveClientId, supabaseCount } from '@/lib/supabaseRest';
 import pb from '@/lib/pocketbaseClient';
 
+/** Assistant replies that confirm a successful operation. */
 const SUCCESS_PATTERNS = {
   produit: [
-    /produit.*(enregistr|cr[ée]{1,2}|ajout|sauv|ok)/i,
-    /bravo.*produit/i,
-    /nom_produit/i,
-    /craie scolaire/i,
+    /produit[\s\S]{0,80}(enregistr|cr[éeé]{1,3}|ajout|sauv|ok|succ[eè]s|not[ée])/i,
+    /(enregistr|cr[éeé]{1,3}|ajout)[\s\S]{0,40}produit/i,
+    /nouveau produit/i,
+    /✅[\s\S]{0,40}produit/i,
   ],
   stock: [
-    /stock.*(ajout|enregistr|mis à jour|prêt|ok)/i,
-    /quantit[ée].*(ajout|enregistr)/i,
-    /100\s*bo[iî]tes/i,
+    /stock[\s\S]{0,80}(ajout|enregistr|mis [àa] jour|prêt|ok|succ[eè]s|actualis)/i,
+    /(ajout|enregistr|mis [àa] jour)[\s\S]{0,40}stock/i,
+    /quantit[ée][\s\S]{0,40}(ajout|enregistr|ok|succ[eè]s)/i,
+    /✅[\s\S]{0,40}stock/i,
   ],
   vente: [
-    /vente.*(enregistr|ajout|ok|cr[ée]{1,2})/i,
-    /vendu/i,
-    /transaction.*enregistr/i,
+    /vente[\s\S]{0,80}(enregistr|ajout|ok|cr[éeé]{1,3}|succ[eè]s)/i,
+    /(enregistr|ajout)[\s\S]{0,40}vente/i,
+    /vendu[\s\S]{0,40}(enregistr|ok|succ[eè]s|\d)/i,
+    /transaction[\s\S]{0,40}enregistr/i,
+    /✅[\s\S]{0,40}vente/i,
   ],
   depense: [
-    /d[ée]pense.*(enregistr|ajout|ok|cr[ée]{1,2})/i,
-    /paiement.*(enregistr|ok)/i,
+    /d[ée]pense[\s\S]{0,80}(enregistr|ajout|ok|cr[éeé]{1,3}|succ[eè]s)/i,
+    /(enregistr|ajout)[\s\S]{0,40}d[ée]pense/i,
+    /paiement[\s\S]{0,40}(enregistr|ok|succ[eè]s)/i,
+    /✅[\s\S]{0,40}d[ée]pense/i,
   ],
   rapport: [
     /bilan/i,
     /\.pdf/i,
-    /rapport.*(g[ée]n[ée]r|prêt|disponible)/i,
+    /rapport[\s\S]{0,40}(g[ée]n[ée]r|prêt|disponible|ok)/i,
     /https?:\/\/\S+\.pdf/i,
+    /voici[\s\S]{0,40}(votre\s+)?(bilan|rapport)/i,
   ],
 };
 
-function textLooksSuccessful(check, messages) {
-  const patterns = SUCCESS_PATTERNS[check] || [];
-  if (!patterns.length) return false;
-  const recent = (messages || [])
-    .filter((m) => m.role === 'assistant')
-    .slice(-8)
-    .map((m) => m.content || '');
-  return recent.some((text) => patterns.some((re) => re.test(text)));
+/** User messages that look like an attempt for the current step. */
+const USER_ATTEMPT_PATTERNS = {
+  produit: [
+    /produit/i,
+    /craie/i,
+    /nom\s*[:=]/i,
+    /prix\s*(d['']achat|de\s*vente)/i,
+    /achat\s*[:=]?\s*\$?\d/i,
+    /nouveau/i,
+  ],
+  stock: [
+    /stock/i,
+    /quantit/i,
+    /bo[iî]tes?/i,
+    /\b\d+\b/,
+    /ajouter/i,
+  ],
+  vente: [
+    /\bvendu\b/i,
+    /\bvente\b/i,
+    /client\s+a/i,
+    /achet[ée]/i,
+  ],
+  depense: [
+    /d[ée]pense/i,
+    /pay[ée]/i,
+    /paiement/i,
+    /transport|carton|lectricit|loyer/i,
+    /achet[ée]/i,
+  ],
+  rapport: [
+    /bilan/i,
+    /rapport/i,
+    /\bpdf\b/i,
+    /g[ée]n[eè]re/i,
+  ],
+};
+
+const TABLE_MAP = {
+  produit: 'produits',
+  stock: 'stocks',
+  vente: 'ventes',
+  depense: 'depenses',
+};
+
+function recentMessages(messages, limit = 12) {
+  return (messages || []).slice(-limit);
+}
+
+function textMatchesAny(text, patterns) {
+  if (!text) return false;
+  return (patterns || []).some((re) => re.test(text));
+}
+
+/**
+ * Require a recent user attempt + assistant confirmation for the same step.
+ * Prevents welcome / old history from auto-validating the guide.
+ */
+export function exchangeLooksSuccessful(check, messages) {
+  const patterns = SUCCESS_PATTERNS[check];
+  const attempts = USER_ATTEMPT_PATTERNS[check];
+  if (!patterns?.length || !attempts?.length) return false;
+
+  const recent = recentMessages(messages, 12);
+  const users = recent.filter((m) => m.role === 'user').slice(-4);
+  const assistants = recent.filter((m) => m.role === 'assistant').slice(-5);
+
+  const userTried = users.some((m) => textMatchesAny(m.content || m.message || '', attempts));
+  if (!userTried) return false;
+
+  return assistants.some((m) => textMatchesAny(m.content || m.message || '', patterns));
 }
 
 function userAttemptedSale(messages) {
-  const recent = (messages || [])
+  const recent = recentMessages(messages, 8)
     .filter((m) => m.role === 'user')
-    .slice(-5)
-    .map((m) => (m.content || '').toLowerCase());
+    .map((m) => (m.content || m.message || '').toLowerCase());
   return recent.some((t) =>
-    /\b(vendu|vente|acheter|acheté|client a|j['']ai vendu)\b/i.test(t),
+    /\b(vendu|vente|j['']ai vendu|client a)\b/i.test(t),
   );
 }
 
 async function countForClient(table, clientId) {
-  const rows = await supabaseSelect(
-    table,
-    `client_id=eq.${encodeURIComponent(clientId)}&select=id&limit=1`,
-  );
-  return Array.isArray(rows) && rows.length > 0;
+  return supabaseCount(table, `client_id=eq.${encodeURIComponent(clientId)}`);
 }
 
 async function hasReport(user) {
@@ -72,34 +137,60 @@ async function hasReport(user) {
   }
 }
 
+/** Snapshot row counts so relaunching the guide requires NEW actions. */
+export async function snapshotOnboardingBaselines(user) {
+  const empty = { produit: 0, stock: 0, vente: 0, depense: 0, rapport: 0 };
+  try {
+    const clientId = await resolveClientId(user);
+    if (!clientId) {
+      return { ...empty, rapport: (await hasReport(user)) ? 1 : 0 };
+    }
+    const [produit, stock, vente, depense] = await Promise.all([
+      countForClient('produits', clientId),
+      countForClient('stocks', clientId),
+      countForClient('ventes', clientId),
+      countForClient('depenses', clientId),
+    ]);
+    return {
+      produit,
+      stock,
+      vente,
+      depense,
+      rapport: (await hasReport(user)) ? 1 : 0,
+    };
+  } catch {
+    return empty;
+  }
+}
+
 /**
  * Validate an onboarding step.
- * Prefer Supabase truth; fall back to recent main-chat assistant replies.
+ * Prefer Supabase growth vs baseline; fall back to recent main-chat exchange.
  */
-export async function checkOnboardingStep(check, user, mainChatMessages = []) {
+export async function checkOnboardingStep(check, user, mainChatMessages = [], options = {}) {
   if (!check) return false;
+  const baselines = options.baselines || {};
+  const baseline = Number(baselines[check] || 0);
 
   if (check === 'rapport') {
-    if (await hasReport(user)) return true;
-    return textLooksSuccessful('rapport', mainChatMessages);
+    if (await hasReport(user)) {
+      // New report since baseline, or first-ever report with baseline 0
+      if (baseline <= 0) return true;
+      // PocketBase has no easy count here — accept exchange success after baseline
+    }
+    return exchangeLooksSuccessful('rapport', mainChatMessages);
   }
 
   const clientId = await resolveClientId(user);
   if (clientId) {
-    const tableMap = {
-      produit: 'produits',
-      stock: 'stocks',
-      vente: 'ventes',
-      depense: 'depenses',
-    };
-    const table = tableMap[check];
+    const table = TABLE_MAP[check];
     if (table) {
-      const ok = await countForClient(table, clientId);
-      if (ok) return true;
+      const count = await countForClient(table, clientId);
+      if (count > baseline) return true;
     }
   }
 
-  return textLooksSuccessful(check, mainChatMessages);
+  return exchangeLooksSuccessful(check, mainChatMessages);
 }
 
 export function detectPrematureSale(stepIndex, mainChatMessages) {
