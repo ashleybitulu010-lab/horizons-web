@@ -6,16 +6,30 @@ const LAST_VISIT_KEY = 'ash_ga_last_visit';
 const SESSION_START_KEY = 'ash_ga_session_start';
 const TRIAL_FLAG_KEY = 'ash_ga_was_trial';
 const CONVERSION_KEY = 'ash_ga_trial_converted';
+const DEBUG_KEY = 'ash_ga_debug';
 
 function isBrowser() {
   return typeof window !== 'undefined';
 }
 
-function isDebugMode() {
+/** Persist ?debug_ga=1 so SPA navigations keep DebugView mode. */
+function syncDebugFlagFromUrl() {
+  if (!isBrowser()) return;
+  try {
+    if (new URLSearchParams(window.location.search).get('debug_ga') === '1') {
+      localStorage.setItem(DEBUG_KEY, '1');
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+export function isDebugMode() {
   if (!isBrowser()) return false;
+  syncDebugFlagFromUrl();
   try {
     if (new URLSearchParams(window.location.search).get('debug_ga') === '1') return true;
-    if (localStorage.getItem('ash_ga_debug') === '1') return true;
+    if (localStorage.getItem(DEBUG_KEY) === '1') return true;
   } catch {
     /* ignore */
   }
@@ -34,42 +48,49 @@ export function ensureGtag() {
   return window.gtag;
 }
 
+function debugParams() {
+  return isDebugMode() ? { debug_mode: true } : {};
+}
+
+/** Merge debug_mode into every config so later calls never wipe it. */
+function configGa(extra = {}) {
+  const gtag = ensureGtag();
+  gtag('config', GA_MEASUREMENT_ID, {
+    send_page_view: false,
+    ...debugParams(),
+    ...extra,
+  });
+}
+
 let initialized = false;
 
 /**
- * Idempotent GA4 init. Script is loaded async from index.html;
- * this only configures the property once.
+ * Idempotent GA4 init. Must run BEFORE the first page_view / custom event
+ * so DebugView receives hits when ?debug_ga=1 (or ash_ga_debug=1).
  */
 export function initAnalytics() {
   if (!isBrowser() || initialized) return;
-  const gtag = ensureGtag();
-  const debug = isDebugMode();
-
-  gtag('js', new Date());
-  gtag('config', GA_MEASUREMENT_ID, {
-    send_page_view: false,
-    anonymize_ip: true,
-    ...(debug ? { debug_mode: true } : {}),
-  });
-
+  syncDebugFlagFromUrl();
+  ensureGtag();
+  configGa();
   initialized = true;
   trackRetentionVisit();
   startSessionClock();
 }
 
 export function setAnalyticsUser(userId) {
-  const gtag = ensureGtag();
+  if (!initialized) initAnalytics();
   if (!userId) {
-    gtag('config', GA_MEASUREMENT_ID, { user_id: undefined });
+    configGa({ user_id: null });
     return;
   }
-  gtag('config', GA_MEASUREMENT_ID, { user_id: String(userId) });
-  gtag('set', { user_id: String(userId) });
+  configGa({ user_id: String(userId) });
+  ensureGtag()('set', { user_id: String(userId) });
 }
 
 export function trackPageView(path, title) {
-  const gtag = ensureGtag();
-  gtag('event', 'page_view', {
+  if (!initialized) initAnalytics();
+  trackEvent('page_view', {
     page_path: path || (isBrowser() ? window.location.pathname + window.location.search : '/'),
     page_title: title || (isBrowser() ? document.title : 'Ash Ledger'),
     page_location: isBrowser() ? window.location.href : undefined,
@@ -79,9 +100,12 @@ export function trackPageView(path, title) {
 /** Fire a custom event — never throws, never blocks UI. */
 export function trackEvent(name, params = {}) {
   try {
+    if (!initialized) initAnalytics();
     const gtag = ensureGtag();
+    // debug_mode must be on the event itself for DebugView (ep.debug_mode / _dbg).
     gtag('event', name, {
       ...params,
+      ...debugParams(),
       send_to: GA_MEASUREMENT_ID,
     });
   } catch {
@@ -231,7 +255,6 @@ function startSessionClock() {
   };
 
   if (sessionTimer) window.clearInterval(sessionTimer);
-  // Lightweight heartbeat — GA4 also tracks engagement automatically.
   sessionTimer = window.setInterval(() => emit('heartbeat'), 60_000);
 
   const onHide = () => emit('visibility_hidden');

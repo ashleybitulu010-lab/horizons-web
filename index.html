@@ -32,8 +32,22 @@
 			function gtag(){dataLayer.push(arguments);}
 			window.gtag = gtag;
 			gtag('js', new Date());
-			// SPA: page_view is sent from React on each route change
-			gtag('config', 'G-CR01T8LKBT', { send_page_view: false, anonymize_ip: true });
+			// Enable DebugView before any React events when ?debug_ga=1 (persisted).
+			(function () {
+				var debug = false;
+				try {
+					if (/[?&]debug_ga=1(?:&|$)/.test(location.search)) {
+						debug = true;
+						localStorage.setItem('ash_ga_debug', '1');
+					} else if (localStorage.getItem('ash_ga_debug') === '1') {
+						debug = true;
+					}
+				} catch (e) {}
+				// SPA: page_view is sent from React on each route change
+				gtag('config', 'G-CR01T8LKBT', debug
+					? { send_page_view: false, debug_mode: true }
+					: { send_page_view: false });
+			})();
 		</script>
 	</head>
 	<body>

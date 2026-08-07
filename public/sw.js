@@ -1,5 +1,5 @@
 /* Ash Ledger PWA service worker — required for Android install + standalone launch */
-const CACHE = 'ash-ledger-shell-v3';
+const CACHE = 'ash-ledger-shell-v4';
 const PRECACHE = [
   '/',
   '/chat',
