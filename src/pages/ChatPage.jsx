@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { Send, Menu, X, User, CreditCard, BarChart2, LayoutDashboard, Settings, LogOut, Sparkles } from 'lucide-react';
 import SupportChatWidget from '@/components/SupportChatWidget';
+import InstallAppBanner from '@/components/InstallAppBanner';
 import EmojiText from '@/components/EmojiText';
 import { useAuth } from '@/hooks/useAuth';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -379,6 +380,8 @@ export default function ChatPage() {
             <Menu size={22} strokeWidth={2} />
           </button>
         </header>
+
+        <InstallAppBanner />
 
         {isGuideMode && (
           <div
