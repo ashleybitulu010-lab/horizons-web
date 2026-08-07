@@ -55,7 +55,7 @@ function Input({ label, value, onChange, type = 'text', readOnly = false, right 
 }
 
 export default function ProfilePage() {
-  const { user } = useAuth();
+  const { user, updateUserRecord } = useAuth();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const [loading, setLoading] = useState(true);
@@ -87,7 +87,9 @@ export default function ProfilePage() {
   const saveProfile = async () => {
     setSaving(true);
     try {
-      await pb.collection('users').update(user.id, { firstName, lastName });
+      const updated = await pb.collection('users').update(user.id, { firstName, lastName });
+      setProfile(updated);
+      updateUserRecord(updated);
       setToast({ type: 'success', text: 'Profil mis à jour avec succès !' });
     } catch {
       setToast({ type: 'error', text: 'Erreur lors de la mise à jour du profil.' });
@@ -144,6 +146,7 @@ export default function ProfilePage() {
       formData.append('avatar', file);
       const updated = await pb.collection('users').update(user.id, formData);
       setProfile(updated);
+      updateUserRecord(updated);
       setToast({ type: 'success', text: 'Photo de profil mise à jour !' });
     } catch {
       setToast({ type: 'error', text: 'Impossible de mettre à jour la photo de profil.' });

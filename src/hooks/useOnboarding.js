@@ -18,7 +18,7 @@ Prix d'achat : $5
 Prix de vente : $8
 
 Écrivez une seule information à la fois dans le chat principal.`,
-    success: 'Bravo ! Votre premier produit est enregistré.',
+    success: '✅ Bravo ! Votre premier produit est enregistré.',
     check: 'produit',
   },
   {
@@ -33,7 +33,7 @@ Produit : Craie scolaire
 Quantité : 100 boîtes
 
 Une seule donnée à la fois, dans le chat principal.`,
-    success: 'Excellent ! Votre stock est prêt.',
+    success: '✅ Excellent ! Votre stock est prêt.',
     check: 'stock',
   },
   {
@@ -49,7 +49,7 @@ Les ventes peuvent être écrites naturellement, par exemple :
 • Un client a acheté 3 boîtes.
 
 Aucune syntaxe particulière n'est demandée. Ashy comprend automatiquement.`,
-    success: 'Parfait ! Votre vente est enregistrée.',
+    success: '✅ Parfait ! Votre vente est enregistrée.',
     check: 'vente',
   },
   {
@@ -64,7 +64,7 @@ Aucune syntaxe particulière n'est demandée. Ashy comprend automatiquement.`,
 • Paiement électricité $30.
 
 Aucune structure rigide n'est demandée. Une seule dépense à la fois.`,
-    success: 'Super ! Votre dépense est enregistrée.',
+    success: '✅ Super ! Votre dépense est enregistrée.',
     check: 'depense',
   },
   {

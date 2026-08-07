@@ -10,10 +10,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useChat } from '@/context/ChatContext';
 import { readStoredCurrencyPreference } from '@/lib/currency';
 import {
-  cleanUtf8Text,
   compactSpacedDigits,
+  normalizeChatIcons,
   normalizeMessageText,
 } from '@/lib/textEncoding';
+import pb from '@/lib/pocketbaseClient';
 import {
   persistRelaunchGuide,
   useOnboarding,
@@ -92,7 +93,7 @@ function Message({ message, isNew, currencySettings }) {
   const isUser = message.role === 'user';
   const content = compactSpacedDigits(
     isUser
-      ? cleanUtf8Text(message.content)
+      ? normalizeChatIcons(message.content)
       : normalizeMessageText(message.content, currencySettings),
   );
   return (
@@ -154,6 +155,35 @@ const MENU_ITEMS = [
 ];
 
 function SideDrawer({ open, onClose, onLogout, onNavigate, onGuide, user }) {
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || null);
+
+  useEffect(() => {
+    setAvatarUrl(user?.avatarUrl || null);
+  }, [user?.avatarUrl]);
+
+  useEffect(() => {
+    if (!open || !user?.id) return undefined;
+    let cancelled = false;
+    pb.collection('users').getOne(user.id)
+      .then((rec) => {
+        if (cancelled) return;
+        if (rec?.avatar) {
+          try {
+            setAvatarUrl(pb.files.getURL(rec, rec.avatar));
+          } catch {
+            /* keep previous */
+          }
+        } else {
+          setAvatarUrl(null);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [open, user?.id]);
+
+  const initials = `${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`.toUpperCase()
+    || (user?.email?.[0] || '?').toUpperCase();
+
   return (
     <AnimatePresence>
       {open && (
@@ -178,17 +208,23 @@ function SideDrawer({ open, onClose, onLogout, onNavigate, onGuide, user }) {
             className="fixed top-0 right-0 bottom-0 z-50 w-72 flex flex-col shadow-2xl"
             style={{ backgroundColor: '#FFFFFF' }}
           >
-            {/* Drawer header */}
+            {/* Drawer header — profile photo (same as Profil page) */}
             <div className="flex items-center justify-between px-5 py-4" style={{ backgroundColor: '#FF6B00' }}>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-white/40 shadow">
-                  <img src={ASH_AVATAR} alt="Ash Ledger" className="w-full h-full object-cover" />
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-white/40 shadow flex-shrink-0 bg-white/20">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="Photo de profil" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-sm font-bold text-white">
+                      {initials}
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <p className="text-white font-semibold text-sm leading-tight">
+                <div className="min-w-0">
+                  <p className="text-white font-semibold text-sm leading-tight truncate">
                     {user?.name || user?.email?.split('@')[0] || 'Utilisateur'}
                   </p>
-                  <p className="text-orange-100 text-xs truncate max-w-[140px]">{user?.email || ''}</p>
+                  <p className="text-orange-100 text-xs truncate max-w-[160px]">{user?.email || ''}</p>
                 </div>
               </div>
               <button

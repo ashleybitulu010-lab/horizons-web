@@ -32,6 +32,12 @@ function mapUser(record) {
   const firstName = cleanUtf8Text(record.firstName || '');
   const lastName = cleanUtf8Text(record.lastName || '');
   const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
+  let avatarUrl = null;
+  try {
+    if (record.avatar) avatarUrl = pb.files.getURL(record, record.avatar);
+  } catch {
+    avatarUrl = null;
+  }
   return {
     id: record.id,
     email: record.email,
@@ -40,6 +46,8 @@ function mapUser(record) {
     name: fullName || record.email?.split('@')[0] || 'Utilisateur',
     created: record.created,
     airtableId: record.airtableId || record.airtable_id || null,
+    avatar: record.avatar || null,
+    avatarUrl,
   };
 }
 
@@ -230,6 +238,13 @@ export function AuthProvider({ children }) {
     setToken(null);
   }, []);
 
+  /** Keep menu / auth avatar in sync after profile photo updates. */
+  const updateUserRecord = useCallback((record) => {
+    if (!record || !pb.authStore.token) return mapUser(record);
+    pb.authStore.save(pb.authStore.token, record);
+    return syncFromStore(record, pb.authStore.token);
+  }, [syncFromStore]);
+
   const value = useMemo(() => ({
     user,
     token,
@@ -237,9 +252,10 @@ export function AuthProvider({ children }) {
     login,
     signup,
     logout,
+    updateUserRecord,
     isAuthenticated: Boolean(user && token),
     refreshSession: bootstrap,
-  }), [user, token, loading, login, signup, logout, bootstrap]);
+  }), [user, token, loading, login, signup, logout, updateUserRecord, bootstrap]);
 
   return (
     <AuthContext.Provider value={value}>

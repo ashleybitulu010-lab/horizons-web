@@ -7,7 +7,7 @@ import { cleanUtf8Text, normalizeMessageText } from '@/lib/textEncoding';
 export const WELCOME_MESSAGE = {
   id: 'welcome',
   role: 'assistant',
-  content: '👋 Bienvenue sur Ash Ledger !\nJe suis Ash, ton copilote financier. 💰✨\nEnsemble, on va suivre tes ventes, tes dépenses, ton stock et faire grandir ton activité, sans te compliquer la vie. 🚀\nDis-moi simplement ce dont tu as besoin, je m\'occupe du reste. 😊',
+  content: '👋 Bienvenue sur Ash Ledger !\nJe suis Ash, ton copilote financier.\n💰 Ventes · 💸 Dépenses · 📦 Stock · 📋 Produits\nDis-moi simplement ce dont tu as besoin, je m\'occupe du reste.',
   time: '09:00',
   status: 'read',
 };

@@ -23,8 +23,8 @@ import {
 import { localAshyReply, escalateToTelegramSupport } from '@/lib/ashyAssistant';
 import { readStoredCurrencyPreference } from '@/lib/currency';
 import {
-  cleanUtf8Text,
   compactSpacedDigits,
+  normalizeChatIcons,
   normalizeMessageText,
 } from '@/lib/textEncoding';
 
@@ -776,7 +776,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
                           <EmojiText>
                             {compactSpacedDigits(
                               isUser
-                                ? cleanUtf8Text(msg.content)
+                                ? normalizeChatIcons(msg.content)
                                 : normalizeMessageText(msg.content, currencySettings),
                             )}
                           </EmojiText>
