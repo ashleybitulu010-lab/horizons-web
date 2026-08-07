@@ -68,8 +68,8 @@ textarea {
     right: 12px !important;
     bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
     width: min(300px, calc(100vw - 72px)) !important;
-    height: min(320px, 42vh) !important;
-    max-height: 42vh !important;
+    height: min(400px, 52vh) !important;
+    max-height: 52vh !important;
   }
 }
 

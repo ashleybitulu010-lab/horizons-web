@@ -536,8 +536,8 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
       ? Math.min(300, vw - 72)
       : Math.min(340, vw - 80);
     const panelH = isMobile
-      ? Math.min(320, Math.round(vh * 0.42))
-      : Math.min(360, Math.round(vh * 0.4));
+      ? Math.min(400, Math.round(vh * 0.52))
+      : Math.min(420, Math.round(vh * 0.48));
 
     return {
       position: 'fixed',
@@ -548,7 +548,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
       width: panelW,
       height: panelH,
       maxWidth: 'calc(100vw - 72px)',
-      maxHeight: isMobile ? '42vh' : '40vh',
+      maxHeight: isMobile ? '52vh' : '48vh',
       zIndex: 99,
     };
   };
