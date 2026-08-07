@@ -6,6 +6,7 @@ import {
   ArrowLeft, Calendar, CheckCircle2, AlertCircle, Clock, Crown, RefreshCw, Sparkles, WifiOff,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { useLanguage } from '@/context/LanguageContext';
 import { createDashboardSession, supabase } from '@/lib/supabaseRest';
 import { syncSubscriptionAnalytics, trackEvent } from '@/lib/analytics';
 
@@ -193,6 +194,7 @@ function StatusBadge({ subscription }) {
 export default function SubscriptionPage() {
   const navigate = useNavigate();
   const { user, token } = useAuth();
+  const { t } = useLanguage();
   const { subscription, loading, error, refresh } = useSubscription(user, token);
 
   useEffect(() => {
@@ -208,7 +210,7 @@ export default function SubscriptionPage() {
   return (
     <>
       <Helmet>
-        <title>Mon abonnement — Ash Ledger</title>
+        <title>{t('subscription.title')} — Ash Ledger</title>
         <meta name="description" content="Consultez votre plan, vos dates et votre statut d'abonnement Ash Ledger." />
       </Helmet>
 
@@ -223,7 +225,7 @@ export default function SubscriptionPage() {
           >
             <ArrowLeft size={20} strokeWidth={2} />
           </button>
-          <h1 className="text-white font-semibold text-base flex-1">Mon abonnement</h1>
+          <h1 className="text-white font-semibold text-base flex-1">{t('subscription.title')}</h1>
           <button
             type="button"
             onClick={refresh}

@@ -1,17 +1,20 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Copy, CornerUpLeft, Forward, Trash2, CheckSquare, X } from 'lucide-react';
+import { useLanguage } from '@/context/LanguageContext';
 
-const ACTIONS = [
-  { id: 'copy', label: 'Copier', icon: Copy },
-  { id: 'reply', label: 'Répondre', icon: CornerUpLeft },
-  { id: 'forward', label: 'Transférer', icon: Forward },
-  { id: 'select', label: 'Sélectionner', icon: CheckSquare },
-  { id: 'delete', label: 'Supprimer', icon: Trash2, danger: true, ownOnly: true },
+const ACTION_DEFS = [
+  { id: 'copy', labelKey: 'msg.copy', icon: Copy },
+  { id: 'reply', labelKey: 'msg.reply', icon: CornerUpLeft },
+  { id: 'forward', labelKey: 'msg.forward', icon: Forward },
+  { id: 'select', labelKey: 'msg.select', icon: CheckSquare },
+  { id: 'delete', labelKey: 'msg.delete', icon: Trash2, danger: true, ownOnly: true },
 ];
 
 /**
  * Native-style bottom action sheet for chat long-press (WhatsApp / Telegram feel).
+ * Portaled to document.body so it always sits above overlays (Ashy panel, drawers).
  */
 export default function MessageActionSheet({
   open,
@@ -20,6 +23,8 @@ export default function MessageActionSheet({
   onClose,
   onAction,
 }) {
+  const { t } = useLanguage();
+
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => {
@@ -29,17 +34,28 @@ export default function MessageActionSheet({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  const isOwn = message?.role === 'user';
-  const actions = ACTIONS.filter((a) => !a.ownOnly || isOwn);
+  const isOwn = message?.role === 'user' || message?.sender_type === 'user';
+  const fromAshy =
+    message?.sender_type === 'support'
+    || message?.sender_type === 'assistant'
+    || message?.role === 'assistant';
+  const headerLabel = isOwn
+    ? t('msg.yourMessage')
+    : fromAshy
+      ? 'Ashy'
+      : 'Ash Ledger';
+  const actions = ACTION_DEFS.filter((a) => !a.ownOnly || isOwn);
 
-  return (
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <AnimatePresence>
       {open && message && (
         <>
           <motion.button
             type="button"
-            aria-label="Fermer"
-            className="fixed inset-0 z-[80]"
+            aria-label={t('common.close')}
+            className="fixed inset-0 z-[110]"
             style={{ backgroundColor: 'rgba(15, 23, 42, 0.45)' }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -49,8 +65,8 @@ export default function MessageActionSheet({
           <motion.div
             role="dialog"
             aria-modal="true"
-            aria-label="Actions du message"
-            className="fixed inset-x-0 bottom-0 z-[90] px-3"
+            aria-label={t('msg.actions')}
+            className="fixed inset-x-0 bottom-0 z-[120] px-3"
             style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}
             initial={{ y: '110%' }}
             animate={{ y: 0 }}
@@ -61,13 +77,13 @@ export default function MessageActionSheet({
               <div className="border-b border-stone-100 px-4 py-3">
                 <div className="mb-2 flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wide text-stone-400">
-                    {isOwn ? 'Votre message' : 'Ash Ledger'}
+                    {headerLabel}
                   </p>
                   <button
                     type="button"
                     onClick={onClose}
                     className="rounded-full p-1 text-stone-400 active:bg-stone-100"
-                    aria-label="Fermer le menu"
+                    aria-label={t('msg.closeMenu')}
                   >
                     <X size={16} />
                   </button>
@@ -77,7 +93,7 @@ export default function MessageActionSheet({
                 </p>
               </div>
               <div className="grid grid-cols-3 gap-1 p-2 sm:grid-cols-5">
-                {actions.map(({ id, label, icon: Icon, danger }) => (
+                {actions.map(({ id, labelKey, icon: Icon, danger }) => (
                   <button
                     key={id}
                     type="button"
@@ -94,7 +110,7 @@ export default function MessageActionSheet({
                       <Icon size={20} strokeWidth={2} />
                     </span>
                     <span className={`text-[11px] font-semibold ${danger ? 'text-red-600' : 'text-stone-700'}`}>
-                      {label}
+                      {t(labelKey)}
                     </span>
                   </button>
                 ))}
@@ -103,6 +119,7 @@ export default function MessageActionSheet({
           </motion.div>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }

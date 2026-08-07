@@ -36,6 +36,7 @@ import {
   YAxis,
 } from 'recharts';
 import { useAuth } from '@/hooks/useAuth';
+import { useLanguage } from '@/context/LanguageContext';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import {
   formatCompactCurrency,
@@ -119,6 +120,7 @@ function filterTimelineByPeriod(timeline, period) {
 }
 
 function FinancialChart({ data, currency, period, onPeriodChange }) {
+  const { t } = useLanguage();
   return (
     <SectionCard>
       <div className="flex flex-col gap-3 px-5 pb-1 pt-5 sm:flex-row sm:items-start sm:justify-between sm:px-6">
@@ -127,7 +129,7 @@ function FinancialChart({ data, currency, period, onPeriodChange }) {
             <BarChart3 size={17} strokeWidth={2} />
           </span>
           <div>
-            <h2 className="text-sm font-bold text-stone-800">Évolution financière</h2>
+            <h2 className="text-sm font-bold text-stone-800">{t('dashboard.evolution')}</h2>
             <p className="mt-0.5 text-xs text-stone-400">Chiffre d’affaires, dépenses et bénéfice</p>
           </div>
         </div>
@@ -151,7 +153,7 @@ function FinancialChart({ data, currency, period, onPeriodChange }) {
       {!data.length ? (
         <div className="flex h-[165px] flex-col items-center justify-center px-6 text-center">
           <BarChart3 size={25} className="mb-2 text-stone-200" />
-          <p className="text-sm font-semibold text-stone-400">Aucune opération sur cette période</p>
+          <p className="text-sm font-semibold text-stone-400">{t('dashboard.noOps')}</p>
         </div>
       ) : (
         <div className="h-[200px] w-full px-2 pb-3 pr-4">
@@ -252,11 +254,12 @@ const ACTIVITY_STYLE = {
 };
 
 function RecentActivities({ activities, currency }) {
+  const { t } = useLanguage();
   return (
     <SectionCard className="h-full">
       <div className="flex items-center justify-between px-5 pb-3 pt-5 sm:px-6">
         <div>
-          <h2 className="text-base font-bold text-stone-800">Activités récentes</h2>
+          <h2 className="text-base font-bold text-stone-800">{t('dashboard.recent')}</h2>
           <p className="mt-0.5 text-xs text-stone-400">Dernières opérations synchronisées</p>
         </div>
         <Clock3 size={19} className="text-stone-300" />
@@ -302,11 +305,12 @@ const ALERT_STYLE = {
 };
 
 function SmartAlerts({ alerts }) {
+  const { t } = useLanguage();
   return (
     <SectionCard className="h-full">
       <div className="flex items-center justify-between px-5 pb-3 pt-5 sm:px-6">
         <div>
-          <h2 className="text-base font-bold text-stone-800">Alertes intelligentes</h2>
+          <h2 className="text-base font-bold text-stone-800">{t('dashboard.alerts')}</h2>
           <p className="mt-0.5 text-xs text-stone-400">Signaux calculés depuis vos données</p>
         </div>
         <Sparkles size={19} className="text-orange-400" />
@@ -316,7 +320,7 @@ function SmartAlerts({ alerts }) {
           <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
             <Sparkles size={19} />
           </span>
-          <p className="text-sm font-semibold text-stone-500">Aucune alerte détectée</p>
+          <p className="text-sm font-semibold text-stone-500">{t('dashboard.noAlerts')}</p>
           <p className="mt-1 text-xs text-stone-300">Ashy continue d’analyser vos opérations.</p>
         </div>
       ) : (
@@ -341,6 +345,7 @@ function SmartAlerts({ alerts }) {
 }
 
 function DebtSummary({ debts, currency }) {
+  const { t } = useLanguage();
   const money = (value) => formatCurrency(value, currency);
   const hasDebt = debts.remaining > 0;
 
@@ -348,7 +353,7 @@ function DebtSummary({ debts, currency }) {
     <SectionCard>
       <div className="flex items-center justify-between px-5 pb-3 pt-5 sm:px-6">
         <div>
-          <h2 className="text-base font-bold text-stone-800">Dettes clients</h2>
+          <h2 className="text-base font-bold text-stone-800">{t('dashboard.debts')}</h2>
           <p className="mt-0.5 text-xs text-stone-400">Créances et paiements synchronisés</p>
         </div>
         <span className={`flex h-10 w-10 items-center justify-center rounded-2xl ${
@@ -392,6 +397,7 @@ function LoadingDashboard() {
 }
 
 export default function DashboardPage() {
+  const { t } = useLanguage();
   const { user, token } = useAuth();
   const navigate = useNavigate();
   const [chartPeriod, setChartPeriod] = useState('month');
@@ -500,7 +506,7 @@ export default function DashboardPage() {
   return (
     <>
       <Helmet>
-        <title>Tableau de bord — Ash Ledger</title>
+        <title>{t('dashboard.title')} — Ash Ledger</title>
         <meta name="description" content="Analyse en temps réel de vos ventes, dépenses, bénéfices et stocks." />
       </Helmet>
 
@@ -519,7 +525,7 @@ export default function DashboardPage() {
               <BarChart3 size={20} />
             </span>
             <div className="min-w-0 flex-1">
-              <h1 className="truncate text-base font-bold tracking-tight">Tableau de bord</h1>
+              <h1 className="truncate text-base font-bold tracking-tight">{t('dashboard.title')}</h1>
               <div className="flex items-center gap-1.5 text-[11px] font-medium text-stone-400">
                 {realtimeStatus === 'connected' ? (
                   <Wifi size={11} className="text-emerald-500" />
@@ -568,7 +574,7 @@ export default function DashboardPage() {
               <span className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
                 <WifiOff size={24} />
               </span>
-              <h2 className="text-lg font-bold text-stone-800">Données indisponibles</h2>
+              <h2 className="text-lg font-bold text-stone-800">{t('dashboard.unavailable')}</h2>
               <p className="mt-2 text-sm leading-relaxed text-stone-500">{error}</p>
               <button
                 type="button"
@@ -583,7 +589,7 @@ export default function DashboardPage() {
         ) : (
           <main className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.15em] text-orange-500">Vue d’ensemble</p>
+              <p className="text-xs font-bold uppercase tracking-[0.15em] text-orange-500">{t('dashboard.overview')}</p>
               <h2 className="mt-1 text-2xl font-bold tracking-tight text-stone-900 sm:text-3xl">
                 Bonjour {user?.firstName || user?.name || '—'}
               </h2>

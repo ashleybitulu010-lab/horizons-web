@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { ArrowLeft, FileText, Download, BarChart2, TrendingUp, Calendar, FileBarChart } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { useLanguage } from '@/context/LanguageContext';
 import pb from '@/lib/pocketbaseClient';
 import { motion } from 'framer-motion';
 import { cleanUtf8Text } from '@/lib/textEncoding';
@@ -62,6 +63,7 @@ function mergeReports(remote = [], local = []) {
 
 export default function ReportsPage() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState([]);
@@ -119,7 +121,7 @@ export default function ReportsPage() {
   return (
     <>
       <Helmet>
-        <title>Mes rapports — Ash Ledger</title>
+        <title>{t('reports.title')} — Ash Ledger</title>
         <meta name="description" content="Consultez et téléchargez vos rapports Ash Ledger." />
       </Helmet>
 
@@ -134,7 +136,7 @@ export default function ReportsPage() {
           >
             <ArrowLeft size={20} strokeWidth={2} />
           </button>
-          <h1 className="text-white font-semibold text-base flex-1">Mes rapports</h1>
+          <h1 className="text-white font-semibold text-base flex-1">{t('reports.title')}</h1>
           {!loading && reports.length > 0 && (
             <span className="text-orange-100 text-xs font-medium bg-white/20 px-2.5 py-1 rounded-full">
               {reports.length} rapport{reports.length > 1 ? 's' : ''}

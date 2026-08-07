@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, ChevronDown } from 'lucide-react';
+import { Send, ChevronDown, Copy, Trash2, Forward, Check, X } from 'lucide-react';
 import pb from '@/lib/pocketbaseClient';
 import Ashy from '@/components/Ashy';
 import EmojiText from '@/components/EmojiText';
+import MessageActionSheet from '@/components/MessageActionSheet';
 import { useChat } from '@/context/ChatContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
@@ -28,13 +29,41 @@ import {
   normalizeMessageText,
 } from '@/lib/textEncoding';
 import { trackChatMessageSent, trackFromAssistantReply } from '@/lib/analytics';
+import { useLanguage } from '@/context/LanguageContext';
 
 const SUPPORT_AVATAR = 'https://horizons-cdn.hostinger.com/29358ba6-568b-49c6-9aac-6ece4b30fac6/ca8bd733c63d36fa2caff0db62fb3057.png';
-
-const TOOLTIPS = ['👋 Besoin d\'aide ?', '💬 Discutez avec Ashy', '🎯 Relancer le guide ?'];
 const BUBBLE_SIZE = 80;
 const MARGIN = 28;
 const LS_KEY = 'ash_support_bubble_pos';
+const LONG_PRESS_MS = 480;
+const LONG_PRESS_MOVE_PX = 12;
+
+async function copyText(text) {
+  const value = String(text || '');
+  if (!value) return false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
 
 function getTime(dateStr) {
   const d = dateStr ? new Date(dateStr) : new Date();
@@ -135,9 +164,15 @@ function ProgressBar({ progress, visible }) {
 
 export default function SupportChatWidget({ user, forceOpen = false }) {
   const { messages: mainMessages, loading: mainLoading } = useChat();
+  const { t, language } = useLanguage();
   const isMobile = useIsMobile();
   const bubbleSize = isMobile ? 56 : BUBBLE_SIZE;
   const currencySettings = readStoredCurrencyPreference(user?.id);
+  const tooltips = useMemo(() => [
+    `👋 ${t('ashy.needHelp')}`,
+    `💬 ${t('ashy.chat')}`,
+    `🎯 ${t('ashy.relaunch')}`,
+  ], [t, language]);
   const {
     state: onboarding,
     progress,
@@ -162,18 +197,26 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
   const [agentTyping, setAgentTyping] = useState(false);
   const [unread, setUnread] = useState(0);
   const [showTooltip, setShowTooltip] = useState(false);
-  const [tooltipText, setTooltipText] = useState(TOOLTIPS[0]);
+  const [tooltipText, setTooltipText] = useState('');
   const [newMsgIds, setNewMsgIds] = useState(new Set());
   const [celebrateSignal, setCelebrateSignal] = useState(0);
   const [thinkingSignal, setThinkingSignal] = useState(false);
   const [validating, setValidating] = useState(false);
   const [welcomeShown, setWelcomeShown] = useState(false);
+  const [actionMessage, setActionMessage] = useState(null);
+  const [replyTo, setReplyTo] = useState(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [toast, setToast] = useState(null);
 
   const [pos, setPos] = useState(() => loadPos() || getDefaultPos());
   const [isDragging, setIsDragging] = useState(false);
   const [snapTransition, setSnapTransition] = useState(false);
   const dragStart = useRef(null);
   const hasMoved = useRef(false);
+  const pressTimer = useRef(null);
+  const pressedMsg = useRef(false);
+  const pressOrigin = useRef(null);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -187,6 +230,117 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
   const showGuideTranscript =
     isGuideMode || (onboarding?.status === 'completed' && guideMessages.length > 0 && messages.length === 0);
   const displayMessages = showGuideTranscript ? guideMessages : messages;
+  const setDisplayMessages = showGuideTranscript ? setGuideMessages : setMessages;
+
+  const showToast = useCallback((text) => {
+    setToast(text);
+    window.setTimeout(() => setToast(null), 1800);
+  }, []);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  const toggleSelect = useCallback((id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const key = String(id);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const deleteSupportMessages = useCallback((ids) => {
+    const idSet = new Set((ids || []).map(String));
+    if (!idSet.size) return;
+    setDisplayMessages((prev) => prev.filter((m) => !idSet.has(String(m.id)) || m.sender_type !== 'user'));
+    setNewMsgIds((prev) => {
+      const next = new Set(prev);
+      idSet.forEach((id) => next.delete(id));
+      return next;
+    });
+  }, [setDisplayMessages]);
+
+  const clearPress = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+    pressOrigin.current = null;
+  };
+
+  const startMsgPress = (msg, e) => {
+    if (selectMode || !msg) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    pressedMsg.current = false;
+    clearPress();
+    pressOrigin.current = { x: e.clientX, y: e.clientY };
+    pressTimer.current = window.setTimeout(() => {
+      pressedMsg.current = true;
+      pressOrigin.current = null;
+      try { navigator.vibrate?.(18); } catch { /* ignore */ }
+      setActionMessage(msg);
+    }, LONG_PRESS_MS);
+  };
+
+  const moveMsgPress = (e) => {
+    if (!pressTimer.current || !pressOrigin.current) return;
+    const dx = e.clientX - pressOrigin.current.x;
+    const dy = e.clientY - pressOrigin.current.y;
+    if ((dx * dx) + (dy * dy) > LONG_PRESS_MOVE_PX * LONG_PRESS_MOVE_PX) {
+      clearPress();
+    }
+  };
+
+  const endMsgPress = (e) => {
+    const wasLong = pressedMsg.current;
+    clearPress();
+    if (wasLong) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+
+  const handleMessageAction = useCallback(async (action, message) => {
+    setActionMessage(null);
+    const text = String(message?.content || '').trim();
+
+    if (action === 'copy') {
+      const ok = await copyText(text);
+      showToast(ok ? t('msg.copied') : t('msg.copyFail'));
+      return;
+    }
+    if (action === 'reply') {
+      setReplyTo(message);
+      inputRef.current?.focus();
+      return;
+    }
+    if (action === 'forward') {
+      try {
+        if (navigator.share) {
+          await navigator.share({ text });
+          return;
+        }
+      } catch { /* cancelled */ }
+      const ok = await copyText(text);
+      showToast(ok ? t('msg.forwardCopied') : t('msg.forwardFail'));
+      return;
+    }
+    if (action === 'select') {
+      setSelectMode(true);
+      setSelectedIds(new Set([String(message.id)]));
+      return;
+    }
+    if (action === 'delete') {
+      if (message?.sender_type !== 'user') return;
+      deleteSupportMessages([message.id]);
+      showToast(t('msg.deleted'));
+    }
+  }, [deleteSupportMessages, showToast, t]);
+
+  const selectedMessages = displayMessages.filter((m) => selectedIds.has(String(m.id)));
 
   const pushGuide = useCallback((content, extras = {}) => {
     const msg = makeLocalMsg(content, 'support', extras);
@@ -297,16 +451,16 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
   }, [displayMessages, agentTyping]);
 
   useEffect(() => {
-    if (open) { setShowTooltip(false); return; }
+    if (open) { setShowTooltip(false); return undefined; }
     const showNext = () => {
-      setTooltipText(TOOLTIPS[Math.floor(Math.random() * TOOLTIPS.length)]);
+      setTooltipText(tooltips[Math.floor(Math.random() * tooltips.length)]);
       setShowTooltip(true);
       setTimeout(() => setShowTooltip(false), 3800);
     };
     const initial = setTimeout(showNext, 4000);
     tooltipInterval.current = setInterval(showNext, 22000);
     return () => { clearTimeout(initial); clearInterval(tooltipInterval.current); setShowTooltip(false); };
-  }, [open]);
+  }, [open, tooltips]);
 
   const initChat = useCallback(async () => {
     if (!user?.id || isGuideMode) return null;
@@ -669,13 +823,19 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
   const sendMessage = async () => {
     const text = input.trim();
     if (!text || sending) return;
+    let payload = text;
+    if (replyTo?.content) {
+      const snippet = String(replyTo.content).replace(/\s+/g, ' ').slice(0, 120);
+      payload = `↩ ${snippet}${String(replyTo.content).length > 120 ? '…' : ''}\n\n${payload}`;
+    }
     setInput('');
+    setReplyTo(null);
     if (inputRef.current) inputRef.current.style.height = 'auto';
     setSending(true);
     trackChatMessageSent(isGuideMode ? 'guide' : 'support_widget');
     try {
-      if (isGuideMode) await sendGuideMessage(text);
-      else await sendNormalMessage(text);
+      if (isGuideMode) await sendGuideMessage(payload);
+      else await sendNormalMessage(payload);
     } finally {
       setSending(false);
     }
@@ -770,17 +930,22 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
             )}
 
             <div
-              className="flex-1 overflow-y-auto py-3 px-3 space-y-1.5"
+              className="flex-1 overflow-y-auto py-3 px-3 space-y-1.5 select-none"
+              onContextMenu={(e) => e.preventDefault()}
               style={{
                 backgroundColor: '#EDE8E0',
                 backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Cpath d='M 5 25 Q 15 15 25 25 Q 35 35 45 25 Q 55 15 65 25' stroke='%23c8b89a' stroke-width='0.5' fill='none' opacity='0.2'/%3E%3C/svg%3E\")",
                 backgroundSize: '60px 60px',
+                WebkitUserSelect: 'none',
+                userSelect: 'none',
+                WebkitTouchCallout: 'none',
               }}
             >
               <AnimatePresence initial={false}>
                 {displayMessages.map((msg) => {
                   const isUser = msg.sender_type === 'user';
                   const isNew = newMsgIds.has(msg.id);
+                  const selected = selectedIds.has(String(msg.id));
                   return (
                     <motion.div
                       key={msg.id}
@@ -788,19 +953,49 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       transition={{ duration: 0.2, ease: 'easeOut' }}
                       className={`flex items-end gap-1.5 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        if (!selectMode) setActionMessage(msg);
+                      }}
                     >
+                      {selectMode && (
+                        <button
+                          type="button"
+                          aria-label={selected ? t('msg.deselect') : t('msg.select')}
+                          onClick={() => toggleSelect(msg.id)}
+                          className={`mb-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 ${
+                            selected ? 'border-orange-500 bg-orange-500 text-white' : 'border-stone-300 bg-white'
+                          }`}
+                        >
+                          {selected ? <Check size={12} strokeWidth={3} /> : null}
+                        </button>
+                      )}
                       {!isUser && (
                         <div className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 mb-1 border border-white/60">
                           <img src={SUPPORT_AVATAR} alt="Ashy" className="w-full h-full object-cover" />
                         </div>
                       )}
                       <div
-                        className={`max-w-[85%] px-3 py-2 shadow-sm text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                        role="button"
+                        tabIndex={0}
+                        onPointerDown={(e) => startMsgPress(msg, e)}
+                        onPointerUp={endMsgPress}
+                        onPointerCancel={clearPress}
+                        onPointerMove={moveMsgPress}
+                        onClick={() => {
+                          if (selectMode) toggleSelect(msg.id);
+                        }}
+                        className={`max-w-[85%] px-3 py-2 shadow-sm text-sm leading-relaxed whitespace-pre-wrap break-words touch-manipulation select-none ${
                           isUser
                             ? 'rounded-2xl rounded-br-sm text-white'
                             : 'rounded-2xl rounded-bl-sm text-gray-800 bg-white'
-                        }`}
-                        style={isUser ? { backgroundColor: '#FF6B00' } : {}}
+                        } ${selected ? 'ring-2 ring-orange-400 ring-offset-1' : ''}`}
+                        style={{
+                          ...(isUser ? { backgroundColor: '#FF6B00' } : {}),
+                          WebkitUserSelect: 'none',
+                          userSelect: 'none',
+                          WebkitTouchCallout: 'none',
+                        }}
                       >
                         <span className="chat-text">
                           <EmojiText>
@@ -817,7 +1012,9 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
                               <button
                                 key={action.id}
                                 type="button"
-                                onClick={() => {
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   if (action.id === 'start') handleStartGuide();
                                   if (action.id === 'later') handleLaterGuide();
                                   if (action.id === 'skip') handleSkipGuide();
@@ -879,32 +1076,144 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
               <div ref={messagesEndRef} />
             </div>
 
-            <div
-              className="flex-shrink-0 px-3 py-2.5 flex items-end gap-2"
-              style={{ backgroundColor: '#F0EBE2', borderTop: '1px solid rgba(0,0,0,0.06)' }}
-            >
-              <div className="flex-1 bg-white rounded-2xl overflow-hidden flex items-end px-3 py-2 border border-gray-100 shadow-sm">
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={handleTextarea}
-                  onKeyDown={handleKeyDown}
-                  enterKeyHint="enter"
-                  placeholder={isGuideMode ? 'Posez une question à Ashy…' : 'Votre message…'}
-                  rows={1}
-                  className="chat-input w-full resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none leading-relaxed"
-                  style={{ minHeight: 20, maxHeight: 88 }}
-                />
-              </div>
-              <motion.button
-                onClick={sendMessage}
-                disabled={!input.trim() || sending}
-                className="w-9 h-9 flex-shrink-0 rounded-full flex items-center justify-center text-white transition-opacity"
-                whileTap={{ scale: 0.88 }}
-                style={{ backgroundColor: '#FF6B00', opacity: (!input.trim() || sending) ? 0.4 : 1 }}
+            {selectMode ? (
+              <div
+                className="flex-shrink-0 px-2 py-2 flex items-center gap-1.5"
+                style={{ backgroundColor: '#1C1917' }}
               >
-                <Send size={14} strokeWidth={2.2} />
-              </motion.button>
+                <button
+                  type="button"
+                  onClick={exitSelectMode}
+                  className="rounded-full p-2 text-white/80 active:bg-white/10"
+                  aria-label={t('msg.cancelSelect')}
+                >
+                  <X size={18} />
+                </button>
+                <p className="flex-1 text-xs font-semibold text-white">
+                  {t(selectedIds.size > 1 ? 'msg.selectedPlural' : 'msg.selected', { count: selectedIds.size })}
+                </p>
+                <button
+                  type="button"
+                  disabled={!selectedIds.size}
+                  onClick={async () => {
+                    const text = selectedMessages.map((m) => m.content).join('\n\n');
+                    const ok = await copyText(text);
+                    showToast(ok ? t('ashy.copied') : t('msg.copyFail'));
+                  }}
+                  className="rounded-full p-2 text-white disabled:opacity-40 active:bg-white/10"
+                  aria-label={t('msg.copy')}
+                >
+                  <Copy size={16} />
+                </button>
+                <button
+                  type="button"
+                  disabled={!selectedIds.size}
+                  onClick={async () => {
+                    const text = selectedMessages.map((m) => m.content).join('\n\n');
+                    try {
+                      if (navigator.share) {
+                        await navigator.share({ text });
+                        return;
+                      }
+                    } catch { /* ignore */ }
+                    const ok = await copyText(text);
+                    showToast(ok ? t('ashy.forwardCopied') : t('msg.forwardFail'));
+                  }}
+                  className="rounded-full p-2 text-white disabled:opacity-40 active:bg-white/10"
+                  aria-label={t('msg.forward')}
+                >
+                  <Forward size={16} />
+                </button>
+                <button
+                  type="button"
+                  disabled={!selectedMessages.some((m) => m.sender_type === 'user')}
+                  onClick={() => {
+                    const ids = selectedMessages.filter((m) => m.sender_type === 'user').map((m) => m.id);
+                    deleteSupportMessages(ids);
+                    exitSelectMode();
+                    showToast(t('msg.deletedPlural'));
+                  }}
+                  className="rounded-full p-2 text-red-300 disabled:opacity-40 active:bg-white/10"
+                  aria-label={t('msg.delete')}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ) : (
+              <>
+                {replyTo && (
+                  <div className="flex-shrink-0 px-3 pt-2" style={{ backgroundColor: '#F0EBE2' }}>
+                    <div className="flex items-start gap-2 rounded-xl border border-orange-100 bg-white px-2.5 py-1.5">
+                      <div className="min-w-0 flex-1 border-l-2 border-orange-500 pl-2">
+                        <p className="text-[10px] font-semibold text-orange-600">
+                          {replyTo.sender_type === 'user' ? t('common.you') : 'Ashy'}
+                        </p>
+                        <p className="truncate text-[11px] text-stone-500">
+                          {String(replyTo.content || '').replace(/\s+/g, ' ')}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setReplyTo(null)}
+                        className="rounded-full p-1 text-stone-400 active:bg-stone-100"
+                        aria-label={t('msg.cancelReply')}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div
+                  className="flex-shrink-0 px-3 py-2.5 flex items-end gap-2"
+                  style={{ backgroundColor: '#F0EBE2', borderTop: '1px solid rgba(0,0,0,0.06)' }}
+                >
+                  <div className="flex-1 bg-white rounded-2xl overflow-hidden flex items-end px-3 py-2 border border-gray-100 shadow-sm">
+                    <textarea
+                      ref={inputRef}
+                      value={input}
+                      onChange={handleTextarea}
+                      onKeyDown={handleKeyDown}
+                      enterKeyHint="enter"
+                      placeholder={isGuideMode ? t('ashy.placeholderGuide') : t('ashy.placeholder')}
+                      rows={1}
+                      className="chat-input w-full resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none leading-relaxed"
+                      style={{ minHeight: 20, maxHeight: 88 }}
+                    />
+                  </div>
+                  <motion.button
+                    onClick={sendMessage}
+                    disabled={!input.trim() || sending}
+                    className="w-9 h-9 flex-shrink-0 rounded-full flex items-center justify-center text-white transition-opacity"
+                    whileTap={{ scale: 0.88 }}
+                    style={{ backgroundColor: '#FF6B00', opacity: (!input.trim() || sending) ? 0.4 : 1 }}
+                  >
+                    <Send size={14} strokeWidth={2.2} />
+                  </motion.button>
+                </div>
+              </>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <MessageActionSheet
+        open={Boolean(actionMessage)}
+        message={actionMessage}
+        preview={actionMessage ? String(actionMessage.content || '').replace(/\s+/g, ' ').slice(0, 160) : ''}
+        onClose={() => setActionMessage(null)}
+        onAction={handleMessageAction}
+      />
+
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="pointer-events-none fixed inset-x-0 bottom-28 z-[130] flex justify-center px-4"
+          >
+            <div className="rounded-full bg-stone-900/90 px-4 py-2 text-xs font-semibold text-white shadow-lg">
+              {toast}
             </div>
           </motion.div>
         )}

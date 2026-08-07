@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { ArrowLeft, Save, Eye, EyeOff, Camera } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { useLanguage } from '@/context/LanguageContext';
 import pb from '@/lib/pocketbaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cleanUtf8Text } from '@/lib/textEncoding';
@@ -56,6 +57,7 @@ function Input({ label, value, onChange, type = 'text', readOnly = false, right 
 
 export default function ProfilePage() {
   const { user, updateUserRecord } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const [loading, setLoading] = useState(true);
@@ -167,7 +169,7 @@ export default function ProfilePage() {
   return (
     <>
       <Helmet>
-        <title>Mon profil — Ash Ledger</title>
+        <title>{t('profile.title')} — Ash Ledger</title>
         <meta name="description" content="Gérez votre profil Ash Ledger." />
       </Helmet>
 
@@ -185,7 +187,7 @@ export default function ProfilePage() {
           >
             <ArrowLeft size={20} strokeWidth={2} />
           </button>
-          <h1 className="text-white font-semibold text-base flex-1">Mon profil</h1>
+          <h1 className="text-white font-semibold text-base flex-1">{t('profile.title')}</h1>
         </header>
 
         <div className="flex-1 overflow-y-auto px-4 py-6 max-w-lg mx-auto w-full space-y-5">

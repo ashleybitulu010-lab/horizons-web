@@ -24,8 +24,10 @@ import {
   useOnboarding,
   ONBOARDING_RELAUNCH_EVENT,
 } from '@/hooks/useOnboarding';
+import { useLanguage } from '@/context/LanguageContext';
 
 const LONG_PRESS_MS = 480;
+const LONG_PRESS_MOVE_PX = 12;
 
 async function copyText(text) {
   const value = String(text || '');
@@ -139,12 +141,14 @@ function Message({
   );
   const pressTimer = useRef(null);
   const pressed = useRef(false);
+  const pressOrigin = useRef(null);
 
   const clearPress = () => {
     if (pressTimer.current) {
       clearTimeout(pressTimer.current);
       pressTimer.current = null;
     }
+    pressOrigin.current = null;
   };
 
   const startPress = (e) => {
@@ -153,16 +157,28 @@ function Message({
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     pressed.current = false;
     clearPress();
+    pressOrigin.current = { x: e.clientX, y: e.clientY };
     pressTimer.current = window.setTimeout(() => {
       pressed.current = true;
+      pressOrigin.current = null;
       try { navigator.vibrate?.(18); } catch { /* ignore */ }
       onLongPress?.(message);
     }, LONG_PRESS_MS);
   };
 
+  const movePress = (e) => {
+    if (!pressTimer.current || !pressOrigin.current) return;
+    const dx = e.clientX - pressOrigin.current.x;
+    const dy = e.clientY - pressOrigin.current.y;
+    if ((dx * dx) + (dy * dy) > LONG_PRESS_MOVE_PX * LONG_PRESS_MOVE_PX) {
+      clearPress();
+    }
+  };
+
   const endPress = (e) => {
+    const wasLong = pressed.current;
     clearPress();
-    if (pressed.current) {
+    if (wasLong) {
       e.preventDefault();
       e.stopPropagation();
     }
@@ -206,7 +222,7 @@ function Message({
         onPointerDown={startPress}
         onPointerUp={endPress}
         onPointerCancel={clearPress}
-        onPointerMove={clearPress}
+        onPointerMove={movePress}
         onClick={handleClick}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -273,15 +289,16 @@ function DateDivider({ label }) {
 
 /* ── Side drawer ── */
 const MENU_ITEMS = [
-  { icon: Sparkles, label: 'Guide Ashy', action: 'guide' },
-  { icon: LayoutDashboard, label: 'Tableau de bord', route: '/dashboard' },
-  { icon: User, label: 'Mon profil', route: '/profile' },
-  { icon: CreditCard, label: 'Mon abonnement', route: '/subscription' },
-  { icon: BarChart2, label: 'Mes rapports', route: '/reports' },
-  { icon: Settings, label: 'Paramètres', route: '/settings' },
+  { icon: Sparkles, labelKey: 'nav.guide', action: 'guide' },
+  { icon: LayoutDashboard, labelKey: 'nav.dashboard', route: '/dashboard' },
+  { icon: User, labelKey: 'nav.profile', route: '/profile' },
+  { icon: CreditCard, labelKey: 'nav.subscription', route: '/subscription' },
+  { icon: BarChart2, labelKey: 'nav.reports', route: '/reports' },
+  { icon: Settings, labelKey: 'nav.settings', route: '/settings' },
 ];
 
 function SideDrawer({ open, onClose, onLogout, onNavigate, onGuide, user }) {
+  const { t } = useLanguage();
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || null);
 
   useEffect(() => {
@@ -340,7 +357,7 @@ function SideDrawer({ open, onClose, onLogout, onNavigate, onGuide, user }) {
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-white/40 shadow flex-shrink-0 bg-white/20">
                   {avatarUrl ? (
-                    <img src={avatarUrl} alt="Photo de profil" className="w-full h-full object-cover" />
+                    <img src={avatarUrl} alt={t('nav.avatarAlt')} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-sm font-bold text-white">
                       {initials}
@@ -349,7 +366,7 @@ function SideDrawer({ open, onClose, onLogout, onNavigate, onGuide, user }) {
                 </div>
                 <div className="min-w-0">
                   <p className="text-white font-semibold text-sm leading-tight truncate">
-                    {user?.name || user?.email?.split('@')[0] || 'Utilisateur'}
+                    {user?.name || user?.email?.split('@')[0] || t('nav.user')}
                   </p>
                   <p className="text-orange-100 text-xs truncate max-w-[160px]">{user?.email || ''}</p>
                 </div>
@@ -364,9 +381,9 @@ function SideDrawer({ open, onClose, onLogout, onNavigate, onGuide, user }) {
 
             {/* Menu items */}
             <nav className="flex-1 py-4 px-3 flex flex-col gap-1">
-              {MENU_ITEMS.map(({ icon: Icon, label, route, action }) => (
+              {MENU_ITEMS.map(({ icon: Icon, labelKey, route, action }) => (
                 <button
-                  key={label}
+                  key={labelKey}
                   onClick={() => {
                     onClose();
                     if (action === 'guide') onGuide?.();
@@ -377,7 +394,7 @@ function SideDrawer({ open, onClose, onLogout, onNavigate, onGuide, user }) {
                   <span className="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-100 group-hover:bg-orange-100 transition-colors">
                     <Icon size={17} strokeWidth={1.8} className="group-hover:text-orange-500 transition-colors" />
                   </span>
-                  {label}
+                  {t(labelKey)}
                 </button>
               ))}
             </nav>
@@ -392,7 +409,7 @@ function SideDrawer({ open, onClose, onLogout, onNavigate, onGuide, user }) {
                 <span className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-50 group-hover:bg-red-100 transition-colors">
                   <LogOut size={17} strokeWidth={1.8} />
                 </span>
-                Déconnexion
+                {t('nav.logout')}
               </button>
             </div>
           </motion.div>

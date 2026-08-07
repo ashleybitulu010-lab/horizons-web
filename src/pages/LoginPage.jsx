@@ -4,6 +4,7 @@ import { Helmet } from 'react-helmet';
 import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
+import { useLanguage } from '@/context/LanguageContext';
 import InstallAppBanner from '@/components/InstallAppBanner';
 
 const ASH_LOGO = 'https://horizons-cdn.hostinger.com/29358ba6-568b-49c6-9aac-6ece4b30fac6/a93f12ddd85a0d01d0715ee252158d85.png';
@@ -11,6 +12,7 @@ const ASH_LOGO = 'https://horizons-cdn.hostinger.com/29358ba6-568b-49c6-9aac-6ec
 export default function LoginPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const { t } = useLanguage();
   const [form, setForm] = useState({ email: '', password: '' });
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
@@ -20,7 +22,7 @@ export default function LoginPage() {
   const validate = () => {
     const errs = {};
     if (!form.email) errs.email = 'L\'email est requis';
-    else if (!/\S+@\S+\.\S+/.test(form.email)) errs.email = 'Email invalide';
+    else if (!/\S+@\S+\.\S+/.test(form.email)) errs.email = t('login.invalidEmail');
     if (!form.password) errs.password = 'Le mot de passe est requis';
     return errs;
   };
@@ -36,7 +38,7 @@ export default function LoginPage() {
       await login(form.email, form.password);
       navigate('/chat');
     } catch (err) {
-      setServerError(err?.message || 'Email ou mot de passe incorrect.');
+      setServerError(err?.message || t('login.badCredentials'));
     } finally {
       setLoading(false);
     }
@@ -45,7 +47,7 @@ export default function LoginPage() {
   return (
     <>
       <Helmet>
-        <title>Connexion — Ash Ledger</title>
+        <title>{t('login.title')} — Ash Ledger</title>
         <meta name="description" content="Gérez vos finances, ventes, dépenses, stocks et rapports grâce à l'intelligence artificielle." />
       </Helmet>
       <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -99,8 +101,8 @@ export default function LoginPage() {
               {/* Password */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-sm font-medium text-gray-700">Mot de passe</label>
-                  <Link to="/forgot-password" className="text-xs font-medium hover:underline" style={{ color: '#FF6B00' }}>Mot de passe oublié ?</Link>
+                  <label className="block text-sm font-medium text-gray-700">{t('login.password')}</label>
+                  <Link to="/forgot-password" className="text-xs font-medium hover:underline" style={{ color: '#FF6B00' }}>{t('login.forgot')}</Link>
                 </div>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" strokeWidth={1.8} style={{ width: 18, height: 18 }} />
@@ -125,14 +127,14 @@ export default function LoginPage() {
                 className="w-full py-3.5 rounded-xl text-white text-sm font-semibold transition-all active:scale-[0.98] disabled:opacity-60 mt-2"
                 style={{ backgroundColor: '#FF6B00', boxShadow: '0 4px 14px rgba(255,107,0,0.28)' }}
               >
-                {loading ? 'Connexion en cours…' : 'Se connecter'}
+                {loading ? t('login.loading') : t('login.submit')}
               </button>
             </form>
 
             <p className="mt-6 text-center text-sm text-gray-500">
               Pas encore de compte ?{' '}
               <Link to="/signup" className="font-semibold hover:underline" style={{ color: '#FF6B00' }}>
-                Créer un compte
+                {t('login.create')}
               </Link>
             </p>
           </div>

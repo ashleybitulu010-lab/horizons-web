@@ -15,6 +15,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { useLanguage } from '@/context/LanguageContext';
 import pb from '@/lib/pocketbaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { persistRelaunchGuide, readOnboardingState } from '@/hooks/useOnboarding';
@@ -22,6 +23,7 @@ import {
   loadCurrencyPreference,
   saveCurrencyPreference,
 } from '@/lib/currency';
+import { normalizeLang, translate } from '@/lib/i18n';
 
 function Toast({ message, onDismiss }) {
   useEffect(() => {
@@ -91,13 +93,13 @@ function Input({ label, value, onChange, type = 'text', right }) {
 
 export default function SettingsPage() {
   const { user, token, logout } = useAuth();
+  const { language, setLanguage, t } = useLanguage();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingPwd, setSavingPwd] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [notifications, setNotifications] = useState(true);
-  const [language, setLanguage] = useState('fr');
   const [currency, setCurrency] = useState('USD');
   const [currencyClientId, setCurrencyClientId] = useState(null);
   const [oldPwd, setOldPwd] = useState('');
@@ -109,6 +111,7 @@ export default function SettingsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [guideStatus, setGuideStatus] = useState(null);
+  const deleteWord = t('settings.deleteConfirmWord');
 
   useEffect(() => {
     if (!user?.id) return;
@@ -125,13 +128,18 @@ export default function SettingsPage() {
         if (!active) return;
         if (profileResult.status === 'fulfilled') {
           setNotifications(profileResult.value.notifications_enabled !== false);
-          setLanguage(profileResult.value.language || 'fr');
+          if (profileResult.value.language) {
+            setLanguage(normalizeLang(profileResult.value.language));
+          }
         }
         if (currencyResult.status === 'fulfilled') {
           setCurrencyClientId(currencyResult.value.clientId);
           setCurrency(currencyResult.value.currency || currencyResult.value.displayCurrency);
         } else {
-          setToast({ type: 'error', text: 'Impossible de charger votre devise.' });
+          setToast({
+            type: 'error',
+            text: translate(language, 'settings.currencyLoadError'),
+          });
         }
       })
       .finally(() => {
@@ -141,13 +149,15 @@ export default function SettingsPage() {
     const onboarding = readOnboardingState(user.id);
     setGuideStatus(onboarding?.status || 'pending');
     return () => { active = false; };
-  }, [user?.id, token]);
+    // Only re-sync when the user/session changes — not when UI language changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, token, setLanguage]);
 
   const relaunchGuide = () => {
     if (!user?.id) return;
     persistRelaunchGuide(user.id);
     setGuideStatus('pending');
-    setToast({ type: 'success', text: 'Guide Ashy ouvert…' });
+    setToast({ type: 'success', text: t('settings.guideOpened') });
     navigate('/chat?guide=1');
   };
 
@@ -158,6 +168,7 @@ export default function SettingsPage() {
         notifications_enabled: notifications,
         language,
       });
+      setLanguage(language);
       let clientId = currencyClientId;
       if (!clientId) {
         const preference = await loadCurrencyPreference(token, user.id);
@@ -170,18 +181,18 @@ export default function SettingsPage() {
         currency,
       });
       setCurrency(savedCurrency.currency || savedCurrency.displayCurrency);
-      setToast({ type: 'success', text: 'Préférences enregistrées !' });
+      setToast({ type: 'success', text: t('settings.saved') });
     } catch {
-      setToast({ type: 'error', text: 'Erreur lors de l\'enregistrement.' });
+      setToast({ type: 'error', text: t('settings.saveError') });
     } finally {
       setSaving(false);
     }
   };
 
   const changePassword = async () => {
-    if (!oldPwd) { setToast({ type: 'error', text: 'Saisissez votre ancien mot de passe.' }); return; }
-    if (newPwd.length < 8) { setToast({ type: 'error', text: 'Le mot de passe doit contenir au moins 8 caractères.' }); return; }
-    if (newPwd !== confirmPwd) { setToast({ type: 'error', text: 'Les mots de passe ne correspondent pas.' }); return; }
+    if (!oldPwd) { setToast({ type: 'error', text: t('settings.oldPasswordRequired') }); return; }
+    if (newPwd.length < 8) { setToast({ type: 'error', text: t('settings.passwordTooShort') }); return; }
+    if (newPwd !== confirmPwd) { setToast({ type: 'error', text: t('settings.passwordMismatch') }); return; }
     setSavingPwd(true);
     try {
       await pb.collection('users').update(user.id, {
@@ -189,10 +200,10 @@ export default function SettingsPage() {
         password: newPwd,
         passwordConfirm: confirmPwd,
       });
-      setToast({ type: 'success', text: 'Mot de passe modifié avec succès !' });
+      setToast({ type: 'success', text: t('settings.passwordChanged') });
       setOldPwd(''); setNewPwd(''); setConfirmPwd('');
     } catch (err) {
-      const msg = err?.response?.data?.oldPassword?.message || 'Ancien mot de passe incorrect.';
+      const msg = err?.response?.data?.oldPassword?.message || t('settings.passwordError');
       setToast({ type: 'error', text: msg });
     } finally {
       setSavingPwd(false);
@@ -200,8 +211,8 @@ export default function SettingsPage() {
   };
 
   const deleteAccount = async () => {
-    if (deleteConfirmText !== 'SUPPRIMER') {
-      setToast({ type: 'error', text: 'Veuillez saisir "SUPPRIMER" pour confirmer.' });
+    if (deleteConfirmText !== deleteWord) {
+      setToast({ type: 'error', text: t('settings.deleteTypeError', { word: deleteWord }) });
       return;
     }
     setDeleting(true);
@@ -210,7 +221,7 @@ export default function SettingsPage() {
       await logout();
       navigate('/login', { replace: true });
     } catch {
-      setToast({ type: 'error', text: 'Erreur lors de la suppression du compte.' });
+      setToast({ type: 'error', text: t('settings.deleteError') });
       setDeleting(false);
     }
   };
@@ -218,8 +229,8 @@ export default function SettingsPage() {
   return (
     <>
       <Helmet>
-        <title>Paramètres — Ash Ledger</title>
-        <meta name="description" content="Gérez vos paramètres Ash Ledger." />
+        <title>{t('settings.title')} — Ash Ledger</title>
+        <meta name="description" content={t('settings.meta')} />
       </Helmet>
 
       <Toast message={toast} onDismiss={() => setToast(null)} />
@@ -247,19 +258,25 @@ export default function SettingsPage() {
                     <AlertTriangle size={20} className="text-red-500" strokeWidth={2} />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-gray-800">Supprimer mon compte</h3>
-                    <p className="text-xs text-gray-400">Cette action est irréversible</p>
+                    <h3 className="text-sm font-bold text-gray-800">{t('settings.deleteTitle')}</h3>
+                    <p className="text-xs text-gray-400">{t('settings.deleteIrreversible')}</p>
                   </div>
                 </div>
                 <p className="text-sm text-gray-600 leading-relaxed mb-4">
-                  Toutes vos données seront définitivement supprimées. Tapez{' '}
-                  <strong className="text-red-500 font-bold">SUPPRIMER</strong> pour confirmer.
+                  {t('settings.deleteBody', { word: deleteWord }).split(deleteWord).map((part, i, arr) => (
+                    <React.Fragment key={i}>
+                      {part}
+                      {i < arr.length - 1 && (
+                        <strong className="text-red-500 font-bold">{deleteWord}</strong>
+                      )}
+                    </React.Fragment>
+                  ))}
                 </p>
                 <input
                   type="text"
                   value={deleteConfirmText}
                   onChange={e => setDeleteConfirmText(e.target.value)}
-                  placeholder="SUPPRIMER"
+                  placeholder={deleteWord}
                   className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-center font-bold text-red-500 tracking-widest outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100 mb-4"
                 />
                 <div className="flex gap-3">
@@ -267,14 +284,14 @@ export default function SettingsPage() {
                     onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); }}
                     className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600 font-medium hover:bg-gray-50 transition-colors"
                   >
-                    Annuler
+                    {t('common.cancel')}
                   </button>
                   <button
                     onClick={deleteAccount}
-                    disabled={deleting || deleteConfirmText !== 'SUPPRIMER'}
+                    disabled={deleting || deleteConfirmText !== deleteWord}
                     className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold transition-all active:scale-95 disabled:opacity-50"
                   >
-                    {deleting ? 'Suppression…' : 'Supprimer'}
+                    {deleting ? t('settings.deleting') : t('common.delete')}
                   </button>
                 </div>
               </div>
@@ -294,7 +311,7 @@ export default function SettingsPage() {
           >
             <ArrowLeft size={20} strokeWidth={2} />
           </button>
-          <h1 className="text-white font-semibold text-base flex-1">Paramètres</h1>
+          <h1 className="text-white font-semibold text-base flex-1">{t('settings.title')}</h1>
         </header>
 
         <div className="flex-1 overflow-y-auto px-4 py-6 max-w-lg mx-auto w-full space-y-6">
@@ -306,7 +323,7 @@ export default function SettingsPage() {
             <>
               {/* Ashy guide */}
               <div>
-                <SectionTitle>Guide Ashy</SectionTitle>
+                <SectionTitle>{t('settings.guideSection')}</SectionTitle>
                 <div className="bg-white rounded-2xl shadow-sm">
                   <button
                     type="button"
@@ -317,15 +334,15 @@ export default function SettingsPage() {
                       <Sparkles size={17} className="text-orange-500" strokeWidth={1.8} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-800">Relancer le guide interactif</p>
+                      <p className="text-sm font-semibold text-gray-800">{t('settings.relaunchGuide')}</p>
                       <p className="text-xs text-gray-400 mt-0.5">
                         {guideStatus === 'completed'
-                          ? 'Revoir les bases avec Ashy (produit → stock → vente…)'
+                          ? t('settings.guideCompleted')
                           : guideStatus === 'skipped'
-                            ? 'Vous avez passé le guide — vous pouvez le reprendre ici'
+                            ? t('settings.guideSkipped')
                             : guideStatus === 'active'
-                              ? 'Guide en cours — reprendre avec Ashy'
-                              : 'Découvrir Ash Ledger en moins de 5 minutes'}
+                              ? t('settings.guideActive')
+                              : t('settings.guidePending')}
                       </p>
                     </div>
                     <ChevronRight size={18} className="text-gray-300 flex-shrink-0" />
@@ -335,7 +352,7 @@ export default function SettingsPage() {
 
               {/* Preferences */}
               <div>
-                <SectionTitle>Préférences</SectionTitle>
+                <SectionTitle>{t('settings.prefs')}</SectionTitle>
                 <div className="bg-white rounded-2xl shadow-sm divide-y divide-gray-50">
                   {/* Notifications */}
                   <div className="flex items-center gap-4 px-5 py-4">
@@ -343,8 +360,8 @@ export default function SettingsPage() {
                       <Bell size={17} className="text-orange-400" strokeWidth={1.8} />
                     </div>
                     <div className="flex-1">
-                      <p className="text-sm font-semibold text-gray-800">Notifications</p>
-                      <p className="text-xs text-gray-400 mt-0.5">Recevoir des alertes et mises à jour</p>
+                      <p className="text-sm font-semibold text-gray-800">{t('settings.notifications')}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{t('settings.notificationsHint')}</p>
                     </div>
                     <Toggle checked={notifications} onChange={setNotifications} />
                   </div>
@@ -355,8 +372,8 @@ export default function SettingsPage() {
                       <Globe size={17} className="text-orange-400" strokeWidth={1.8} />
                     </div>
                     <div className="flex-1">
-                      <p className="text-sm font-semibold text-gray-800">Langue</p>
-                      <p className="text-xs text-gray-400 mt-0.5">Langue de l'interface</p>
+                      <p className="text-sm font-semibold text-gray-800">{t('settings.language')}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{t('settings.languageHint')}</p>
                     </div>
                     <select
                       value={language}
@@ -374,9 +391,9 @@ export default function SettingsPage() {
                       <CircleDollarSign size={17} className="text-orange-400" strokeWidth={1.8} />
                     </div>
                     <div className="flex-1">
-                      <p className="text-sm font-semibold text-gray-800">Devise</p>
+                      <p className="text-sm font-semibold text-gray-800">{t('settings.currency')}</p>
                       <p className="text-xs text-gray-400 mt-0.5">
-                        Unique pour le tableau de bord, les tables et les rapports
+                        {t('settings.currencyHint')}
                       </p>
                     </div>
                     <select
@@ -397,24 +414,24 @@ export default function SettingsPage() {
                   style={{ backgroundColor: '#FF6B00' }}
                 >
                   {saving && <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />}
-                  {saving ? 'Enregistrement…' : 'Enregistrer les préférences'}
+                  {saving ? t('common.saving') : t('settings.savePrefs')}
                 </button>
               </div>
 
               {/* Password */}
               <div>
-                <SectionTitle>Sécurité</SectionTitle>
+                <SectionTitle>{t('settings.security')}</SectionTitle>
                 <div className="bg-white rounded-2xl shadow-sm p-5 space-y-4">
                   <div className="flex items-center gap-3 mb-1">
                     <div className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center flex-shrink-0">
                       <Lock size={17} className="text-orange-400" strokeWidth={1.8} />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-gray-800">Modifier le mot de passe</p>
+                      <p className="text-sm font-semibold text-gray-800">{t('settings.changePassword')}</p>
                     </div>
                   </div>
                   <Input
-                    label="Ancien mot de passe"
+                    label={t('settings.oldPassword')}
                     type={showOld ? 'text' : 'password'}
                     value={oldPwd}
                     onChange={e => setOldPwd(e.target.value)}
@@ -425,7 +442,7 @@ export default function SettingsPage() {
                     }
                   />
                   <Input
-                    label="Nouveau mot de passe"
+                    label={t('settings.newPassword')}
                     type={showNew ? 'text' : 'password'}
                     value={newPwd}
                     onChange={e => setNewPwd(e.target.value)}
@@ -436,7 +453,7 @@ export default function SettingsPage() {
                     }
                   />
                   <Input
-                    label="Confirmer le mot de passe"
+                    label={t('settings.confirmPassword')}
                     type="password"
                     value={confirmPwd}
                     onChange={e => setConfirmPwd(e.target.value)}
@@ -448,14 +465,14 @@ export default function SettingsPage() {
                     style={{ backgroundColor: '#FF6B00' }}
                   >
                     {savingPwd && <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />}
-                    {savingPwd ? 'Modification…' : 'Modifier le mot de passe'}
+                    {savingPwd ? t('settings.changing') : t('settings.changePassword')}
                   </button>
                 </div>
               </div>
 
               {/* Danger zone */}
               <div>
-                <SectionTitle>Zone de danger</SectionTitle>
+                <SectionTitle>{t('settings.danger')}</SectionTitle>
                 <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
                   <button
                     onClick={() => setShowDeleteConfirm(true)}
@@ -465,8 +482,8 @@ export default function SettingsPage() {
                       <Trash2 size={17} className="text-red-400" strokeWidth={1.8} />
                     </div>
                     <div className="flex-1 text-left">
-                      <p className="text-sm font-semibold text-red-600">Supprimer mon compte</p>
-                      <p className="text-xs text-gray-400 mt-0.5">Action irréversible — toutes vos données seront perdues</p>
+                      <p className="text-sm font-semibold text-red-600">{t('settings.deleteAccount')}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{t('settings.deleteHint')}</p>
                     </div>
                     <ChevronRight size={16} className="text-gray-300 group-hover:text-red-400 transition-colors" />
                   </button>
