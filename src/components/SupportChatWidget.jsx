@@ -526,33 +526,29 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
     }, 600);
   }, [skipGuide, pushGuide, withTyping]);
 
+  // Always open as a bottom sheet so guide messages stay readable
+  // and the main chat above remains visible.
   const getPanelStyle = () => {
-    if (isMobile) {
-      const vh = typeof window !== 'undefined' ? window.innerHeight : 700;
-      const panelH = Math.min(Math.round(vh * 0.58), 460);
-      return {
-        position: 'fixed',
-        left: 12,
-        right: 12,
-        bottom: 'max(12px, env(safe-area-inset-bottom))',
-        top: 'auto',
-        width: 'auto',
-        height: panelH,
-        maxHeight: '58vh',
-        zIndex: 99,
-      };
-    }
-    const vw = window.innerWidth;
-    const panelW = Math.min(vw - 48, 360);
-    const panelH = Math.min(440, window.innerHeight - 140);
-    const gap = 12;
-    let left = pos.x;
-    if (pos.x + BUBBLE_SIZE + gap + panelW > vw - MARGIN) left = pos.x - panelW + BUBBLE_SIZE;
-    left = Math.max(MARGIN, Math.min(vw - panelW - MARGIN, left));
-    let top = pos.y - panelH - gap;
-    if (top < MARGIN) top = pos.y + BUBBLE_SIZE + gap;
-    top = Math.max(MARGIN, Math.min(window.innerHeight - panelH - MARGIN, top));
-    return { position: 'fixed', left, top, width: panelW, height: panelH, zIndex: 99 };
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 700;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 400;
+    const side = isMobile ? 12 : 20;
+    const bubbleClearance = bubbleSize + 14;
+    const panelH = isMobile
+      ? Math.min(Math.round(vh * 0.48), 380)
+      : Math.min(Math.round(vh * 0.42), 400);
+    const panelW = isMobile ? undefined : Math.min(vw - side * 2, 400);
+
+    return {
+      position: 'fixed',
+      left: isMobile ? side : 'auto',
+      right: side,
+      top: 'auto',
+      bottom: `calc(${bubbleClearance}px + env(safe-area-inset-bottom, 0px))`,
+      width: isMobile ? 'auto' : panelW,
+      height: panelH,
+      maxHeight: isMobile ? '48vh' : '42vh',
+      zIndex: 99,
+    };
   };
 
   const sendGuideMessage = async (text) => {
@@ -673,10 +669,10 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
           <motion.div
             key="support-panel"
             data-support-panel
-            initial={{ opacity: 0, y: 12, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.97 }}
-            transition={{ type: 'spring', damping: 28, stiffness: 340 }}
+            initial={{ opacity: 0, y: 28 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            transition={{ type: 'spring', damping: 26, stiffness: 320 }}
             style={getPanelStyle()}
             className="support-panel-mobile rounded-2xl shadow-2xl overflow-hidden flex flex-col"
           >
