@@ -367,7 +367,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
 
   useEffect(() => { if (open) setUnread(0); }, [open]);
 
-  // Capture baselines once so existing data does not auto-skip the guide.
+  // Capture baselines once (non-blocking for chat-based validation).
   useEffect(() => {
     if (!isActive || !user?.id || onboarding?.baselines) return undefined;
     let cancelled = false;
@@ -378,11 +378,43 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
     return () => { cancelled = true; };
   }, [isActive, user, onboarding?.baselines, setBaselines]);
 
-  // Validate onboarding steps against Supabase / main chat
+  const completeCurrentStep = useCallback((stepSnapshot, fromIndex) => {
+    if (advancingRef.current) return;
+    advancingRef.current = true;
+    setValidating(true);
+    withTyping(() => {
+      pushGuide(stepSnapshot.success);
+      setCelebrateSignal((s) => s + 1);
+
+      const nextIndex = (fromIndex || 0) + 1;
+      if (nextIndex >= ONBOARDING_STEPS.length) {
+        completeGuide();
+        setValidating(false);
+        setTimeout(() => {
+          pushGuide('Je reste disponible ici pour vos questions. Le chat principal sert à enregistrer vos opérations.');
+          advancingRef.current = false;
+        }, 700);
+        return;
+      }
+
+      advanceStep();
+      const next = ONBOARDING_STEPS[nextIndex];
+      remindCounterRef.current += 1;
+      const reminder = remindCounterRef.current % 2 === 0 ? `\n\n${ONE_DATA_REMINDER}` : '';
+      setTimeout(() => {
+        withTyping(() => {
+          pushGuide(`Étape ${next.index}/5 — ${next.title}\n\n${next.explain}${reminder}`);
+          advancingRef.current = false;
+          prematureWarnedRef.current = false;
+          setValidating(false);
+        }, 700);
+      }, 500);
+    }, 500);
+  }, [advanceStep, completeGuide, pushGuide, withTyping]);
+
+  // Validate onboarding steps against main chat / Supabase
   useEffect(() => {
     if (!isActive || !currentStep || advancingRef.current) return undefined;
-    // Wait for baselines so we don't validate against stale pre-existing rows.
-    if (!onboarding?.baselines) return undefined;
 
     let cancelled = false;
 
@@ -394,54 +426,22 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
         withTyping(() => pushGuide(ORDER_BLOCK_MESSAGE), 600);
       }
 
-      // While the main chat is waiting for Ash, skip DB polls — recheck on reply.
+      // While Ash is typing in the main chat, wait for the reply then re-check.
       if (mainLoading) return;
 
       try {
         const ok = await checkOnboardingStep(currentStep.check, user, mainMessages, {
-          baselines: onboarding.baselines,
+          baselines: onboarding?.baselines || null,
         });
         if (cancelled || !ok || advancingRef.current) return;
-
-        advancingRef.current = true;
-        setValidating(true);
-        const stepSnapshot = currentStep;
-        withTyping(() => {
-          pushGuide(stepSnapshot.success);
-          setCelebrateSignal((s) => s + 1);
-
-          const nextIndex = (onboarding.stepIndex || 0) + 1;
-          if (nextIndex >= ONBOARDING_STEPS.length) {
-            completeGuide();
-            setValidating(false);
-            setTimeout(() => {
-              pushGuide('Je reste disponible ici pour vos questions. Le chat principal sert à enregistrer vos opérations.');
-              advancingRef.current = false;
-            }, 700);
-            return;
-          }
-
-          advanceStep();
-          const next = ONBOARDING_STEPS[nextIndex];
-          remindCounterRef.current += 1;
-          const reminder = remindCounterRef.current % 2 === 0 ? `\n\n${ONE_DATA_REMINDER}` : '';
-          setTimeout(() => {
-            withTyping(() => {
-              pushGuide(`Étape ${next.index}/5 — ${next.title}\n\n${next.explain}${reminder}`);
-              advancingRef.current = false;
-              prematureWarnedRef.current = false;
-              setValidating(false);
-            }, 700);
-          }, 500);
-        }, 800);
+        completeCurrentStep(currentStep, onboarding.stepIndex || 0);
       } catch {
         if (!cancelled) setValidating(false);
       }
     };
 
     run();
-    // Faster when a reply just arrived; otherwise keep a light poll for Supabase lag.
-    const id = setInterval(run, mainLoading ? 8000 : 2500);
+    const id = setInterval(run, mainLoading ? 1200 : 2000);
     return () => {
       cancelled = true;
       clearInterval(id);
@@ -454,11 +454,15 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
     mainMessages,
     mainLoading,
     user,
-    advanceStep,
-    completeGuide,
+    completeCurrentStep,
     pushGuide,
     withTyping,
   ]);
+
+  const handleManualValidate = useCallback(() => {
+    if (!isActive || !currentStep || advancingRef.current) return;
+    completeCurrentStep(currentStep, onboarding?.stepIndex || 0);
+  }, [isActive, currentStep, onboarding?.stepIndex, completeCurrentStep]);
 
   const onPointerDown = useCallback((e) => {
     if (isMobile) {
@@ -522,10 +526,12 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
     setGuideMessages((prev) =>
       prev.map((m) => (m.id === WELCOME_ONBOARDING.id ? { ...m, actions: undefined } : m)),
     );
-    (async () => {
-      const baselines = await snapshotOnboardingBaselines(user);
-      startGuide({ baselines });
-    })();
+    // Start immediately — chat validation works without baselines.
+    // Real baselines arrive async so Supabase growth checks don't auto-skip old data.
+    startGuide({ baselines: null });
+    void snapshotOnboardingBaselines(user).then((baselines) => {
+      if (baselines) setBaselines(baselines);
+    });
     withTyping(() => {
       pushGuide(ORDER_RULE_MESSAGE);
       setTimeout(() => {
@@ -535,7 +541,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
         }, 800);
       }, 400);
     }, 700);
-  }, [startGuide, pushGuide, withTyping, user]);
+  }, [startGuide, pushGuide, withTyping, user, setBaselines]);
 
   const handleLaterGuide = useCallback(() => {
     setGuideMessages((prev) =>
@@ -738,6 +744,26 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
             </div>
 
             <ProgressBar progress={progress} visible={isActive} />
+
+            {isActive && currentStep && (
+              <div
+                className="flex-shrink-0 px-3 py-2 border-b"
+                style={{ backgroundColor: '#FFF8F2', borderColor: 'rgba(255,107,0,0.15)' }}
+              >
+                <button
+                  type="button"
+                  onClick={handleManualValidate}
+                  disabled={validating}
+                  className="w-full rounded-xl px-3 py-2 text-xs font-bold text-white active:scale-[0.98] disabled:opacity-60"
+                  style={{ backgroundColor: '#FF6B00' }}
+                >
+                  {validating ? 'Validation…' : `✅ J’ai terminé : ${currentStep.title}`}
+                </button>
+                <p className="mt-1 text-[10px] text-stone-500 leading-snug">
+                  Faites l’action dans le chat principal, puis appuyez ici si Ashy ne passe pas à l’étape suivante.
+                </p>
+              </div>
+            )}
 
             <div
               className="flex-1 overflow-y-auto py-3 px-3 space-y-1.5"

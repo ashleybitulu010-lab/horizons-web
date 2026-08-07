@@ -8,9 +8,6 @@ const WINDOWS_1252_BYTES = new Map([
   [0x0153, 0x9c], [0x017e, 0x9e], [0x0178, 0x9f],
 ]);
 
-const MOJIBAKE_PATTERN = /(?:Ã.|Â.|â.|ð.|ï¸)/u;
-const BAD_ENCODING_PATTERN = /(?:\uFFFD|Ã.|Â.|â.|ð.|ï¸)/gu;
-
 /** Canonical chat icons — one consistent style across the app. */
 export const CHAT_ICONS = {
   sale: '💰',
@@ -25,8 +22,11 @@ export const CHAT_ICONS = {
   error: '❌',
 };
 
+const HAS_EMOJI = /\p{Extended_Pictographic}|\p{Emoji_Presentation}|[\u2600-\u27BF]/u;
+const MOJIBAKE_HINT = /(?:Ã.|Â.|â.|ðŸ|ð.|ï¸)/u;
+
 function encodingErrorCount(value) {
-  return (value.match(BAD_ENCODING_PATTERN) || []).length;
+  return (value.match(/\uFFFD|Ã.|Â.|â.|ð.|ï¸/gu) || []).length;
 }
 
 function windows1252ToUtf8(value) {
@@ -53,15 +53,18 @@ export function cleanUtf8Text(value) {
   if (value === null || value === undefined) return '';
   let text = String(value);
 
-  for (let pass = 0; pass < 2 && MOJIBAKE_PATTERN.test(text); pass += 1) {
-    const repaired = windows1252ToUtf8(text);
-    if (encodingErrorCount(repaired) >= encodingErrorCount(text)) break;
-    text = repaired;
+  // Never run latin1 "repair" on text that already has valid emojis.
+  if (!HAS_EMOJI.test(text) && MOJIBAKE_HINT.test(text)) {
+    for (let pass = 0; pass < 2; pass += 1) {
+      const repaired = windows1252ToUtf8(text);
+      if (encodingErrorCount(repaired) >= encodingErrorCount(text)) break;
+      text = repaired;
+      if (!MOJIBAKE_HINT.test(text)) break;
+    }
   }
 
   return text
     .normalize('NFC')
-    .replace(/\uFFFD+/gu, '')
     .replace(/[\u0000\u0008\u000B\u000C\u000E-\u001F\u007F]/gu, '');
 }
 
@@ -70,11 +73,36 @@ function replacementFor(amount, currency) {
   return currency === 'CDF' ? `${normalizedAmount} FC` : `$${normalizedAmount}`;
 }
 
+/**
+ * n8n templates currently emit U+FFFD (+ leftover 0x85) instead of emojis.
+ * Recover the intended icon from the following keyword.
+ */
+function repairBrokenLeadingIcons(text) {
+  const rules = [
+    [/\uFFFD[\u0085\u00A0\s]*?(Vente\b)/gi, `${CHAT_ICONS.sale} $1`],
+    [/\uFFFD[\u0085\u00A0\s]*?(D[ée]pense\b)/gi, `${CHAT_ICONS.expense} $1`],
+    [/\uFFFD[\u0085\u00A0\s]*?(Stock\b)/gi, `${CHAT_ICONS.stock} $1`],
+    [/\uFFFD[\u0085\u00A0\s]*?(Produit\b)/gi, `${CHAT_ICONS.product} $1`],
+    [/\uFFFD[\u0085\u00A0\s]*?(Client\b)/gi, `${CHAT_ICONS.client} $1`],
+    [/\uFFFD[\u0085\u00A0\s]*?(Paiement\b)/gi, `${CHAT_ICONS.debt} $1`],
+    [/\uFFFD[\u0085\u00A0\s]*?(Dette\b)/gi, `${CHAT_ICONS.debt} $1`],
+    [/\uFFFD[\u0085\u00A0\s]*?(Bilan|Synth[eè]se|Rapport)\b/gi, `${CHAT_ICONS.summary} $1`],
+    [/\uFFFD[\u0085\u00A0\s]*?(Abonnement\b)/gi, `${CHAT_ICONS.success} $1`],
+    [/\uFFFD[\u0085\u00A0\s]*?(Succ[eè]s|Bravo|Parfait)\b/gi, `${CHAT_ICONS.success} $1`],
+    [/\uFFFD[\u0085\u00A0\s]*?(Erreur|Impossible)\b/gi, `${CHAT_ICONS.error} $1`],
+    [/\uFFFD[\u0085\u00A0\s]*?(Attention|Avertissement)\b/gi, `${CHAT_ICONS.warning} $1`],
+  ];
+  let out = text;
+  for (const [re, repl] of rules) out = out.replace(re, repl);
+  // Trailing broken icon marks (e.g. "... 300€ .")
+  out = out.replace(/\s*\uFFFD[\u0085\u00A0\s]*\.?\s*$/gm, '');
+  out = out.replace(/\uFFFD+/gu, '');
+  return out;
+}
+
 function topicIconForText(text) {
-  if (/^(erreur|impossible|échec|echec)\b/i.test(text)) {
-    return CHAT_ICONS.error;
-  }
-  if (/^(attention|avertissement|warning)\b/i.test(text)) {
+  if (/introuvable|impossible|échec|echec|\berreur\b/i.test(text)) return CHAT_ICONS.error;
+  if (/^(attention|avertissement|warning)\b/i.test(text) || /\balerte\b/i.test(text)) {
     return CHAT_ICONS.warning;
   }
   if (
@@ -99,13 +127,15 @@ function topicIconForText(text) {
   return null;
 }
 
-function normalizeTopicLine(line) {
-  const match = line.match(/^(\s*)(?:\p{Extended_Pictographic}\uFE0F?\s*)?(?:[-*•]\s*)?(.*)$/u);
+function ensureTopicEmoji(line) {
+  if (!line.trim()) return line;
+  // Keep lines that already have a real emoji.
+  if (HAS_EMOJI.test(line)) return line;
+
+  const match = line.match(/^(\s*)(?:[-*•]\s*)?(.*)$/u);
   if (!match) return line;
   const indent = match[1] || '';
   const rest = (match[2] || '').trimStart();
-  if (!rest) return line;
-
   const icon = topicIconForText(rest);
   if (!icon) return line;
   return `${indent}${icon} ${rest}`;
@@ -113,11 +143,12 @@ function normalizeTopicLine(line) {
 
 /**
  * Replace broken / inconsistent icons with the Ash Ledger emoji set.
- * Safe for Android, iPhone, and desktop when served as UTF-8.
  */
 export function normalizeChatIcons(value) {
   let text = cleanUtf8Text(value);
   if (!text) return '';
+
+  text = repairBrokenLeadingIcons(text);
 
   const shortcodes = [
     [/:(?:moneybag|money|sale|vente):/gi, CHAT_ICONS.sale],
@@ -130,19 +161,10 @@ export function normalizeChatIcons(value) {
     [/:(?:white_check_mark|check|success|ok):/gi, CHAT_ICONS.success],
     [/:(?:warning|alert):/gi, CHAT_ICONS.warning],
     [/:(?:x|cross_mark|error|erreur):/gi, CHAT_ICONS.error],
-    [/\[(?:vente|sale|money)\]/gi, CHAT_ICONS.sale],
-    [/\[(?:d[ée]pense|expense)\]/gi, CHAT_ICONS.expense],
-    [/\[(?:stock|package)\]/gi, CHAT_ICONS.stock],
-    [/\[(?:produit|product)\]/gi, CHAT_ICONS.product],
-    [/\[(?:client|user)\]/gi, CHAT_ICONS.client],
-    [/\[(?:dette|debt|paiement)\]/gi, CHAT_ICONS.debt],
-    [/\[(?:bilan|synth[eè]se|rapport|summary)\]/gi, CHAT_ICONS.summary],
   ];
-  for (const [re, icon] of shortcodes) {
-    text = text.replace(re, icon);
-  }
+  for (const [re, icon] of shortcodes) text = text.replace(re, icon);
 
-  // Alternate / inconsistent emoji → canonical
+  // Alternate emoji → canonical (do not touch already-correct icons)
   text = text
     .replace(/🧾/gu, CHAT_ICONS.expense)
     .replace(/[💵💴💶💷💲🤑]/gu, CHAT_ICONS.sale)
@@ -151,18 +173,11 @@ export function normalizeChatIcons(value) {
     .replace(/[👥🧑]/gu, CHAT_ICONS.client)
     .replace(/[📈📉📑]/gu, CHAT_ICONS.summary)
     .replace(/[✔️✓☑️]/gu, CHAT_ICONS.success)
-    .replace(/[⚠❗]/gu, CHAT_ICONS.warning)
     .replace(/[✖️✗✕🚫]/gu, CHAT_ICONS.error);
-
-  // Strip replacement chars and private-use / dingbat "icons"
-  text = text
-    .replace(/\uFFFD+/gu, '')
-    .replace(/[\uE000-\uF8FF]/gu, '')
-    .replace(/[▢▣▪▫■□●○◆◇▶►❖✦✧✪]/gu, '');
 
   text = text
     .split('\n')
-    .map((line) => normalizeTopicLine(line))
+    .map((line) => ensureTopicEmoji(line))
     .join('\n');
 
   return text.normalize('NFC');
