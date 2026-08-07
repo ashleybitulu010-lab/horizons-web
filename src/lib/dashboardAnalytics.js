@@ -600,21 +600,41 @@ function buildInsights(inventory, trends, topProducts, debts) {
   return insights.slice(0, 4);
 }
 
+/**
+ * Map synthese_mensuelle columns → dashboard KPI cards:
+ *   total_recettes → Chiffre d’affaires
+ *   total_depenses → Dépenses
+ *   benefice_net   → Bénéfice estimé
+ *   dette_client   → Dettes clients
+ * Sums all monthly rows (full history via the monthly view).
+ */
+function metricsFromSynthese(rows = []) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  return {
+    revenue: sum(rows, (row) => Math.max(0, toNumber(row.total_recettes) ?? 0)),
+    expenses: sum(rows, (row) => Math.max(0, toNumber(row.total_depenses) ?? 0)),
+    profit: sum(rows, (row) => toNumber(row.benefice_net) ?? 0),
+    clientDebt: sum(rows, (row) => Math.max(0, toNumber(row.dette_client) ?? 0)),
+  };
+}
+
 export function buildDashboardAnalytics({
   produits = [],
   stocks = [],
   ventes = [],
   depenses = [],
   paiements_dettes = [],
+  synthese_mensuelle = [],
 }) {
   const productById = new Map(produits.map((product) => [rowId(product), product]));
-  const revenue = sum(ventes, (sale) => saleAmount(sale, resolveProduct(sale, productById, produits)));
-  const expenses = sum(depenses, expenseAmount);
+  const fromSynthese = metricsFromSynthese(synthese_mensuelle);
+  const revenueFallback = sum(ventes, (sale) => saleAmount(sale, resolveProduct(sale, productById, produits)));
+  const expensesFallback = sum(depenses, expenseAmount);
   const soldCost = sum(ventes, (sale) => saleCost(sale, resolveProduct(sale, productById, produits)));
   const inventory = calculateInventory(produits, stocks, ventes, productById);
   const trends = periodTotals(ventes, depenses, productById, produits, Date.now());
   const topProducts = buildTopProducts(ventes, productById, produits);
-  const debts = buildDebtMetrics(ventes, paiements_dettes);
+  const debtMetrics = buildDebtMetrics(ventes, paiements_dettes);
   const recentTopProducts = buildTopProducts(
     ventes.filter((sale) => inPeriod(
       parseDate(sale, 'ventes'),
@@ -625,14 +645,22 @@ export function buildDashboardAnalytics({
     produits,
   );
 
+  const revenue = fromSynthese?.revenue ?? revenueFallback;
+  const expenses = fromSynthese?.expenses ?? expensesFallback;
+  const profit = fromSynthese?.profit ?? (revenueFallback - expensesFallback - soldCost);
+  const clientDebt = fromSynthese?.clientDebt ?? debtMetrics.remaining;
+  const debts = fromSynthese
+    ? { ...debtMetrics, remaining: clientDebt }
+    : debtMetrics;
+
   const metrics = {
     revenue,
     expenses,
-    profit: revenue - expenses - soldCost,
+    profit,
     stockValue: sum(inventory, (item) => item.value),
     productCount: produits.length,
     stockQuantity: sum(inventory, (item) => item.quantity),
-    clientDebt: debts.remaining,
+    clientDebt,
   };
 
   return {

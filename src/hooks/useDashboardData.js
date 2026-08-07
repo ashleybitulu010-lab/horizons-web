@@ -9,6 +9,16 @@ const DASHBOARD_TABLES = [
   'ventes',
   'depenses',
   'paiements_dettes',
+  'synthese_mensuelle',
+];
+
+/** Real tables only — synthese_mensuelle is a view (no postgres_changes). */
+const REALTIME_TABLES = [
+  'produits',
+  'stocks',
+  'ventes',
+  'depenses',
+  'paiements_dettes',
 ];
 
 const EMPTY_DATA = {
@@ -17,6 +27,7 @@ const EMPTY_DATA = {
   ventes: [],
   depenses: [],
   paiements_dettes: [],
+  synthese_mensuelle: [],
 };
 
 function rowKey(table, row) {
@@ -157,7 +168,7 @@ export function useDashboardData(user, authToken) {
     };
 
     let channel = supabase.channel(`dashboard-${clientId}`);
-    DASHBOARD_TABLES.forEach((table) => {
+    REALTIME_TABLES.forEach((table) => {
       channel = channel.on(
         'postgres_changes',
         {
