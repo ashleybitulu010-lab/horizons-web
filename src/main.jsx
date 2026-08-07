@@ -9,8 +9,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
 	window.addEventListener('load', () => {
-		navigator.serviceWorker.register('/sw.js').catch(() => {
-			/* install banner still works without SW on some browsers */
-		});
+		navigator.serviceWorker
+			.register('/sw.js', { scope: '/', updateViaCache: 'none' })
+			.then((registration) => {
+				registration.update().catch(() => {});
+			})
+			.catch(() => {
+				/* banner / iOS Add to Home Screen still work without SW */
+			});
 	});
 }

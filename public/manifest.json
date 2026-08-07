@@ -1,16 +1,19 @@
 {
+  "id": "/",
   "name": "Ash Ledger",
   "short_name": "Ash Ledger",
   "description": "Gérez vos finances, ventes, dépenses, stocks et rapports grâce à l'intelligence artificielle.",
+  "lang": "fr",
+  "dir": "ltr",
   "start_url": "/chat",
   "scope": "/",
-  "id": "/",
   "display": "standalone",
-  "display_override": ["standalone", "browser"],
+  "display_override": ["standalone"],
   "orientation": "portrait-primary",
   "background_color": "#F5F1EB",
   "theme_color": "#FF6B00",
-  "lang": "fr",
+  "categories": ["finance", "business", "productivity"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/icons/icon-192.png",
