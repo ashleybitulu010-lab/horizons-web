@@ -25,6 +25,16 @@
 		<meta name="google" content="notranslate" />
 		<link rel="manifest" href="/manifest.json" />
 		<title>Ash Ledger – Votre assistant financier IA</title>
+		<!-- Google Analytics 4 (async — does not block rendering) -->
+		<script async src="https://www.googletagmanager.com/gtag/js?id=G-CR01T8LKBT"></script>
+		<script>
+			window.dataLayer = window.dataLayer || [];
+			function gtag(){dataLayer.push(arguments);}
+			window.gtag = gtag;
+			gtag('js', new Date());
+			// SPA: page_view is sent from React on each route change
+			gtag('config', 'G-CR01T8LKBT', { send_page_view: false, anonymize_ip: true });
+		</script>
 	</head>
 	<body>
 		<div id="root"></div>

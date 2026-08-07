@@ -3,6 +3,7 @@ import { useAuth } from '@/hooks/useAuth';
 import apiServerClient from '@/lib/apiServerClient';
 import { readStoredCurrencyPreference } from '@/lib/currency';
 import { cleanUtf8Text, normalizeMessageText } from '@/lib/textEncoding';
+import { trackChatMessageSent, trackFromAssistantReply } from '@/lib/analytics';
 
 export const WELCOME_MESSAGE = {
   id: 'welcome',
@@ -222,6 +223,7 @@ export function ChatProvider({ children }) {
     }, 300);
 
     persist('user', body);
+    trackChatMessageSent('main_chat');
 
     try {
       const currency = readStoredCurrencyPreference(user?.id);
@@ -273,6 +275,7 @@ export function ChatProvider({ children }) {
       });
       setNewIds((prev) => new Set(prev).add(replyId));
       persist('assistant', replyText);
+      trackFromAssistantReply(replyText);
     } catch {
       const errId = Date.now() + 1;
       setMessages((prev) => {

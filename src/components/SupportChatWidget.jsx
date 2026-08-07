@@ -27,6 +27,7 @@ import {
   normalizeChatIcons,
   normalizeMessageText,
 } from '@/lib/textEncoding';
+import { trackChatMessageSent, trackFromAssistantReply } from '@/lib/analytics';
 
 const SUPPORT_AVATAR = 'https://horizons-cdn.hostinger.com/29358ba6-568b-49c6-9aac-6ece4b30fac6/ca8bd733c63d36fa2caff0db62fb3057.png';
 
@@ -619,6 +620,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
         const reply = makeLocalMsg(decision.reply, 'support');
         setMessages((prev) => [...prev, reply]);
         setNewMsgIds((prev) => new Set([...prev, reply.id]));
+        trackFromAssistantReply(decision.reply);
         if (decision.type === 'escalate') {
           void escalateToTelegramSupport({ user, message: text, chatId: '' });
         }
@@ -648,6 +650,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
           const local = makeLocalMsg(decision.reply, 'support');
           setMessages((prev) => [...prev, local]);
         }
+        trackFromAssistantReply(decision.reply);
 
         // Human / Telegram escalation only outside tutorial
         if (decision.type === 'escalate') {
@@ -669,6 +672,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
     setInput('');
     if (inputRef.current) inputRef.current.style.height = 'auto';
     setSending(true);
+    trackChatMessageSent(isGuideMode ? 'guide' : 'support_widget');
     try {
       if (isGuideMode) await sendGuideMessage(text);
       else await sendNormalMessage(text);

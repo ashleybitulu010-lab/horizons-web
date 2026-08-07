@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import pb from '@/lib/pocketbaseClient';
 import { motion } from 'framer-motion';
 import { cleanUtf8Text } from '@/lib/textEncoding';
+import { trackReportGenerated } from '@/lib/analytics';
 
 const TYPE_LABELS = {
   monthly: 'Rapport mensuel',
@@ -63,7 +64,13 @@ export default function ReportsPage() {
 
   const handleDownload = (report) => {
     const url = resolvePdfUrl(report);
-    if (url) window.open(url, '_blank', 'noopener noreferrer');
+    if (url) {
+      trackReportGenerated({
+        source: 'reports_page_download',
+        report_type: report?.type || 'unknown',
+      });
+      window.open(url, '_blank', 'noopener noreferrer');
+    }
   };
 
   return (

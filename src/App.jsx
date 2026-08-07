@@ -14,27 +14,30 @@ import SettingsPage from './pages/SettingsPage';
 import DashboardPage from './pages/DashboardPage';
 import { ChatProvider } from '@/context/ChatContext';
 import { AuthProvider } from '@/hooks/useAuth';
+import AnalyticsProvider from '@/components/AnalyticsProvider';
 
 function App() {
   return (
     <Router>
       <ScrollToTop />
       <AuthProvider>
-        <ChatProvider>
-          <Routes>
-            <Route path="/" element={<RootRedirect />} />
-            <Route path="/login" element={<GuestOnlyRoute><LoginPage /></GuestOnlyRoute>} />
-            <Route path="/signup" element={<GuestOnlyRoute><SignupPage /></GuestOnlyRoute>} />
-            <Route path="/forgot-password" element={<GuestOnlyRoute><ForgotPasswordPage /></GuestOnlyRoute>} />
-            <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
-            <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-            <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
-            <Route path="/subscription" element={<ProtectedRoute><SubscriptionPage /></ProtectedRoute>} />
-            <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-            <Route path="*" element={<RootRedirect />} />
-          </Routes>
-        </ChatProvider>
+        <AnalyticsProvider>
+          <ChatProvider>
+            <Routes>
+              <Route path="/" element={<RootRedirect />} />
+              <Route path="/login" element={<GuestOnlyRoute><LoginPage /></GuestOnlyRoute>} />
+              <Route path="/signup" element={<GuestOnlyRoute><SignupPage /></GuestOnlyRoute>} />
+              <Route path="/forgot-password" element={<GuestOnlyRoute><ForgotPasswordPage /></GuestOnlyRoute>} />
+              <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+              <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+              <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+              <Route path="/subscription" element={<ProtectedRoute><SubscriptionPage /></ProtectedRoute>} />
+              <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
+              <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+              <Route path="*" element={<RootRedirect />} />
+            </Routes>
+          </ChatProvider>
+        </AnalyticsProvider>
       </AuthProvider>
     </Router>
   );

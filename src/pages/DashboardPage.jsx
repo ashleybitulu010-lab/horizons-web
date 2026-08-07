@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { trackDashboardViewed } from '@/lib/analytics';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -395,6 +396,10 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [chartPeriod, setChartPeriod] = useState('month');
   const [savingCurrency, setSavingCurrency] = useState(false);
+
+  useEffect(() => {
+    trackDashboardViewed();
+  }, []);
   const {
     metrics,
     trends,

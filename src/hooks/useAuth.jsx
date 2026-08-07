@@ -19,6 +19,7 @@ import {
   readOnboardingState,
 } from '@/hooks/useOnboarding';
 import { cleanUtf8Text } from '@/lib/textEncoding';
+import { setAnalyticsUser, trackLogin, trackSignUp } from '@/lib/analytics';
 
 const AuthContext = createContext(null);
 const ASH_SESSION_KEY = 'ash_session';
@@ -197,6 +198,8 @@ export function AuthProvider({ children }) {
           status: 'pending',
         });
       }
+      setAnalyticsUser(authData.record?.id);
+      trackLogin('email');
       return mapUser(authData.record);
     } catch (err) {
       throw new Error(
@@ -227,6 +230,8 @@ export function AuthProvider({ children }) {
         status: 'pending',
       });
     }
+    setAnalyticsUser(authData.record?.id);
+    trackSignUp('email');
     return mapUser(authData.record);
   }, [syncFromStore]);
 
@@ -234,6 +239,7 @@ export function AuthProvider({ children }) {
     pb.authStore.clear();
     persistLegacySession(null, null);
     await clearDashboardSession();
+    setAnalyticsUser(null);
     setUser(null);
     setToken(null);
   }, []);

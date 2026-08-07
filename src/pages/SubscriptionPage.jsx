@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { createDashboardSession, supabase } from '@/lib/supabaseRest';
+import { syncSubscriptionAnalytics } from '@/lib/analytics';
 
 const FEATURES = [
   'Assistant IA financier illimité',
@@ -193,6 +194,10 @@ export default function SubscriptionPage() {
   const navigate = useNavigate();
   const { user, token } = useAuth();
   const { subscription, loading, error, refresh } = useSubscription(user, token);
+
+  useEffect(() => {
+    if (subscription) syncSubscriptionAnalytics(subscription);
+  }, [subscription]);
 
   const handleSubscribe = () => {
     window.open('https://wa.me/243821386516?text=Bonjour%2C%20je%20souhaite%20m%27abonner%20%C3%A0%20Ash%20Ledger%20Premium.', '_blank', 'noopener,noreferrer');
