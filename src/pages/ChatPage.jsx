@@ -382,15 +382,15 @@ export default function ChatPage() {
 
         {isGuideMode && (
           <div
-            className="flex-shrink-0 px-4 py-3 flex items-center gap-3 border-b"
+            className="flex-shrink-0 px-4 py-2.5 flex items-center gap-2 border-b"
             style={{ backgroundColor: '#FFF4EB', borderColor: 'rgba(255,107,0,0.18)' }}
           >
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-orange-700">
-                {isPending ? 'Ashy est prêt à vous guider' : 'Guide Ashy en cours'}
+                {isPending ? 'Guide Ashy disponible' : 'Guide Ashy en cours'}
               </p>
               <p className="text-xs text-orange-600/80 mt-0.5">
-                Ouvrez le panneau Ashy en bas à droite pour commencer (produit → stock → vente…).
+                Ouvrez Ashy pour continuer, ou reprenez plus tard dans Paramètres.
               </p>
             </div>
             <button
@@ -404,7 +404,7 @@ export default function ChatPage() {
               className="flex-shrink-0 px-3 py-2 rounded-xl text-white text-xs font-semibold active:scale-95"
               style={{ backgroundColor: '#FF6B00' }}
             >
-              Ouvrir Ashy
+              Ouvrir
             </button>
           </div>
         )}
@@ -751,7 +751,7 @@ export default function ChatPage() {
       />
 
       {/* ── Support chat widget ── */}
-      <SupportChatWidget user={user} forceOpen={isPending || isActive} />
+      <SupportChatWidget user={user} />
     </>
   );
 }

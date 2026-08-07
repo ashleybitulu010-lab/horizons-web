@@ -207,13 +207,13 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
     }, delay);
   }, []);
 
-  // Auto-open for new / in-progress guide (also ?guide=1 from Settings)
+  // Auto-open once for new / relaunched guide (also ?guide=1 from Settings)
   useEffect(() => {
     if (!user?.id) return;
     const forceGuide =
       forceOpen ||
       (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('guide') === '1');
-    if ((isPending || isActive || forceGuide) && !autoOpenedRef.current) {
+    if ((isPending || forceGuide) && !autoOpenedRef.current) {
       autoOpenedRef.current = true;
       setOpen(true);
       if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('guide') === '1' && window.history?.replaceState) {
@@ -222,12 +222,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
         window.history.replaceState({}, '', url.pathname + url.search + url.hash);
       }
     }
-  }, [user?.id, isPending, isActive, forceOpen]);
-
-  // Keep panel open while guide is pending/active
-  useEffect(() => {
-    if (forceOpen || isPending || isActive) setOpen(true);
-  }, [forceOpen, isPending, isActive]);
+  }, [user?.id, isPending, forceOpen]);
 
   // Seed welcome when pending
   useEffect(() => {
@@ -239,7 +234,6 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
       }),
     ]);
     setWelcomeShown(true);
-    setOpen(true);
   }, [isPending, welcomeShown]);
 
   // Resume active guide UI if panel reopens with empty local transcript
@@ -494,9 +488,8 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
   }, []);
 
   const handleClose = useCallback(() => {
-    if (isGuideMode) return; // stay open during tutorial
     setOpen(false);
-  }, [isGuideMode]);
+  }, []);
 
   const handleStartGuide = useCallback(() => {
     startGuide();
@@ -514,6 +507,14 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
     }, 700);
   }, [startGuide, pushGuide, withTyping]);
 
+  const handleLaterGuide = useCallback(() => {
+    setGuideMessages((prev) =>
+      prev.map((m) => (m.id === WELCOME_ONBOARDING.id ? { ...m, actions: undefined } : m)),
+    );
+    pushGuide('D’accord. Réduisez Ashy quand vous voulez — le guide reste disponible via Paramètres → Guide Ashy.');
+    setTimeout(() => setOpen(false), 900);
+  }, [pushGuide]);
+
   const handleSkipGuide = useCallback(() => {
     skipGuide();
     setGuideMessages((prev) =>
@@ -527,20 +528,23 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
 
   const getPanelStyle = () => {
     if (isMobile) {
+      const vh = typeof window !== 'undefined' ? window.innerHeight : 700;
+      const panelH = Math.min(Math.round(vh * 0.58), 460);
       return {
         position: 'fixed',
-        left: 8,
-        right: 8,
-        top: 'max(8px, env(safe-area-inset-top))',
-        bottom: 'max(8px, env(safe-area-inset-bottom))',
+        left: 12,
+        right: 12,
+        bottom: 'max(12px, env(safe-area-inset-bottom))',
+        top: 'auto',
         width: 'auto',
-        height: 'auto',
+        height: panelH,
+        maxHeight: '58vh',
         zIndex: 99,
       };
     }
     const vw = window.innerWidth;
-    const panelW = Math.min(vw - 48, 384);
-    const panelH = Math.min(520, window.innerHeight - 120);
+    const panelW = Math.min(vw - 48, 360);
+    const panelH = Math.min(440, window.innerHeight - 140);
     const gap = 12;
     let left = pos.x;
     if (pos.x + BUBBLE_SIZE + gap + panelW > vw - MARGIN) left = pos.x - panelW + BUBBLE_SIZE;
@@ -687,15 +691,22 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
                 <p className="text-white font-semibold text-sm leading-tight">{headerTitle}</p>
                 <p className="text-orange-100 text-[11px] mt-0.5">{headerSub}</p>
               </div>
-              {!isGuideMode && (
+              {isGuideMode && (
                 <button
-                  onClick={handleClose}
-                  className="w-7 h-7 flex items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/15 transition-colors"
-                  aria-label="Réduire"
+                  type="button"
+                  onClick={handleSkipGuide}
+                  className="mr-1 rounded-full px-2 py-1 text-[10px] font-semibold text-white/90 hover:bg-white/15"
                 >
-                  <ChevronDown size={18} />
+                  Passer
                 </button>
               )}
+              <button
+                onClick={handleClose}
+                className="w-7 h-7 flex items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/15 transition-colors"
+                aria-label="Réduire"
+              >
+                <ChevronDown size={18} />
+              </button>
             </div>
 
             <ProgressBar progress={progress} visible={isActive} />
@@ -750,6 +761,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
                                 type="button"
                                 onClick={() => {
                                   if (action.id === 'start') handleStartGuide();
+                                  if (action.id === 'later') handleLaterGuide();
                                   if (action.id === 'skip') handleSkipGuide();
                                 }}
                                 className={`w-full text-sm font-semibold py-2 px-3 rounded-xl transition-all active:scale-[0.98] ${

@@ -6,7 +6,7 @@ import {
   ArrowLeft, Calendar, CheckCircle2, AlertCircle, Clock, Crown, RefreshCw, Sparkles, WifiOff,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import pb from '@/lib/pocketbaseClient';
+import { createDashboardSession, supabase } from '@/lib/supabaseRest';
 
 const FEATURES = [
   'Assistant IA financier illimité',
@@ -16,10 +16,6 @@ const FEATURES = [
 ];
 const ACCENT = '#FF6B00';
 const MS_PER_DAY = 86400000;
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://knrwplidgvuvjnuqqmrt.supabase.co';
-const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-const N8N_SUBSCRIPTION_URL = import.meta.env.VITE_N8N_SUBSCRIPTION_URL
-  || 'https://n8n.ashledger.tech/webhook/ash-ledger/subscription';
 
 const STATUS_LABELS = {
   trial: 'Essai en cours',
@@ -54,150 +50,91 @@ function computeMetrics(row) {
   };
 }
 
-function trialFromUser(user) {
-  const start = user?.created ? new Date(user.created) : new Date();
-  const end = new Date(start.getTime() + 30 * MS_PER_DAY);
-  return {
-    plan: 'trial',
-    status: end.getTime() < Date.now() ? 'expired' : 'trial',
-    start_date: start.toISOString(),
-    end_date: end.toISOString(),
-  };
-}
-
-function rowFromSubscriptionPayload(data) {
-  if (!data?.end_date && !data?.date_fin_abonnement) return null;
-  const end = new Date(data.end_date || data.date_fin_abonnement);
-  const startSource = data.start_date || data.date_inscription;
-  const start = startSource ? new Date(startSource) : new Date(end.getTime() - 30 * MS_PER_DAY);
+function rowFromDates({ plan, status, start_date, end_date, source }) {
+  if (!end_date && !start_date) return null;
+  const end = end_date ? new Date(end_date) : new Date(Date.now() + 30 * MS_PER_DAY);
+  const start = start_date ? new Date(start_date) : new Date(end.getTime() - 30 * MS_PER_DAY);
   const now = Date.now();
-  let status = data.status || 'trial';
-  if (!data.status) {
-    if (end.getTime() <= now) status = 'expired';
-    else if (end.getTime() - now > 30 * MS_PER_DAY) status = 'active';
-    else status = 'trial';
+  let resolvedStatus = status || 'trial';
+  if (!status) {
+    if (end.getTime() <= now) resolvedStatus = 'expired';
+    else if (end.getTime() - now > 30 * MS_PER_DAY) resolvedStatus = 'active';
+    else resolvedStatus = 'trial';
   }
-  const plan = data.plan || (status === 'active' ? 'premium' : 'trial');
+  const resolvedPlan = plan || (resolvedStatus === 'active' ? 'premium' : 'trial');
   return {
-    plan,
-    status,
+    plan: resolvedPlan,
+    status: resolvedStatus,
     start_date: start.toISOString(),
     end_date: end.toISOString(),
+    source,
   };
 }
 
-function rowFromSupabaseClient(client) {
-  return rowFromSubscriptionPayload(client);
-}
+async function loadSubscriptionFromSupabase(pocketBaseToken) {
+  if (!supabase || !pocketBaseToken) return null;
+  const clientId = await createDashboardSession(pocketBaseToken);
 
-async function fetchClientViaApi(userId) {
-  try {
-    const res = await fetch(`/hcgi/api/subscription/client?user_id=${encodeURIComponent(userId)}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.subscription || null;
-  } catch {
-    return null;
+  const { data: client, error: clientError } = await supabase
+    .from('clients')
+    .select('id,nom_client,date_inscription,date_fin_abonnement,auth_user_id')
+    .eq('id', clientId)
+    .single();
+  if (clientError) throw clientError;
+  if (!client) return null;
+
+  let subRow = null;
+  if (client.auth_user_id) {
+    const { data: sub, error: subError } = await supabase
+      .from('subscriptions')
+      .select('plan,status,start_date,end_date,user_id')
+      .eq('user_id', client.auth_user_id)
+      .order('end_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (subError) throw subError;
+    subRow = sub;
   }
-}
 
-async function fetchSupabaseRpc(userId) {
-  if (!SUPABASE_ANON || !userId) return null;
-  try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_client_subscription`, {
-      method: 'POST',
-      headers: {
-        apikey: SUPABASE_ANON,
-        Authorization: `Bearer ${SUPABASE_ANON}`,
-        'Content-Type': 'application/json; charset=UTF-8',
-        Accept: 'application/json; charset=UTF-8',
-      },
-      body: JSON.stringify({ p_user_id: userId }),
+  if (subRow?.end_date || subRow?.start_date) {
+    return rowFromDates({
+      plan: subRow.plan,
+      status: subRow.status,
+      start_date: subRow.start_date || client.date_inscription,
+      end_date: subRow.end_date || client.date_fin_abonnement,
+      source: 'subscriptions+clients',
     });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return rowFromSubscriptionPayload(data);
-  } catch {
-    return null;
   }
+
+  return rowFromDates({
+    plan: 'trial',
+    status: null,
+    start_date: client.date_inscription,
+    end_date: client.date_fin_abonnement,
+    source: 'clients',
+  });
 }
 
-async function fetchN8nSubscription(userId) {
-  if (!userId) return null;
-  try {
-    const url = `${N8N_SUBSCRIPTION_URL}?user_id=${encodeURIComponent(userId)}`;
-    const res = await fetch(url, {
-      headers: { Accept: 'application/json; charset=UTF-8' },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return rowFromSubscriptionPayload(data.subscription || data);
-  } catch {
-    return null;
-  }
-}
-
-async function fetchSupabaseClient(userId) {
-  if (!SUPABASE_ANON || !userId) return null;
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/clients?user_id=eq.${encodeURIComponent(userId)}&select=date_inscription,date_fin_abonnement&limit=1`,
-      { headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` } },
-    );
-    if (!res.ok) return null;
-    const rows = await res.json();
-    return rowFromSupabaseClient(rows?.[0]);
-  } catch {
-    return null;
-  }
-}
-
-async function fetchSupabaseSubscription(userId) {
-  if (!SUPABASE_ANON || !userId) return null;
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/subscriptions?user_id=eq.${encodeURIComponent(userId)}&select=plan,status,start_date,end_date&limit=1`,
-      { headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` } },
-    );
-    if (!res.ok) return null;
-    const rows = await res.json();
-    return rows?.[0] || null;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchPocketBaseSubscription(userId) {
-  try {
-    const rec = await pb.collection('subscriptions').getFirstListItem(`owner="${userId}"`);
-    return {
-      plan: rec.plan || 'trial',
-      status: rec.status || 'trial',
-      start_date: rec.start_date || rec.created,
-      end_date: rec.end_date,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function useSubscription(user) {
+function useSubscription(user, token) {
   const [row, setRow] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const fetchSubscription = useCallback(async () => {
-    if (!user?.id) { setRow(null); setLoading(false); return; }
+    if (!user?.id || !token) {
+      setRow(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const sub = await fetchSupabaseRpc(user.id)
-        || await fetchN8nSubscription(user.id)
-        || await fetchClientViaApi(user.id)
-        || await fetchSupabaseClient(user.id)
-        || await fetchSupabaseSubscription(user.id)
-        || await fetchPocketBaseSubscription(user.id)
-        || trialFromUser(user);
+      const sub = await loadSubscriptionFromSupabase(token);
+      if (!sub) {
+        setError('Aucune donnée d’abonnement trouvée pour votre compte.');
+        setRow(null);
+        return;
+      }
       setRow(sub);
     } catch (err) {
       setError(err?.message || 'Impossible de charger votre abonnement.');
@@ -205,7 +142,7 @@ function useSubscription(user) {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user?.id, token]);
 
   useEffect(() => { fetchSubscription(); }, [fetchSubscription]);
 
@@ -213,7 +150,6 @@ function useSubscription(user) {
     subscription: useMemo(() => computeMetrics(row), [row]),
     loading,
     error,
-    notFound: false,
     refresh: fetchSubscription,
   };
 }
@@ -255,8 +191,8 @@ function StatusBadge({ subscription }) {
 
 export default function SubscriptionPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const { subscription, loading, error, refresh } = useSubscription(user);
+  const { user, token } = useAuth();
+  const { subscription, loading, error, refresh } = useSubscription(user, token);
 
   const handleSubscribe = () => {
     window.open('https://wa.me/243821386516?text=Bonjour%2C%20je%20souhaite%20m%27abonner%20%C3%A0%20Ash%20Ledger%20Premium.', '_blank', 'noopener,noreferrer');
@@ -268,96 +204,130 @@ export default function SubscriptionPage() {
         <title>Mon abonnement — Ash Ledger</title>
         <meta name="description" content="Consultez votre plan, vos dates et votre statut d'abonnement Ash Ledger." />
       </Helmet>
-      <div className="min-h-screen bg-gray-50">
-        <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3">
-          <button type="button" onClick={() => navigate('/chat')} className="w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 transition-colors" aria-label="Retour">
-            <ArrowLeft size={20} strokeWidth={1.8} />
+
+      <div className="min-h-[100dvh] flex flex-col" style={{ backgroundColor: '#F5F1EB' }}>
+        <header
+          className="flex items-center gap-3 px-4 py-3 flex-shrink-0"
+          style={{ backgroundColor: ACCENT, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
+        >
+          <button
+            onClick={() => navigate('/chat')}
+            className="w-9 h-9 flex items-center justify-center rounded-full text-white/80 hover:text-white hover:bg-white/15 transition-colors active:scale-95"
+          >
+            <ArrowLeft size={20} strokeWidth={2} />
           </button>
-          <h1 className="text-lg font-semibold text-gray-900">Mon abonnement</h1>
+          <h1 className="text-white font-semibold text-base flex-1">Mon abonnement</h1>
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={loading}
+            className="w-9 h-9 flex items-center justify-center rounded-full text-white/80 hover:text-white hover:bg-white/15 transition-colors active:scale-95 disabled:opacity-50"
+            aria-label="Actualiser"
+          >
+            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+          </button>
         </header>
-        <main className="max-w-lg mx-auto px-4 py-6">
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }} className="space-y-5">
-            {loading && <LoadingSkeleton />}
-            {!loading && error && (
-              <div className="bg-white rounded-2xl border border-red-100 px-5 py-6 text-center space-y-3">
-                <div className="w-12 h-12 mx-auto rounded-full bg-red-50 flex items-center justify-center"><WifiOff size={22} className="text-red-500" /></div>
-                <p className="text-sm font-medium text-gray-900">Erreur de connexion</p>
-                <p className="text-sm text-gray-500">{error}</p>
-                <button type="button" onClick={refresh} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white" style={{ backgroundColor: ACCENT }}>
-                  <RefreshCw size={16} /> Réessayer
-                </button>
+
+        <div className="flex-1 overflow-y-auto px-4 py-6 max-w-lg mx-auto w-full space-y-4">
+          {loading ? (
+            <LoadingSkeleton />
+          ) : error ? (
+            <div className="bg-white rounded-2xl border border-rose-100 p-6 text-center shadow-sm">
+              <span className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
+                <WifiOff size={22} />
+              </span>
+              <p className="text-sm font-semibold text-stone-800">Données indisponibles</p>
+              <p className="mt-2 text-xs text-stone-500">{error}</p>
+              <button
+                type="button"
+                onClick={refresh}
+                className="mt-4 inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold text-white"
+                style={{ backgroundColor: ACCENT }}
+              >
+                <RefreshCw size={14} /> Réessayer
+              </button>
+            </div>
+          ) : subscription ? (
+            <>
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-white rounded-2xl shadow-sm p-5 space-y-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-stone-400">Plan actuel</p>
+                    <h2 className="mt-1 text-xl font-bold text-stone-900 flex items-center gap-2">
+                      <Crown size={20} style={{ color: ACCENT }} />
+                      {subscription.planLabel}
+                    </h2>
+                  </div>
+                  <StatusBadge subscription={subscription} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-stone-50 p-3">
+                    <p className="text-[11px] font-semibold text-stone-400 flex items-center gap-1">
+                      <Calendar size={12} /> Début
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-stone-800">{subscription.startDateFormatted}</p>
+                  </div>
+                  <div className="rounded-xl bg-stone-50 p-3">
+                    <p className="text-[11px] font-semibold text-stone-400 flex items-center gap-1">
+                      <Calendar size={12} /> Fin
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-stone-800">{subscription.endDateFormatted}</p>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="font-semibold text-stone-500 flex items-center gap-1">
+                      <Clock size={12} /> Jours restants
+                    </span>
+                    <span className="font-bold text-stone-800">{subscription.daysRemaining} j</span>
+                  </div>
+                  <div className="h-2.5 rounded-full bg-stone-100 overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${subscription.usagePercent}%`,
+                        backgroundColor: subscription.isExpired ? '#EF4444' : ACCENT,
+                      }}
+                    />
+                  </div>
+                </div>
+              </motion.div>
+
+              <div className="bg-white rounded-2xl shadow-sm p-5">
+                <h3 className="text-sm font-bold text-stone-800 mb-3">Inclus dans votre plan</h3>
+                <ul className="space-y-2.5">
+                  {FEATURES.map((feature) => (
+                    <li key={feature} className="flex items-start gap-2.5 text-sm text-stone-600">
+                      <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0 text-emerald-500" />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
               </div>
-            )}
-            {!loading && !error && subscription && (
-              <>
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                  <div className="px-5 py-5" style={{ background: `linear-gradient(135deg, ${ACCENT}18 0%, #fff 60%)` }}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          {subscription.isPremiumActive && <Crown size={18} style={{ color: ACCENT }} />}
-                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Plan actuel</p>
-                        </div>
-                        <p className="text-2xl font-bold text-gray-900">{subscription.planLabel}</p>
-                      </div>
-                      <StatusBadge subscription={subscription} />
-                    </div>
-                  </div>
-                  <div className="px-5 py-4 space-y-4 border-t border-gray-50">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-sm text-gray-600"><Clock size={16} className="text-gray-400" /> Jours restants</div>
-                      <span className="text-sm font-semibold text-gray-900">{subscription.daysRemaining} jour{subscription.daysRemaining !== 1 ? 's' : ''}</span>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs text-gray-500">Utilisation</span>
-                        <span className="text-xs font-medium text-gray-700">{subscription.usagePercent}%</span>
-                      </div>
-                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${subscription.usagePercent}%`, backgroundColor: subscription.isExpired ? '#EF4444' : ACCENT }} />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 pt-1">
-                      <div className="bg-gray-50 rounded-xl px-3 py-2.5">
-                        <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-0.5"><Calendar size={12} /> Début</div>
-                        <p className="text-sm font-medium text-gray-900">{subscription.startDateFormatted}</p>
-                      </div>
-                      <div className="bg-gray-50 rounded-xl px-3 py-2.5">
-                        <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-0.5"><Calendar size={12} /> Fin</div>
-                        <p className="text-sm font-medium text-gray-900">{subscription.endDateFormatted}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-5">
-                  <p className="text-sm font-semibold text-gray-900 mb-3">Inclus dans votre plan</p>
-                  <ul className="space-y-2.5">
-                    {FEATURES.map((f) => (
-                      <li key={f} className="flex items-start gap-2.5 text-sm text-gray-600">
-                        <CheckCircle2 size={16} className="text-green-500 mt-0.5 flex-shrink-0" /> {f}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="space-y-3 pb-6">
-                  {subscription.isTrial && !subscription.isExpired && (
-                    <button type="button" onClick={handleSubscribe} className="w-full py-3.5 rounded-xl text-white text-sm font-semibold transition-all active:scale-[0.98]" style={{ backgroundColor: ACCENT, boxShadow: '0 4px 14px rgba(255,107,0,0.25)' }}>
-                      S'abonner maintenant
-                    </button>
-                  )}
-                  {subscription.isPremiumActive && (
-                    <div className="w-full py-3.5 rounded-xl text-center text-sm font-semibold bg-green-50 text-green-700 border border-green-200">Abonnement actif</div>
-                  )}
-                  {subscription.isExpired && (
-                    <button type="button" onClick={handleSubscribe} className="w-full py-3.5 rounded-xl text-white text-sm font-semibold transition-all active:scale-[0.98] bg-red-500 hover:bg-red-600">
-                      Renouveler mon abonnement
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
-          </motion.div>
-        </main>
+
+              {(subscription.isTrial || subscription.isExpired) && (
+                <button
+                  type="button"
+                  onClick={handleSubscribe}
+                  className="w-full py-3.5 rounded-xl text-white text-sm font-semibold active:scale-[0.98]"
+                  style={{ backgroundColor: ACCENT, boxShadow: '0 4px 14px rgba(255,107,0,0.28)' }}
+                >
+                  Passer à Premium
+                </button>
+              )}
+
+              <p className="text-center text-[11px] text-stone-400 pb-2">
+                Données synchronisées depuis clients &amp; subscriptions (Supabase).
+              </p>
+            </>
+          ) : null}
+        </div>
       </div>
     </>
   );

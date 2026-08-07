@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
-import { ArrowLeft, Save, Eye, EyeOff, User } from 'lucide-react';
+import { ArrowLeft, Save, Eye, EyeOff, Camera } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import pb from '@/lib/pocketbaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -57,9 +57,11 @@ function Input({ label, value, onChange, type = 'text', readOnly = false, right 
 export default function ProfilePage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const fileInputRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingPwd, setSavingPwd] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [profile, setProfile] = useState(null);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -124,6 +126,32 @@ export default function ProfilePage() {
     }
   };
 
+  const uploadAvatar = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !user?.id) return;
+    if (!file.type.startsWith('image/')) {
+      setToast({ type: 'error', text: 'Choisissez une image (JPG, PNG ou WebP).' });
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setToast({ type: 'error', text: 'La photo doit faire moins de 2 Mo.' });
+      return;
+    }
+    setUploadingAvatar(true);
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+      const updated = await pb.collection('users').update(user.id, formData);
+      setProfile(updated);
+      setToast({ type: 'success', text: 'Photo de profil mise à jour !' });
+    } catch {
+      setToast({ type: 'error', text: 'Impossible de mettre à jour la photo de profil.' });
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   const avatarUrl = profile?.avatar
     ? pb.files.getURL(profile, profile.avatar)
     : null;
@@ -166,7 +194,20 @@ export default function ProfilePage() {
             <>
               {/* Avatar */}
               <div className="flex flex-col items-center gap-3 py-2">
-                <div className="relative">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={uploadAvatar}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingAvatar}
+                  className="relative group disabled:opacity-60"
+                  aria-label="Modifier la photo de profil"
+                >
                   {avatarUrl ? (
                     <img src={avatarUrl} alt="Avatar" className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-md" />
                   ) : (
@@ -177,11 +218,13 @@ export default function ProfilePage() {
                       {initials}
                     </div>
                   )}
-                  <div className="absolute bottom-0 right-0 w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center shadow border border-gray-200">
-                    <User size={13} className="text-gray-500" />
+                  <div className="absolute bottom-0 right-0 w-7 h-7 bg-orange-500 rounded-full flex items-center justify-center shadow border-2 border-white text-white">
+                    <Camera size={13} />
                   </div>
-                </div>
-                <p className="text-xs text-gray-400">Photo de profil (modification bientôt disponible)</p>
+                </button>
+                <p className="text-xs text-gray-400">
+                  {uploadingAvatar ? 'Téléversement…' : 'Appuyez pour modifier votre photo'}
+                </p>
               </div>
 
               {/* Profile info card */}

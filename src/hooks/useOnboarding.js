@@ -93,9 +93,12 @@ export const WELCOME_ONBOARDING = {
 Je vais vous apprendre à utiliser Ash Ledger en moins de 5 minutes.
 
 Ensemble nous allons créer une petite entreprise fictive.
-À chaque étape, je vérifierai que tout est correct avant de continuer.`,
+À chaque étape, je vérifierai que tout est correct avant de continuer.
+
+Vous pouvez réduire ce panneau à tout moment et reprendre plus tard.`,
   actions: [
     { id: 'start', label: 'Commencer le guide', variant: 'primary' },
+    { id: 'later', label: 'Plus tard', variant: 'ghost' },
     { id: 'skip', label: 'Passer le guide', variant: 'ghost' },
   ],
 };

@@ -49,10 +49,21 @@ export default function ReportsPage() {
       .finally(() => setLoading(false));
   }, [user?.id]);
 
-  const handleDownload = (report) => {
-    if (report.pdf_url) {
-      window.open(report.pdf_url, '_blank', 'noopener noreferrer');
+  const resolvePdfUrl = (report) => {
+    if (report?.pdf_url) return report.pdf_url;
+    if (report?.file) {
+      try {
+        return pb.files.getURL(report, report.file);
+      } catch {
+        return null;
+      }
     }
+    return null;
+  };
+
+  const handleDownload = (report) => {
+    const url = resolvePdfUrl(report);
+    if (url) window.open(url, '_blank', 'noopener noreferrer');
   };
 
   return (
@@ -103,15 +114,24 @@ export default function ReportsPage() {
                 <FileText size={36} className="text-orange-300" strokeWidth={1.4} />
               </div>
               <h2 className="text-gray-700 font-semibold text-base mb-2">Aucun rapport disponible</h2>
-              <p className="text-gray-400 text-sm leading-relaxed max-w-xs">
-                Aucun rapport disponible pour le moment. Vos rapports générés apparaîtront ici.
+              <p className="text-gray-400 text-sm leading-relaxed max-w-xs mb-4">
+                Demandez à Ashy dans le chat : « Génère mon bilan PDF ». Vos rapports apparaîtront ici.
               </p>
+              <button
+                type="button"
+                onClick={() => navigate('/chat')}
+                className="px-4 py-2.5 rounded-xl text-white text-sm font-semibold active:scale-95"
+                style={{ backgroundColor: '#FF6B00' }}
+              >
+                Ouvrir le chat
+              </button>
             </motion.div>
           ) : (
             <div className="space-y-3">
               {reports.map((report, i) => {
                 const Icon = TYPE_ICONS[report.type] || FileText;
                 const color = TYPE_COLORS[report.type] || '#FF6B00';
+                const pdfUrl = resolvePdfUrl(report);
                 return (
                   <motion.div
                     key={report.id}
@@ -140,10 +160,10 @@ export default function ReportsPage() {
                     </div>
                     <button
                       onClick={() => handleDownload(report)}
-                      disabled={!report.pdf_url}
+                      disabled={!pdfUrl}
                       className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ backgroundColor: '#FFF0E6', color: '#FF6B00' }}
-                      title={report.pdf_url ? 'Télécharger le PDF' : 'PDF non disponible'}
+                      title={pdfUrl ? 'Télécharger le PDF' : 'PDF non disponible'}
                     >
                       <Download size={13} strokeWidth={2} />
                       <span className="hidden sm:inline">PDF</span>
