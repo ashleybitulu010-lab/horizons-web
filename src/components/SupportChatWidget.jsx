@@ -526,26 +526,29 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
     }, 600);
   }, [skipGuide, pushGuide, withTyping]);
 
-  // Bottom sheet on all viewports (CSS !important on mobile also anchors bottom).
+  // Small bottom-right popup — never covers the full chat.
   const getPanelStyle = () => {
     const vh = typeof window !== 'undefined' ? window.innerHeight : 700;
     const vw = typeof window !== 'undefined' ? window.innerWidth : 400;
     const side = isMobile ? 12 : 20;
-    const bubbleClearance = (isMobile ? 56 : BUBBLE_SIZE) + 16;
+    const bubbleClearance = (isMobile ? 56 : BUBBLE_SIZE) + 12;
+    const panelW = isMobile
+      ? Math.min(300, vw - 72)
+      : Math.min(340, vw - 80);
     const panelH = isMobile
-      ? Math.min(Math.round(vh * 0.48), 380)
-      : Math.min(Math.round(vh * 0.42), 400);
-    const panelW = isMobile ? undefined : Math.min(vw - side * 2, 400);
+      ? Math.min(320, Math.round(vh * 0.42))
+      : Math.min(360, Math.round(vh * 0.4));
 
     return {
       position: 'fixed',
-      left: isMobile ? side : 'auto',
+      left: 'auto',
       right: side,
       top: 'auto',
       bottom: `calc(${bubbleClearance}px + env(safe-area-inset-bottom, 0px))`,
-      width: isMobile ? 'auto' : panelW,
+      width: panelW,
       height: panelH,
-      maxHeight: isMobile ? '48vh' : '42vh',
+      maxWidth: 'calc(100vw - 72px)',
+      maxHeight: isMobile ? '42vh' : '40vh',
       zIndex: 99,
     };
   };
