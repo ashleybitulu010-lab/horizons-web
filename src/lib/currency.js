@@ -2,7 +2,9 @@ import { createDashboardSession, supabase } from '@/lib/supabaseRest';
 
 export const DEFAULT_USD_CDF_RATE = 2295;
 
+/** Single currency for ledger data + dashboard display (no conversion). */
 export const DEFAULT_CURRENCY_SETTINGS = Object.freeze({
+  currency: 'USD',
   displayCurrency: 'USD',
   ledgerCurrency: 'USD',
   usdCdfRate: DEFAULT_USD_CDF_RATE,
@@ -18,37 +20,26 @@ function validRate(value) {
 }
 
 export function normalizeCurrencySettings(row = {}) {
+  const currency = validCurrency(
+    row.currency
+      || row.displayCurrency
+      || row.currency_preference
+      || row.ledgerCurrency
+      || row.ledger_currency,
+    'USD',
+  );
   return {
-    displayCurrency: validCurrency(
-      row.displayCurrency || row.currency_preference,
-      'USD',
-    ),
-    ledgerCurrency: validCurrency(
-      row.ledgerCurrency || row.ledger_currency,
-      'USD',
-    ),
+    currency,
+    displayCurrency: currency,
+    ledgerCurrency: currency,
     usdCdfRate: validRate(row.usdCdfRate || row.usd_cdf_rate),
   };
 }
 
-export function convertCurrency(amount, settings = DEFAULT_CURRENCY_SETTINGS) {
+/** Amounts are stored and shown in the same currency — no conversion. */
+export function convertCurrency(amount) {
   const value = Number(amount);
-  if (!Number.isFinite(value)) return 0;
-
-  const {
-    displayCurrency,
-    ledgerCurrency,
-    usdCdfRate,
-  } = normalizeCurrencySettings(settings);
-
-  if (displayCurrency === ledgerCurrency) return value;
-  if (ledgerCurrency === 'CDF' && displayCurrency === 'USD') {
-    return value / usdCdfRate;
-  }
-  if (ledgerCurrency === 'USD' && displayCurrency === 'CDF') {
-    return value * usdCdfRate;
-  }
-  return value;
+  return Number.isFinite(value) ? value : 0;
 }
 
 export function formatCurrency(amount, currency = 'USD') {
@@ -120,13 +111,14 @@ export async function loadCurrencyPreference(pocketBaseToken, userId) {
 export async function saveCurrencyPreference({
   clientId,
   userId,
+  currency,
   displayCurrency,
-  usdCdfRate,
 }) {
   if (!supabase || !clientId) throw new Error('Supabase client is unavailable');
+  const chosen = validCurrency(currency || displayCurrency);
   const payload = {
-    currency_preference: validCurrency(displayCurrency),
-    usd_cdf_rate: validRate(usdCdfRate),
+    currency_preference: chosen,
+    ledger_currency: chosen,
   };
   const { data, error } = await supabase
     .from('clients')

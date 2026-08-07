@@ -218,12 +218,14 @@ export function useDashboardData(user, authToken) {
 
   return {
     ...analytics,
+    clientId,
     loading,
     refreshing,
     error,
     lastUpdated,
     realtimeStatus,
     currencySettings,
+    setCurrencySettings,
     refresh: () => {
       if (clientId) return fetchData({ silent: true });
       setError(null);

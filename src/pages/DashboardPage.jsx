@@ -37,9 +37,9 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import {
-  convertCurrency,
   formatCompactCurrency,
   formatCurrency,
+  saveCurrencyPreference,
 } from '@/lib/currency';
 
 const PERIOD_OPTIONS = [
@@ -250,7 +250,7 @@ const ACTIVITY_STYLE = {
   stock: { icon: PackagePlus, color: 'text-violet-600', background: 'bg-violet-50' },
 };
 
-function RecentActivities({ activities, currencySettings }) {
+function RecentActivities({ activities, currency }) {
   return (
     <SectionCard className="h-full">
       <div className="flex items-center justify-between px-5 pb-3 pt-5 sm:px-6">
@@ -280,10 +280,7 @@ function RecentActivities({ activities, currencySettings }) {
                   {activity.amount !== null && (
                     <p className={`text-xs font-bold ${activity.type === 'depense' ? 'text-rose-600' : 'text-emerald-600'}`}>
                       {activity.type === 'depense' ? '−' : '+'}
-                      {formatCurrency(
-                        convertCurrency(activity.amount, currencySettings),
-                        currencySettings.displayCurrency,
-                      )}
+                      {formatCurrency(activity.amount, currency)}
                     </p>
                   )}
                   <p className="mt-0.5 text-[10px] text-stone-300">{formatRelativeDate(activity.date)}</p>
@@ -342,11 +339,8 @@ function SmartAlerts({ alerts }) {
   );
 }
 
-function DebtSummary({ debts, currencySettings }) {
-  const money = (value) => formatCurrency(
-    convertCurrency(value, currencySettings),
-    currencySettings.displayCurrency,
-  );
+function DebtSummary({ debts, currency }) {
+  const money = (value) => formatCurrency(value, currency);
   const hasDebt = debts.remaining > 0;
 
   return (
@@ -400,6 +394,7 @@ export default function DashboardPage() {
   const { user, token } = useAuth();
   const navigate = useNavigate();
   const [chartPeriod, setChartPeriod] = useState('month');
+  const [savingCurrency, setSavingCurrency] = useState(false);
   const {
     metrics,
     trends,
@@ -408,32 +403,45 @@ export default function DashboardPage() {
     alerts,
     insights,
     debts,
+    clientId,
     loading,
     refreshing,
     error,
     lastUpdated,
     realtimeStatus,
     currencySettings,
+    setCurrencySettings,
     refresh,
   } = useDashboardData(user, token);
 
-  const displayCurrency = currencySettings.displayCurrency;
-  const displayTimeline = useMemo(() => timeline.map((point) => ({
-    ...point,
-    ventes: convertCurrency(point.ventes, currencySettings),
-    depenses: convertCurrency(point.depenses, currencySettings),
-    benefice: convertCurrency(point.benefice, currencySettings),
-  })), [timeline, currencySettings]);
+  const currency = currencySettings.currency || currencySettings.displayCurrency;
   const filteredTimeline = useMemo(
-    () => filterTimelineByPeriod(displayTimeline, chartPeriod),
-    [displayTimeline, chartPeriod],
+    () => filterTimelineByPeriod(timeline, chartPeriod),
+    [timeline, chartPeriod],
   );
+
+  const changeCurrency = async (nextCurrency) => {
+    if (!clientId || !user?.id || nextCurrency === currency || savingCurrency) return;
+    setSavingCurrency(true);
+    try {
+      const saved = await saveCurrencyPreference({
+        clientId,
+        userId: user.id,
+        currency: nextCurrency,
+      });
+      setCurrencySettings(saved);
+    } catch {
+      // Keep current currency if save fails.
+    } finally {
+      setSavingCurrency(false);
+    }
+  };
 
   const metricCards = useMemo(() => [
     {
       icon: BadgeDollarSign,
       label: 'Chiffre d’affaires',
-      value: formatCurrency(convertCurrency(metrics.revenue, currencySettings), displayCurrency),
+      value: formatCurrency(metrics.revenue, currency),
       color: '#059669',
       background: '#ECFDF5',
       change: trends.salesChange,
@@ -441,7 +449,7 @@ export default function DashboardPage() {
     {
       icon: WalletCards,
       label: 'Dépenses',
-      value: formatCurrency(convertCurrency(metrics.expenses, currencySettings), displayCurrency),
+      value: formatCurrency(metrics.expenses, currency),
       color: '#E11D48',
       background: '#FFF1F2',
       change: trends.expenseChange,
@@ -449,7 +457,7 @@ export default function DashboardPage() {
     {
       icon: TrendingUp,
       label: 'Bénéfice estimé',
-      value: formatCurrency(convertCurrency(metrics.profit, currencySettings), displayCurrency),
+      value: formatCurrency(metrics.profit, currency),
       color: '#2563EB',
       background: '#EFF6FF',
       change: trends.profitChange,
@@ -457,7 +465,7 @@ export default function DashboardPage() {
     {
       icon: Boxes,
       label: 'Valeur du stock',
-      value: formatCurrency(convertCurrency(metrics.stockValue, currencySettings), displayCurrency),
+      value: formatCurrency(metrics.stockValue, currency),
       color: '#7C3AED',
       background: '#F5F3FF',
     },
@@ -478,11 +486,11 @@ export default function DashboardPage() {
     {
       icon: HandCoins,
       label: 'Dettes clients',
-      value: formatCurrency(convertCurrency(metrics.clientDebt, currencySettings), displayCurrency),
+      value: formatCurrency(metrics.clientDebt, currency),
       color: '#CA8A04',
       background: '#FEFCE8',
     },
-  ], [metrics, trends, currencySettings, displayCurrency]);
+  ], [metrics, trends, currency]);
 
   return (
     <>
@@ -525,6 +533,18 @@ export default function DashboardPage() {
                 Mis à jour {formatRelativeDate(lastUpdated).toLowerCase()}
               </span>
             )}
+            <label className="sr-only" htmlFor="dashboard-currency">Devise</label>
+            <select
+              id="dashboard-currency"
+              value={currency}
+              disabled={loading || savingCurrency || !clientId}
+              onChange={(event) => changeCurrency(event.target.value)}
+              className="h-10 rounded-2xl border border-stone-100 bg-white px-3 text-xs font-semibold text-stone-600 shadow-sm outline-none transition hover:border-orange-100 focus:border-orange-300 disabled:opacity-50"
+              aria-label="Choisir la devise"
+            >
+              <option value="USD">USD ($)</option>
+              <option value="CDF">CDF (FC)</option>
+            </select>
             <button
               type="button"
               onClick={refresh}
@@ -573,21 +593,20 @@ export default function DashboardPage() {
 
             <FinancialChart
               data={filteredTimeline}
-              currency={displayCurrency}
+              currency={currency}
               period={chartPeriod}
               onPeriodChange={setChartPeriod}
             />
 
-            <DebtSummary debts={debts} currencySettings={currencySettings} />
+            <DebtSummary debts={debts} currency={currency} />
 
             <div className="grid items-start gap-4 lg:grid-cols-2">
-              <RecentActivities activities={activities} currencySettings={currencySettings} />
+              <RecentActivities activities={activities} currency={currency} />
               <SmartAlerts alerts={alerts} />
             </div>
 
             <p className="pb-2 text-center text-[11px] text-stone-400">
-              Affichage en {displayCurrency} · 1 USD = {formatNumber(currencySettings.usdCdfRate)} CDF ·
-              {' '}Données synchronisées avec Supabase.
+              Devise unique : {currency}. Les montants du tableau de bord et des tables sont les mêmes.
             </p>
           </main>
         )}
