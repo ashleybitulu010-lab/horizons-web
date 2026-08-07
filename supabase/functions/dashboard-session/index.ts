@@ -104,11 +104,17 @@ async function getOrCreateClient(
   if (existing) return existing as ClientRow;
 
   const canonicalUserId = record.airtableId || record.airtable_id || record.id;
+  const now = new Date();
+  const end = new Date(now);
+  end.setDate(end.getDate() + 30);
   const { data: created, error: createError } = await admin
     .from('clients')
     .insert({
       user_id: canonicalUserId,
-      nom_client: displayName(record),
+      nom_client: displayName(record) || 'Client',
+      date_inscription: now.toISOString(),
+      date_fin_abonnement: end.toISOString(),
+      thread_id: '[]',
     })
     .select('id,user_id,auth_user_id')
     .single();

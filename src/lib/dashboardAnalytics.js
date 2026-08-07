@@ -10,7 +10,15 @@ const DATE_FIELDS = {
   paiements_dettes: ['paid_at', 'date_paiement', 'created_at', 'created', 'date'],
 };
 
-const PRODUCT_NAME_FIELDS = ['nom_produit', 'nom', 'name', 'libelle', 'designation'];
+const PRODUCT_NAME_FIELDS = [
+  'nom_produit',
+  'nom_article',
+  'nom',
+  'name',
+  'libelle',
+  'designation',
+  'produit_vendu',
+];
 const PRODUCT_CATEGORY_FIELDS = ['categorie', 'category', 'nom_categorie', 'type'];
 const PRODUCT_PURCHASE_PRICE_FIELDS = [
   'prix_achat_unitaire',
@@ -109,8 +117,40 @@ function rowId(row) {
 
 function relatedProductId(row) {
   const value = firstValue(row, PRODUCT_ID_FIELDS);
-  if (value && typeof value === 'object') return String(value.id ?? '');
-  return value === null ? '' : String(value);
+  if (value && typeof value === 'object') return String(value.id ?? value.uuid ?? '');
+  return value === null || value === undefined ? '' : String(value);
+}
+
+function normalizeLabel(value) {
+  return String(value || '')
+    .toLowerCase()
+    .trim()
+    .replace(/s$/i, '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+/** Resolve product by FK first, then by name match (nom_article / libelle). */
+function resolveProduct(row, productById, products = []) {
+  const byId = productById.get(relatedProductId(row));
+  if (byId) return byId;
+
+  const label = normalizeLabel(firstValue(row, PRODUCT_NAME_FIELDS));
+  if (!label || !products.length) return null;
+
+  const exact = products.find((product) => normalizeLabel(productName(product)) === label);
+  if (exact) return exact;
+
+  return products.find((product) => {
+    const name = normalizeLabel(productName(product));
+    return name && (label.includes(name) || name.includes(label));
+  }) || null;
+}
+
+function saleUnitPrice(sale, product) {
+  const fromSale = firstNumber(sale, SALE_UNIT_PRICE_FIELDS);
+  if (fromSale !== null && fromSale > 0) return fromSale;
+  return Math.max(0, firstNumber(product, PRODUCT_SALE_PRICE_FIELDS) ?? 0);
 }
 
 function parseDate(row, type) {
@@ -143,10 +183,7 @@ function saleQuantity(sale) {
 function saleAmount(sale, product) {
   const direct = firstNumber(sale, SALE_AMOUNT_FIELDS);
   if (direct !== null) return Math.max(0, direct);
-  const unitPrice = firstNumber(sale, SALE_UNIT_PRICE_FIELDS)
-    ?? firstNumber(product, PRODUCT_SALE_PRICE_FIELDS)
-    ?? 0;
-  return Math.max(0, saleQuantity(sale) * unitPrice);
+  return Math.max(0, saleQuantity(sale) * saleUnitPrice(sale, product));
 }
 
 function expenseAmount(expense) {
@@ -163,7 +200,7 @@ function saleCost(sale, product) {
   return saleQuantity(sale) * Math.max(0, firstNumber(product, PRODUCT_PURCHASE_PRICE_FIELDS) ?? 0);
 }
 
-function buildDebtMetrics(ventes, payments) {
+function buildDebtMetrics(ventes, payments = []) {
   const debtSales = ventes
     .map((sale) => ({
       sale,
@@ -185,18 +222,29 @@ function buildDebtMetrics(ventes, payments) {
   const endOfToday = new Date(startOfToday);
   endOfToday.setDate(endOfToday.getDate() + 1);
 
+  // paiements_dettes.montant mirrors reste_a_payer (outstanding).
+  // "Collected today" comes from ventes paid today, not from outstanding rows.
+  const collectedToday = sum(
+    ventes.filter((sale) => inPeriod(
+      parseDate(sale, 'ventes'),
+      startOfToday.getTime(),
+      endOfToday.getTime(),
+    )),
+    (sale) => Math.max(0, firstNumber(sale, ['montant_paye']) ?? 0),
+  );
+
+  const outstandingFromPayments = sum(
+    payments.filter((payment) => (firstNumber(payment, PAYMENT_AMOUNT_FIELDS) ?? 0) > 0),
+    paymentAmount,
+  );
+
   return {
     totalDebt: sum(debtSales, ({ total }) => total),
     debtorCount: debtorKeys.size,
-    collectedToday: sum(
-      payments.filter((payment) => inPeriod(
-        parseDate(payment, 'paiements_dettes'),
-        startOfToday.getTime(),
-        endOfToday.getTime(),
-      )),
-      paymentAmount,
-    ),
-    remaining: sum(debtSales, ({ remaining }) => remaining),
+    collectedToday,
+    remaining: debtSales.length
+      ? sum(debtSales, ({ remaining }) => remaining)
+      : outstandingFromPayments,
   };
 }
 
@@ -231,16 +279,16 @@ function inPeriod(date, start, end) {
   return time >= start && time < end;
 }
 
-function periodTotals(ventes, depenses, productById, now) {
+function periodTotals(ventes, depenses, productById, products, now) {
   const currentStart = now - (7 * DAY_MS);
   const previousStart = now - (14 * DAY_MS);
 
   const calculate = (start, end) => {
     const periodSales = ventes.filter((sale) => inPeriod(parseDate(sale, 'ventes'), start, end));
     const periodExpenses = depenses.filter((expense) => inPeriod(parseDate(expense, 'depenses'), start, end));
-    const revenue = sum(periodSales, (sale) => saleAmount(sale, productById.get(relatedProductId(sale))));
+    const revenue = sum(periodSales, (sale) => saleAmount(sale, resolveProduct(sale, productById, products)));
     const expenses = sum(periodExpenses, expenseAmount);
-    const cost = sum(periodSales, (sale) => saleCost(sale, productById.get(relatedProductId(sale))));
+    const cost = sum(periodSales, (sale) => saleCost(sale, resolveProduct(sale, productById, products)));
     return { revenue, expenses, profit: revenue - expenses - cost };
   };
 
@@ -259,7 +307,8 @@ function calculateInventory(products, stocks, ventes, productById) {
   const stockRowsByProduct = new Map();
 
   stocks.forEach((stock) => {
-    const id = relatedProductId(stock);
+    const product = resolveProduct(stock, productById, products);
+    const id = product ? rowId(product) : relatedProductId(stock);
     if (!id) return;
     const rows = stockRowsByProduct.get(id) || [];
     rows.push(stock);
@@ -276,8 +325,11 @@ function calculateInventory(products, stocks, ventes, productById) {
     const configuredThreshold = firstNumber(product, ['seuil_alerte', 'stock_minimum', 'seuil_stock', 'reorder_level'])
       ?? (stockRows.length ? firstNumber(stockRows[0], ['seuil_alerte', 'stock_minimum', 'seuil_stock']) : null);
     const soldLastWeek = sum(
-      ventes.filter((sale) => relatedProductId(sale) === id
-        && inPeriod(parseDate(sale, 'ventes'), Date.now() - (7 * DAY_MS), Date.now() + 1)),
+      ventes.filter((sale) => {
+        const matched = resolveProduct(sale, productById, products);
+        return (matched ? rowId(matched) : relatedProductId(sale)) === id
+          && inPeriod(parseDate(sale, 'ventes'), Date.now() - (7 * DAY_MS), Date.now() + 1);
+      }),
       saleQuantity,
     );
     const threshold = Math.max(1, configuredThreshold ?? Math.ceil(soldLastWeek || 5));
@@ -296,7 +348,7 @@ function calculateInventory(products, stocks, ventes, productById) {
   });
 }
 
-function buildTimeline(ventes, depenses, productById) {
+function buildTimeline(ventes, depenses, productById, products) {
   const days = new Map();
   const ensureDay = (date) => {
     if (!date) return null;
@@ -316,7 +368,7 @@ function buildTimeline(ventes, depenses, productById) {
   ventes.forEach((sale) => {
     const point = ensureDay(parseDate(sale, 'ventes'));
     if (!point) return;
-    const product = productById.get(relatedProductId(sale));
+    const product = resolveProduct(sale, productById, products);
     const revenue = saleAmount(sale, product);
     point.ventes += revenue;
     point.benefice += revenue - saleCost(sale, product);
@@ -334,10 +386,10 @@ function buildTimeline(ventes, depenses, productById) {
     .sort((a, b) => a.key.localeCompare(b.key));
 }
 
-function buildTopProducts(ventes, productById) {
+function buildTopProducts(ventes, productById, products) {
   const grouped = new Map();
   ventes.forEach((sale) => {
-    const product = productById.get(relatedProductId(sale));
+    const product = resolveProduct(sale, productById, products);
     const name = saleProductName(sale, product);
     const current = grouped.get(name) || { name, quantite: 0, ventes: 0 };
     current.quantite += saleQuantity(sale);
@@ -351,10 +403,10 @@ function buildTopProducts(ventes, productById) {
     .slice(0, 6);
 }
 
-function buildCategorySales(ventes, productById) {
+function buildCategorySales(ventes, productById, products) {
   const grouped = new Map();
   ventes.forEach((sale) => {
-    const product = productById.get(relatedProductId(sale));
+    const product = resolveProduct(sale, productById, products);
     const category = saleCategory(sale, product);
     grouped.set(category, (grouped.get(category) || 0) + saleAmount(sale, product));
   });
@@ -367,7 +419,7 @@ function buildCategorySales(ventes, productById) {
 function buildActivities(ventes, depenses, products, stocks, payments, productById) {
   const saleById = new Map(ventes.map((sale) => [rowId(sale), sale]));
   const salesActivities = ventes.map((sale) => {
-    const product = productById.get(relatedProductId(sale));
+    const product = resolveProduct(sale, productById, products);
     const quantity = saleQuantity(sale);
     return {
       id: `vente-${rowId(sale)}`,
@@ -398,29 +450,36 @@ function buildActivities(ventes, depenses, products, stocks, payments, productBy
   }));
 
   const stockActivities = stocks.map((stock) => {
-    const product = productById.get(relatedProductId(stock));
+    const product = resolveProduct(stock, productById, products);
+    const label = product
+      ? productName(product)
+      : cleanUtf8Text(firstValue(stock, PRODUCT_NAME_FIELDS) || 'Produit');
     return {
       id: `stock-${rowId(stock)}`,
       type: 'stock',
       title: 'Stock ajouté',
-      detail: `${Math.abs(movementQuantity(stock)) || 0} × ${product ? productName(product) : 'Produit'}`,
+      detail: `${Math.abs(movementQuantity(stock)) || 0} × ${label}`,
       amount: null,
       date: parseDate(stock, 'stocks'),
     };
   });
 
-  const paymentActivities = payments.map((payment) => {
-    const sale = saleById.get(String(firstValue(payment, ['vente_id', 'sale_id']) || ''));
-    const product = sale ? productById.get(relatedProductId(sale)) : null;
-    return {
-      id: `paiement-${rowId(payment)}`,
-      type: 'paiement',
-      title: 'Paiement reçu',
-      detail: sale ? `Dette · ${saleProductName(sale, product)}` : 'Remboursement client',
-      amount: paymentAmount(payment),
-      date: parseDate(payment, 'paiements_dettes'),
-    };
-  });
+  const paymentActivities = payments
+    .map((payment) => {
+      const sale = saleById.get(String(firstValue(payment, ['vente_id', 'sale_id']) || ''));
+      const product = sale ? resolveProduct(sale, productById, products) : null;
+      const outstanding = paymentAmount(payment);
+      const settled = outstanding <= 0;
+      return {
+        id: `paiement-${rowId(payment)}`,
+        type: 'paiement',
+        title: settled ? 'Dette soldée' : 'Dette restante',
+        detail: sale ? saleProductName(sale, product) : 'Dette client',
+        amount: outstanding,
+        date: parseDate(payment, 'paiements_dettes'),
+      };
+    })
+    .filter((activity) => activity.amount > 0 || activity.title === 'Dette soldée');
 
   return [
     ...salesActivities,
@@ -549,12 +608,12 @@ export function buildDashboardAnalytics({
   paiements_dettes = [],
 }) {
   const productById = new Map(produits.map((product) => [rowId(product), product]));
-  const revenue = sum(ventes, (sale) => saleAmount(sale, productById.get(relatedProductId(sale))));
+  const revenue = sum(ventes, (sale) => saleAmount(sale, resolveProduct(sale, productById, produits)));
   const expenses = sum(depenses, expenseAmount);
-  const soldCost = sum(ventes, (sale) => saleCost(sale, productById.get(relatedProductId(sale))));
+  const soldCost = sum(ventes, (sale) => saleCost(sale, resolveProduct(sale, productById, produits)));
   const inventory = calculateInventory(produits, stocks, ventes, productById);
-  const trends = periodTotals(ventes, depenses, productById, Date.now());
-  const topProducts = buildTopProducts(ventes, productById);
+  const trends = periodTotals(ventes, depenses, productById, produits, Date.now());
+  const topProducts = buildTopProducts(ventes, productById, produits);
   const debts = buildDebtMetrics(ventes, paiements_dettes);
   const recentTopProducts = buildTopProducts(
     ventes.filter((sale) => inPeriod(
@@ -563,6 +622,7 @@ export function buildDashboardAnalytics({
       Date.now() + 1,
     )),
     productById,
+    produits,
   );
 
   const metrics = {
@@ -578,9 +638,9 @@ export function buildDashboardAnalytics({
   return {
     metrics,
     trends,
-    timeline: buildTimeline(ventes, depenses, productById),
+    timeline: buildTimeline(ventes, depenses, productById, produits),
     topProducts,
-    categorySales: buildCategorySales(ventes, productById),
+    categorySales: buildCategorySales(ventes, productById, produits),
     activities: buildActivities(
       ventes,
       depenses,
