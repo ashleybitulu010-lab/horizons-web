@@ -100,30 +100,33 @@ export default function InstallAppBanner() {
       className="flex-shrink-0 border-b px-3 py-2.5"
       style={{ backgroundColor: '#FFF8F2', borderColor: 'rgba(255,107,0,0.2)' }}
     >
-      <div className="flex items-center gap-3">
-        <img
-          src={APP_ICON}
-          alt="Ash Ledger"
-          className="h-11 w-11 flex-shrink-0 rounded-2xl border border-orange-100 object-cover shadow-sm"
-        />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold leading-tight text-stone-800">
-            Installer Ash Ledger
-          </p>
-          <p className="mt-0.5 text-[11px] leading-snug text-stone-500">
-            Ajoutez l’app sur votre téléphone pour un accès rapide.
-          </p>
+      <div className="flex flex-col gap-2.5">
+        <div className="flex items-center gap-3">
+          <img
+            src={APP_ICON}
+            alt="Ash Ledger"
+            className="h-11 w-11 flex-shrink-0 rounded-2xl border border-orange-100 object-cover shadow-sm"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold leading-tight text-stone-800">
+              Installer Ash Ledger
+            </p>
+            <p className="mt-0.5 text-[11px] leading-snug text-stone-500">
+              Ajoutez l’app sur votre téléphone pour un accès rapide.
+            </p>
+          </div>
         </div>
+
         <button
           type="button"
           onClick={() => {
             void promptInstall();
           }}
-          className="flex flex-shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold text-white active:scale-95"
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-bold text-white active:scale-[0.98]"
           style={{ backgroundColor: '#FF6B00' }}
         >
-          <Download size={14} strokeWidth={2.2} />
-          {canNativeInstall ? 'Installer' : 'Télécharger'}
+          <Download size={16} strokeWidth={2.2} />
+          {canNativeInstall ? 'Installer Ash Ledger' : 'Télécharger Ash Ledger'}
         </button>
       </div>
 
