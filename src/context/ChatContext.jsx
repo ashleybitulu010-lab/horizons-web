@@ -3,7 +3,8 @@ import { useAuth } from '@/hooks/useAuth';
 import apiServerClient from '@/lib/apiServerClient';
 import { readStoredCurrencyPreference } from '@/lib/currency';
 import { cleanUtf8Text, normalizeMessageText } from '@/lib/textEncoding';
-import { trackChatMessageSent, trackFromAssistantReply } from '@/lib/analytics';
+import { trackChatMessageSent, trackFromAssistantReply, trackReportGenerated } from '@/lib/analytics';
+import { downloadPdfFromBase64, isUsablePdfBase64 } from '@/lib/pdfDownload';
 
 export const WELCOME_MESSAGE = {
   id: 'welcome',
@@ -45,7 +46,14 @@ function writeStoredMessages(userId, messages) {
   const key = storageKeyFor(userId);
   if (!key) return;
   try {
-    const toSave = messages.filter((m) => m.id !== 'welcome');
+    // Never persist raw PDF base64 (too large for localStorage).
+    const toSave = messages
+      .filter((m) => m.id !== 'welcome')
+      .map((m) => {
+        if (!m?.pdf) return m;
+        const { base64, url, ...pdfMeta } = m.pdf;
+        return { ...m, pdf: pdfMeta };
+      });
     localStorage.setItem(key, JSON.stringify(toSave));
   } catch {
     /* quota / private mode */
@@ -264,12 +272,38 @@ export function ChatProvider({ children }) {
       const rawReplyText = res.ok
         ? (data.reply || data.output || data.message || data.text || "Je n'ai pas reçu de réponse.")
         : (typeof data.error === 'string' ? data.error : data.error?.message || data.message || 'Une erreur est survenue. Veuillez réessayer.');
-      const replyText = normalizeMessageText(rawReplyText, currency);
+      let replyText = normalizeMessageText(rawReplyText, currency);
+      let pdfMeta = null;
+
+      if (res.ok && (data.type === 'pdf' || data.filename || data.pdf_base64)) {
+        const filename = data.filename || 'bilan-ash-ledger.pdf';
+        if (isUsablePdfBase64(data.pdf_base64)) {
+          try {
+            const url = downloadPdfFromBase64(data.pdf_base64, filename);
+            pdfMeta = { filename, url, mimeType: data.mime_type || 'application/pdf' };
+            if (!/📄|pdf|télécharg|telecharg/i.test(replyText)) {
+              replyText = `${replyText}\n\n📄 ${filename}`;
+            }
+            trackReportGenerated({ source: 'chat_pdf_download', report_type: 'monthly' });
+          } catch {
+            replyText = `${replyText}\n\n⚠️ Le PDF a été généré mais le téléchargement a échoué. Réessaie.`;
+          }
+        } else {
+          replyText = `${replyText}\n\n⚠️ Le PDF n’a pas pu être joint (fichier vide). Réessaie dans un instant.`;
+        }
+      }
 
       const replyId = Date.now() + 1;
       setMessages((prev) => {
         const withStatus = prev.map((m) => (m.id === id ? { ...m, status: 'read' } : m));
-        const next = [...withStatus, { id: replyId, role: 'assistant', content: replyText, time: getTime(), status: 'read' }];
+        const next = [...withStatus, {
+          id: replyId,
+          role: 'assistant',
+          content: replyText,
+          time: getTime(),
+          status: 'read',
+          ...(pdfMeta ? { pdf: pdfMeta } : {}),
+        }];
         if (stableId) writeStoredMessages(stableId, next);
         return next;
       });

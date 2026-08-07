@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
-import { Send, Menu, X, User, CreditCard, BarChart2, LayoutDashboard, Settings, LogOut, Sparkles } from 'lucide-react';
+import { Send, Menu, X, User, CreditCard, BarChart2, LayoutDashboard, Settings, LogOut, Sparkles, FileDown } from 'lucide-react';
 import SupportChatWidget from '@/components/SupportChatWidget';
 import InstallAppBanner from '@/components/InstallAppBanner';
 import EmojiText from '@/components/EmojiText';
@@ -119,6 +119,17 @@ function Message({ message, isNew, currencySettings }) {
         <p className="chat-text text-sm leading-relaxed whitespace-pre-wrap break-words">
           <EmojiText>{content}</EmojiText>
         </p>
+        {!isUser && message.pdf?.url && (
+          <a
+            href={message.pdf.url}
+            download={message.pdf.filename || 'bilan-ash-ledger.pdf'}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white"
+            style={{ backgroundColor: '#FF6B00' }}
+          >
+            <FileDown size={14} />
+            Télécharger {message.pdf.filename || 'le PDF'}
+          </a>
+        )}
         <div className="flex items-center justify-end gap-0.5 mt-1">
           <span
             dir="ltr"
