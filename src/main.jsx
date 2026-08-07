@@ -2,20 +2,12 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from '@/App';
 import '@/index.css';
+import { registerPwaInstallBridge, registerServiceWorker } from '@/lib/pwaInstallBridge';
+
+// Capture install prompt + register SW before React mounts (avoids missed BIP).
+registerPwaInstallBridge();
+registerServiceWorker();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
 	<App />
 );
-
-if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-	window.addEventListener('load', () => {
-		navigator.serviceWorker
-			.register('/sw.js', { scope: '/', updateViaCache: 'none' })
-			.then((registration) => {
-				registration.update().catch(() => {});
-			})
-			.catch(() => {
-				/* banner / iOS Add to Home Screen still work without SW */
-			});
-	});
-}

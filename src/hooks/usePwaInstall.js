@@ -1,65 +1,51 @@
 import { useCallback, useEffect, useState } from 'react';
+import {
+  detectInstallPlatform,
+  getDeferredInstallPrompt,
+  isAppInstalled,
+  markPwaInstalled,
+  promptNativeInstall,
+  subscribeAppInstalled,
+  subscribeInstallPrompt,
+} from '@/lib/pwaInstallBridge';
 
-const INSTALLED_KEY = 'ash_pwa_installed';
-
-export function isAppInstalled() {
-  if (typeof window === 'undefined') return false;
-  try {
-    if (localStorage.getItem(INSTALLED_KEY) === '1') return true;
-  } catch {
-    /* ignore */
-  }
-  const standalone = window.matchMedia('(display-mode: standalone)').matches
-    || window.matchMedia('(display-mode: fullscreen)').matches
-    || window.navigator.standalone === true;
-  return Boolean(standalone);
-}
-
-function markInstalled() {
-  try {
-    localStorage.setItem(INSTALLED_KEY, '1');
-  } catch {
-    /* ignore */
-  }
-}
+export { isAppInstalled };
 
 export function usePwaInstall() {
   const [installed, setInstalled] = useState(() => isAppInstalled());
-  const [deferredPrompt, setDeferredPrompt] = useState(null);
-  const [iosHint, setIosHint] = useState(false);
+  const [canNativeInstall, setCanNativeInstall] = useState(() => Boolean(getDeferredInstallPrompt()));
+  const [showHelp, setShowHelp] = useState(false);
+  const [platform, setPlatform] = useState(() => detectInstallPlatform());
 
   useEffect(() => {
+    setPlatform(detectInstallPlatform());
+
     if (isAppInstalled()) {
-      markInstalled();
+      markPwaInstalled();
       setInstalled(true);
     }
 
-    const onBeforeInstall = (event) => {
-      event.preventDefault();
-      setDeferredPrompt(event);
-    };
-    const onInstalled = () => {
-      markInstalled();
+    const unsubPrompt = subscribeInstallPrompt((event) => {
+      setCanNativeInstall(Boolean(event));
+    });
+    const unsubInstalled = subscribeAppInstalled(() => {
       setInstalled(true);
-      setDeferredPrompt(null);
-      setIosHint(false);
-    };
-
-    window.addEventListener('beforeinstallprompt', onBeforeInstall);
-    window.addEventListener('appinstalled', onInstalled);
+      setCanNativeInstall(false);
+      setShowHelp(false);
+    });
 
     const media = window.matchMedia('(display-mode: standalone)');
     const onDisplayChange = () => {
       if (isAppInstalled()) {
-        markInstalled();
+        markPwaInstalled();
         setInstalled(true);
       }
     };
     media.addEventListener?.('change', onDisplayChange);
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
-      window.removeEventListener('appinstalled', onInstalled);
+      unsubPrompt();
+      unsubInstalled();
       media.removeEventListener?.('change', onDisplayChange);
     };
   }, []);
@@ -67,34 +53,31 @@ export function usePwaInstall() {
   const promptInstall = useCallback(async () => {
     if (installed) return { outcome: 'already-installed' };
 
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const choice = await deferredPrompt.userChoice;
-      setDeferredPrompt(null);
+    if (getDeferredInstallPrompt()) {
+      const choice = await promptNativeInstall();
       if (choice.outcome === 'accepted') {
-        markInstalled();
         setInstalled(true);
+        setShowHelp(false);
+      } else if (choice.outcome === 'dismissed') {
+        setShowHelp(true);
       }
+      setCanNativeInstall(Boolean(getDeferredInstallPrompt()));
       return choice;
     }
 
-    // iOS / browsers without beforeinstallprompt
-    const ua = navigator.userAgent || '';
-    const isIos = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    if (isIos) {
-      setIosHint(true);
-      return { outcome: 'ios-instructions' };
-    }
-
-    setIosHint(true);
-    return { outcome: 'manual' };
-  }, [deferredPrompt, installed]);
+    // No native prompt available yet (iOS, in-app browser, desktop without BIP, race).
+    setShowHelp(true);
+    return { outcome: 'manual', platform: detectInstallPlatform().kind };
+  }, [installed]);
 
   return {
     installed,
-    canNativeInstall: Boolean(deferredPrompt),
-    iosHint,
-    dismissIosHint: () => setIosHint(false),
+    canNativeInstall,
+    platform,
+    showHelp,
+    iosHint: showHelp,
+    dismissHelp: () => setShowHelp(false),
+    dismissIosHint: () => setShowHelp(false),
     promptInstall,
   };
 }

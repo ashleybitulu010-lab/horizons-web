@@ -4,6 +4,7 @@ import { Helmet } from 'react-helmet';
 import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
+import InstallAppBanner from '@/components/InstallAppBanner';
 
 const ASH_LOGO = 'https://horizons-cdn.hostinger.com/29358ba6-568b-49c6-9aac-6ece4b30fac6/a93f12ddd85a0d01d0715ee252158d85.png';
 
@@ -47,7 +48,9 @@ export default function LoginPage() {
         <title>Connexion — Ash Ledger</title>
         <meta name="description" content="Gérez vos finances, ventes, dépenses, stocks et rapports grâce à l'intelligence artificielle." />
       </Helmet>
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-10">
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <InstallAppBanner />
+        <div className="flex flex-1 items-center justify-center px-4 py-10">
         <motion.div
           className="w-full max-w-md"
           initial={{ opacity: 0, y: 24 }}
@@ -134,6 +137,7 @@ export default function LoginPage() {
             </p>
           </div>
         </motion.div>
+        </div>
       </div>
     </>
   );
