@@ -19,11 +19,6 @@ import {
   normalizeMessageText,
 } from '@/lib/textEncoding';
 import pb from '@/lib/pocketbaseClient';
-import {
-  persistRelaunchGuide,
-  useOnboarding,
-  ONBOARDING_RELAUNCH_EVENT,
-} from '@/hooks/useOnboarding';
 import { useLanguage } from '@/context/LanguageContext';
 
 const LONG_PRESS_MS = 480;
@@ -103,7 +98,7 @@ function TypingIndicator() {
       className="flex items-end gap-2 px-4 py-1"
     >
       <div className="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden border-2 border-white/60 shadow-sm">
-        <img src={ASH_AVATAR} alt="Ash Ledger" className="w-full h-full object-cover" />
+        <img src={ASH_AVATAR} alt="Ashy" className="w-full h-full object-cover" />
       </div>
       <div className="flex flex-col gap-0.5">
         <div className="px-4 py-3 rounded-2xl rounded-bl-sm shadow-sm" style={{ backgroundColor: '#FFFFFF' }}>
@@ -117,7 +112,7 @@ function TypingIndicator() {
             ))}
           </div>
         </div>
-        <span className="text-[10px] text-gray-400 ml-1 font-medium">Ash Ledger est en train d'écrire…</span>
+        <span className="text-[10px] text-gray-400 ml-1 font-medium">Ashy est en train d'écrire…</span>
       </div>
     </motion.div>
   );
@@ -213,7 +208,7 @@ function Message({
       )}
       {!isUser && (
         <div className="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden border-2 border-white/60 shadow-sm mb-1">
-          <img src={ASH_AVATAR} alt="Ash Ledger" className="w-full h-full object-cover" />
+          <img src={ASH_AVATAR} alt="Ashy" className="w-full h-full object-cover" />
         </div>
       )}
       <div
@@ -289,7 +284,7 @@ function DateDivider({ label }) {
 
 /* ── Side drawer ── */
 const MENU_ITEMS = [
-  { icon: Sparkles, labelKey: 'nav.guide', action: 'guide' },
+  { icon: Sparkles, labelKey: 'nav.guide', action: 'support' },
   { icon: LayoutDashboard, labelKey: 'nav.dashboard', route: '/dashboard' },
   { icon: User, labelKey: 'nav.profile', route: '/profile' },
   { icon: CreditCard, labelKey: 'nav.subscription', route: '/subscription' },
@@ -297,7 +292,7 @@ const MENU_ITEMS = [
   { icon: Settings, labelKey: 'nav.settings', route: '/settings' },
 ];
 
-function SideDrawer({ open, onClose, onLogout, onNavigate, onGuide, user }) {
+function SideDrawer({ open, onClose, onLogout, onNavigate, onSupport, user }) {
   const { t } = useLanguage();
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || null);
 
@@ -386,7 +381,7 @@ function SideDrawer({ open, onClose, onLogout, onNavigate, onGuide, user }) {
                   key={labelKey}
                   onClick={() => {
                     onClose();
-                    if (action === 'guide') onGuide?.();
+                    if (action === 'support') onSupport?.();
                     else if (route) onNavigate(route);
                   }}
                   className="flex items-center gap-3 px-4 py-3 rounded-xl text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors text-sm font-medium active:scale-[0.98] group"
@@ -427,7 +422,6 @@ export default function ChatPage() {
   const {
     messages, newIds, input, setInput, loading, historyLoading, sendMessage, deleteMessages,
   } = useChat();
-  const { isGuideMode, isPending, isActive } = useOnboarding(user?.id, user?.created);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [actionMessage, setActionMessage] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
@@ -620,10 +614,10 @@ export default function ChatPage() {
           style={{ backgroundColor: '#FF6B00', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
         >
           <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 border-2 border-white/40 shadow-md">
-            <img src={ASH_AVATAR} alt="Ash Ledger" className="w-full h-full object-cover" />
+            <img src={ASH_AVATAR} alt="Ashy" className="w-full h-full object-cover" />
           </div>
           <div className="flex-1 min-w-0">
-            <h1 className="text-white font-semibold text-base leading-tight tracking-tight" translate="no">Ash Ledger</h1>
+            <h1 className="text-white font-semibold text-base leading-tight tracking-tight" translate="no">Ashy</h1>
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className="w-2 h-2 rounded-full bg-green-300 flex-shrink-0" style={{ boxShadow: '0 0 0 2px rgba(255,255,255,0.35)' }} />
               <span className="text-orange-100 text-xs font-medium">En ligne</span>
@@ -641,42 +635,15 @@ export default function ChatPage() {
 
         <InstallAppBanner />
 
-        {isGuideMode && (
-          <div
-            className="flex-shrink-0 px-4 py-2.5 flex items-center gap-2 border-b"
-            style={{ backgroundColor: '#FFF4EB', borderColor: 'rgba(255,107,0,0.18)' }}
-          >
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-orange-700">
-                {isPending ? 'Guide Ashy disponible' : 'Guide Ashy en cours'}
-              </p>
-              <p className="text-xs text-orange-600/80 mt-0.5">
-                Ouvrez Ashy pour continuer, ou reprenez plus tard dans Paramètres.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                if (user?.id) persistRelaunchGuide(user.id);
-                try {
-                  window.dispatchEvent(new CustomEvent(ONBOARDING_RELAUNCH_EVENT));
-                } catch { /* ignore */ }
-              }}
-              className="flex-shrink-0 px-3 py-2 rounded-xl text-white text-xs font-semibold active:scale-95"
-              style={{ backgroundColor: '#FF6B00' }}
-            >
-              Ouvrir
-            </button>
-          </div>
-        )}
-
         {/* ── Messages area ── */}
         <div
           ref={messagesContainerRef}
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain py-3 space-y-1 relative select-none"
           onContextMenu={(e) => e.preventDefault()}
-          style={{ WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none' }}
           style={{
+            WebkitUserSelect: 'none',
+            userSelect: 'none',
+            WebkitTouchCallout: 'none',
             overflowAnchor: 'none',
             WebkitOverflowScrolling: 'touch',
             background: `
@@ -1030,7 +997,7 @@ export default function ChatPage() {
                 <div className="flex items-start gap-2 rounded-2xl border border-orange-100 bg-white px-3 py-2 shadow-sm">
                   <div className="min-w-0 flex-1 border-l-2 border-orange-500 pl-2">
                     <p className="text-[11px] font-semibold text-orange-600">
-                      {replyTo.role === 'user' ? 'Vous' : 'Ash Ledger'}
+                      {replyTo.role === 'user' ? 'Vous' : 'Ashy'}
                     </p>
                     <p className="truncate text-xs text-stone-500">
                       {String(replyTo.content || '').replace(/\s+/g, ' ')}
@@ -1128,8 +1095,10 @@ export default function ChatPage() {
         onClose={() => setDrawerOpen(false)}
         onLogout={handleLogout}
         onNavigate={(route) => navigate(route)}
-        onGuide={() => {
-          if (user?.id) persistRelaunchGuide(user.id);
+        onSupport={() => {
+          try {
+            window.dispatchEvent(new CustomEvent('ash:open-support'));
+          } catch { /* ignore */ }
         }}
         user={user}
       />

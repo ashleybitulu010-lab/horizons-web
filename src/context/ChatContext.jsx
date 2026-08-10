@@ -10,7 +10,7 @@ import { saveGeneratedReport } from '@/lib/saveReport';
 export const WELCOME_MESSAGE = {
   id: 'welcome',
   role: 'assistant',
-  content: '👋 Bienvenue sur Ash Ledger !\nJe suis Ash, ton copilote financier.\n💰 Ventes · 💸 Dépenses · 📦 Stock · 📋 Produits\nDis-moi simplement ce dont tu as besoin, je m\'occupe du reste.',
+  content: 'Bonjour 👋 Moi c\'est Ashy. Je vais t\'aider à gérer ton activité.\n💰 Ventes · 💸 Dépenses · 📦 Stock · 📋 Produits\nDis-moi simplement ce dont tu as besoin — s\'il me manque une info, je te la demande.',
   time: '09:00',
   status: 'read',
 };

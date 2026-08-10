@@ -18,7 +18,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/context/LanguageContext';
 import pb from '@/lib/pocketbaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
-import { persistRelaunchGuide, readOnboardingState } from '@/hooks/useOnboarding';
 import {
   loadCurrencyPreference,
   saveCurrencyPreference,
@@ -110,7 +109,6 @@ export default function SettingsPage() {
   const [toast, setToast] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
-  const [guideStatus, setGuideStatus] = useState(null);
   const deleteWord = t('settings.deleteConfirmWord');
 
   useEffect(() => {
@@ -146,19 +144,19 @@ export default function SettingsPage() {
         if (active) setLoading(false);
       });
 
-    const onboarding = readOnboardingState(user.id);
-    setGuideStatus(onboarding?.status || 'pending');
     return () => { active = false; };
     // Only re-sync when the user/session changes — not when UI language changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, token, setLanguage]);
 
-  const relaunchGuide = () => {
-    if (!user?.id) return;
-    persistRelaunchGuide(user.id);
-    setGuideStatus('pending');
+  const openSupportHelp = () => {
     setToast({ type: 'success', text: t('settings.guideOpened') });
-    navigate('/chat?guide=1');
+    navigate('/chat');
+    window.setTimeout(() => {
+      try {
+        window.dispatchEvent(new CustomEvent('ash:open-support'));
+      } catch { /* ignore */ }
+    }, 80);
   };
 
   const savePreferences = async () => {
@@ -321,29 +319,24 @@ export default function SettingsPage() {
             </div>
           ) : (
             <>
-              {/* Ashy guide */}
+              {/* Optional help */}
               <div>
                 <SectionTitle>{t('settings.guideSection')}</SectionTitle>
                 <div className="bg-white rounded-2xl shadow-sm">
+                  <div className="px-5 py-4">
+                    <p className="text-sm text-gray-600 leading-relaxed">{t('settings.helpTip')}</p>
+                  </div>
                   <button
                     type="button"
-                    onClick={relaunchGuide}
-                    className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-orange-50/60 transition-colors rounded-2xl"
+                    onClick={openSupportHelp}
+                    className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-orange-50/60 transition-colors rounded-b-2xl border-t border-gray-50"
                   >
                     <div className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center flex-shrink-0">
                       <Sparkles size={17} className="text-orange-500" strokeWidth={1.8} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-800">{t('settings.relaunchGuide')}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {guideStatus === 'completed'
-                          ? t('settings.guideCompleted')
-                          : guideStatus === 'skipped'
-                            ? t('settings.guideSkipped')
-                            : guideStatus === 'active'
-                              ? t('settings.guideActive')
-                              : t('settings.guidePending')}
-                      </p>
+                      <p className="text-sm font-semibold text-gray-800">{t('ashy.relaunch')}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{t('settings.relaunchGuide')}</p>
                     </div>
                     <ChevronRight size={18} className="text-gray-300 flex-shrink-0" />
                   </button>

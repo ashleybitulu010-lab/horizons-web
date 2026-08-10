@@ -144,7 +144,7 @@ export default function Ashy({ size = 100, onOpenChat, celebrateSignal, thinking
         <motion.img
           key={state}
           src={getImg(state)}
-          alt="Ashy"
+          alt="Service client"
           initial={{ opacity: 0.7, scale: 0.94 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0.6, scale: 0.96 }}

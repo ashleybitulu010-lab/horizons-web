@@ -35,15 +35,17 @@ export default function MessageActionSheet({
   }, [open, onClose]);
 
   const isOwn = message?.role === 'user' || message?.sender_type === 'user';
+  const fromSupport = message?.sender_type === 'support';
   const fromAshy =
-    message?.sender_type === 'support'
-    || message?.sender_type === 'assistant'
+    message?.sender_type === 'assistant'
     || message?.role === 'assistant';
   const headerLabel = isOwn
     ? t('msg.yourMessage')
-    : fromAshy
-      ? 'Ashy'
-      : 'Ash Ledger';
+    : fromSupport
+      ? 'Service client'
+      : fromAshy
+        ? 'Ashy'
+        : 'Ash Ledger';
   const actions = ACTION_DEFS.filter((a) => !a.ownOnly || isOwn);
 
   if (typeof document === 'undefined') return null;

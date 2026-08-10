@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-// v2: force one fresh pending state for all users after guide launch
+// Guide is optional: new users default to skipped; existing localStorage states kept.
 export const ONBOARDING_STORAGE_PREFIX = 'ash_onboarding_v2_';
 export const ONBOARDING_RELAUNCH_EVENT = 'ash:relaunch-guide';
 
@@ -88,18 +88,16 @@ Vous maîtrisez maintenant les bases d'Ash Ledger.
 export const WELCOME_ONBOARDING = {
   id: 'onboarding-welcome',
   role: 'assistant',
-  content: `👋 Bonjour, je suis Ashy, votre assistant financier IA.
+  content: `👋 Bienvenue au Service client.
 
-Je vais vous apprendre à utiliser Ash Ledger en moins de 5 minutes.
+Pour gérer produits, stock, ventes et dépenses, parlez à Ashy dans le chat principal.
 
-Ensemble nous allons créer une petite entreprise fictive.
-À chaque étape, je vérifierai que tout est correct avant de continuer.
-
-Vous pouvez réduire ce panneau à tout moment et reprendre plus tard.`,
+Ce panneau sert au support humain (compte, technique, abonnement).
+Des conseils de démarrage optionnels restent disponibles dans Paramètres.`,
   actions: [
-    { id: 'start', label: 'Commencer le guide', variant: 'primary' },
+    { id: 'start', label: 'Voir des exemples', variant: 'primary' },
     { id: 'later', label: 'Plus tard', variant: 'ghost' },
-    { id: 'skip', label: 'Passer le guide', variant: 'ghost' },
+    { id: 'skip', label: 'Fermer', variant: 'ghost' },
   ],
 };
 
@@ -141,12 +139,12 @@ export function writeOnboardingState(userId, state) {
 }
 
 export function defaultOnboardingState(_userCreatedAt) {
-  // No saved progress → start the interactive guide (user can skip).
+  // No saved progress → guide is optional; do not push new users into onboarding.
   return {
-    status: 'pending',
+    status: 'skipped',
     stepIndex: 0,
     completedAt: null,
-    skippedAt: null,
+    skippedAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
 }

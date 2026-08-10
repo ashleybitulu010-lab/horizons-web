@@ -162,7 +162,7 @@ function ProgressBar({ progress, visible }) {
   );
 }
 
-export default function SupportChatWidget({ user, forceOpen = false }) {
+export default function SupportChatWidget({ user, forceOpen: _forceOpen = false }) {
   const { messages: mainMessages, loading: mainLoading } = useChat();
   const { t, language } = useLanguage();
   const isMobile = useIsMobile();
@@ -184,11 +184,10 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
     skipGuide,
     advanceStep,
     completeGuide,
-    restartGuide,
     setBaselines,
   } = useOnboarding(user?.id, user?.created);
 
-  const [open, setOpen] = useState(Boolean(forceOpen));
+  const [open, setOpen] = useState(false);
   const [chat, setChat] = useState(null);
   const [messages, setMessages] = useState([]);
   const [guideMessages, setGuideMessages] = useState([]);
@@ -202,7 +201,6 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
   const [celebrateSignal, setCelebrateSignal] = useState(0);
   const [thinkingSignal, setThinkingSignal] = useState(false);
   const [validating, setValidating] = useState(false);
-  const [welcomeShown, setWelcomeShown] = useState(false);
   const [actionMessage, setActionMessage] = useState(null);
   const [replyTo, setReplyTo] = useState(null);
   const [selectMode, setSelectMode] = useState(false);
@@ -225,7 +223,6 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
   const advancingRef = useRef(false);
   const prematureWarnedRef = useRef(false);
   const remindCounterRef = useRef(0);
-  const autoOpenedRef = useRef(false);
 
   const showGuideTranscript =
     isGuideMode || (onboarding?.status === 'completed' && guideMessages.length > 0 && messages.length === 0);
@@ -367,72 +364,39 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
     }, delay);
   }, []);
 
-  // Auto-open once for new / relaunched guide (also ?guide=1 from Settings)
+  // Silently clear legacy mandatory pending/active guide — do not block users.
   useEffect(() => {
-    if (!user?.id) return;
-    const forceGuide =
-      forceOpen ||
-      (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('guide') === '1');
-    if ((isPending || forceGuide) && !autoOpenedRef.current) {
-      autoOpenedRef.current = true;
+    if (!user?.id || (!isPending && !isActive)) return;
+    skipGuide();
+  }, [user?.id, isPending, isActive, skipGuide]);
+
+  // Strip ?guide=1 without auto-opening the widget
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (new URLSearchParams(window.location.search).get('guide') !== '1') return;
+    if (!window.history?.replaceState) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('guide');
+    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+  }, [user?.id]);
+
+  // Open support panel from menu / Settings (no guide auto-start)
+  useEffect(() => {
+    const openSupport = () => {
       setOpen(true);
-      if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('guide') === '1' && window.history?.replaceState) {
-        const url = new URL(window.location.href);
-        url.searchParams.delete('guide');
-        window.history.replaceState({}, '', url.pathname + url.search + url.hash);
-      }
-    }
-  }, [user?.id, isPending, forceOpen]);
-
-  // Seed welcome when pending
-  useEffect(() => {
-    if (!isPending || welcomeShown) return;
-    setGuideMessages([
-      makeLocalMsg(WELCOME_ONBOARDING.content, 'support', {
-        id: WELCOME_ONBOARDING.id,
-        actions: WELCOME_ONBOARDING.actions,
-      }),
-    ]);
-    setWelcomeShown(true);
-  }, [isPending, welcomeShown]);
-
-  // Resume active guide UI if panel reopens with empty local transcript
-  useEffect(() => {
-    if (!isActive || !currentStep || guideMessages.length > 0) return;
-    setGuideMessages([
-      makeLocalMsg(
-        `On reprend là où nous nous sommes arrêtés.\n\nÉtape ${currentStep.index}/5 — ${currentStep.title}\n\n${currentStep.explain}\n\n${ONE_DATA_REMINDER}`,
-        'support',
-      ),
-    ]);
-  }, [isActive, currentStep, guideMessages.length]);
-
-  // Relaunch from Settings / menu (widget already mounted on ChatPage)
-  useEffect(() => {
-    const onRelaunch = () => {
-      restartGuide();
-      setWelcomeShown(false);
-      setGuideMessages([]);
-      advancingRef.current = false;
-      prematureWarnedRef.current = false;
-      remindCounterRef.current = 0;
-      autoOpenedRef.current = false;
-      setOpen(true);
-      // Seed immediately so the user sees the welcome without waiting another tick
-      setTimeout(() => {
-        setGuideMessages([
-          makeLocalMsg(WELCOME_ONBOARDING.content, 'support', {
-            id: WELCOME_ONBOARDING.id,
-            actions: WELCOME_ONBOARDING.actions,
-          }),
-        ]);
-        setWelcomeShown(true);
-        autoOpenedRef.current = true;
-      }, 0);
+      setShowTooltip(false);
     };
+    const onRelaunch = () => {
+      // Optional tips only — open Service client, do not force onboarding UI
+      openSupport();
+    };
+    window.addEventListener('ash:open-support', openSupport);
     window.addEventListener(ONBOARDING_RELAUNCH_EVENT, onRelaunch);
-    return () => window.removeEventListener(ONBOARDING_RELAUNCH_EVENT, onRelaunch);
-  }, [restartGuide]);
+    return () => {
+      window.removeEventListener('ash:open-support', openSupport);
+      window.removeEventListener(ONBOARDING_RELAUNCH_EVENT, onRelaunch);
+    };
+  }, []);
 
   useEffect(() => {
     const onResize = () => {
@@ -485,7 +449,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
         setChat(newChat);
         const welcome = await pb.collection('support_messages').create({
           chat: newChat.id,
-          content: "👋 Bonjour ! Je suis Ashy, votre assistant financier.\nComment puis-je vous aider aujourd'hui ?",
+          content: 'Bonjour 👋 Bienvenue au Service client. Expliquez votre problème (compte, technique, paiement) et nous vous aidons.',
           sender_type: 'support',
           is_read: false,
         }, { requestKey: 'sm-welcome' });
@@ -702,7 +666,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
     setGuideMessages((prev) =>
       prev.map((m) => (m.id === WELCOME_ONBOARDING.id ? { ...m, actions: undefined } : m)),
     );
-    pushGuide('D’accord. Réduisez Ashy quand vous voulez — le guide reste disponible via Paramètres → Guide Ashy.');
+    pushGuide('D’accord. Réduisez le Service client quand vous voulez — des conseils optionnels restent dans Paramètres → Aide.');
     setTimeout(() => setOpen(false), 900);
   }, [pushGuide]);
 
@@ -712,7 +676,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
       prev.map((m) => (m.id === WELCOME_ONBOARDING.id ? { ...m, actions: undefined } : m)),
     );
     withTyping(() => {
-      pushGuide('Pas de souci. Vous pourrez relancer le guide à tout moment dans Paramètres → Guide Ashy.');
+      pushGuide('Pas de souci. Pour gérer votre activité, parlez à Ashy dans le chat principal. Le Service client reste là pour le support humain.');
       setTimeout(() => setOpen(false), 1600);
     }, 600);
   }, [skipGuide, pushGuide, withTyping]);
@@ -859,10 +823,10 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
     e.target.style.height = Math.min(e.target.scrollHeight, 88) + 'px';
   };
 
-  const headerTitle = isGuideMode ? 'Ashy · Guide interactif' : 'Ashy';
+  const headerTitle = 'Service client';
   const headerSub = isGuideMode
-    ? (validating ? 'Vérification en cours…' : 'Je vous accompagne pas à pas')
-    : 'Assistant financier · En ligne';
+    ? (validating ? 'Vérification en cours…' : 'Conseils optionnels')
+    : 'Compte, technique, abonnement';
 
   return (
     <>
@@ -881,7 +845,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
             <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0" style={{ backgroundColor: '#FF6B00' }}>
               <div className="relative flex-shrink-0">
                 <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-white/40">
-                  <img src={SUPPORT_AVATAR} alt="Ashy" className="w-full h-full object-cover" />
+                  <img src={SUPPORT_AVATAR} alt="Service client" className="w-full h-full object-cover" />
                 </div>
                 <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-orange-600" />
               </div>
@@ -924,7 +888,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
                   {validating ? 'Validation…' : `✅ J’ai terminé : ${currentStep.title}`}
                 </button>
                 <p className="mt-1 text-[10px] text-stone-500 leading-snug">
-                  Faites l’action dans le chat principal, puis appuyez ici si Ashy ne passe pas à l’étape suivante.
+                  Faites l’action dans le chat principal (Ashy), puis appuyez ici si l’étape ne passe pas automatiquement.
                 </p>
               </div>
             )}
@@ -972,7 +936,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
                       )}
                       {!isUser && (
                         <div className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 mb-1 border border-white/60">
-                          <img src={SUPPORT_AVATAR} alt="Ashy" className="w-full h-full object-cover" />
+                          <img src={SUPPORT_AVATAR} alt="Service client" className="w-full h-full object-cover" />
                         </div>
                       )}
                       <div
@@ -1057,7 +1021,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
                     className="flex items-end gap-1.5"
                   >
                     <div className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 border border-white/60">
-                      <img src={SUPPORT_AVATAR} alt="Ashy" className="w-full h-full object-cover" />
+                      <img src={SUPPORT_AVATAR} alt="Service client" className="w-full h-full object-cover" />
                     </div>
                     <div className="bg-white rounded-2xl rounded-bl-sm px-3 py-2 shadow-sm">
                       <div className="flex gap-1 items-center" style={{ minWidth: 28 }}>
@@ -1146,7 +1110,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
                     <div className="flex items-start gap-2 rounded-xl border border-orange-100 bg-white px-2.5 py-1.5">
                       <div className="min-w-0 flex-1 border-l-2 border-orange-500 pl-2">
                         <p className="text-[10px] font-semibold text-orange-600">
-                          {replyTo.sender_type === 'user' ? t('common.you') : 'Ashy'}
+                          {replyTo.sender_type === 'user' ? t('common.you') : 'Service client'}
                         </p>
                         <p className="truncate text-[11px] text-stone-500">
                           {String(replyTo.content || '').replace(/\s+/g, ' ')}
@@ -1174,7 +1138,7 @@ export default function SupportChatWidget({ user, forceOpen = false }) {
                       onChange={handleTextarea}
                       onKeyDown={handleKeyDown}
                       enterKeyHint="enter"
-                      placeholder={isGuideMode ? t('ashy.placeholderGuide') : t('ashy.placeholder')}
+                      placeholder={t('ashy.placeholder')}
                       rows={1}
                       className="chat-input w-full resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none leading-relaxed"
                       style={{ minHeight: 20, maxHeight: 88 }}
