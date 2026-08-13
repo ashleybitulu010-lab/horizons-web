@@ -66,6 +66,29 @@ function identifierCandidates(record: PocketBaseRecord) {
   ].filter((value): value is string => Boolean(value))));
 }
 
+function accountEmailFromRecord(record: PocketBaseRecord): string | null {
+  const email = String(record.email || '').trim().toLowerCase();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
+  if (email.endsWith('@auth.ashledger.local')) return null;
+  return email;
+}
+
+async function syncClientAccountEmail(
+  admin: ReturnType<typeof createClient>,
+  clientId: string,
+  record: PocketBaseRecord,
+) {
+  const email = accountEmailFromRecord(record);
+  if (!email) return;
+
+  const { error } = await admin
+    .from('clients')
+    .update({ email })
+    .eq('id', clientId);
+
+  if (error) throw error;
+}
+
 async function validatePocketBaseToken(authorization: string) {
   const response = await fetch(
     `${POCKETBASE_URL.replace(/\/$/, '')}/api/collections/users/auth-refresh`,
@@ -112,6 +135,7 @@ async function getOrCreateClient(
     .insert({
       user_id: canonicalUserId,
       nom_client: displayName(record) || 'Client',
+      email: accountEmailFromRecord(record),
       date_inscription: now.toISOString(),
       date_fin_abonnement: end.toISOString(),
       thread_id: '[]',
@@ -235,6 +259,7 @@ Deno.serve(async (request) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const client = await getOrCreateClient(admin, record);
+    await syncClientAccountEmail(admin, client.id, record);
     const authUser = await getOrCreateAuthUser(admin, client, record);
 
     const { data: link, error: linkError } = await admin.auth.admin.generateLink({

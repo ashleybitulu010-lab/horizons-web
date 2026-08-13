@@ -158,7 +158,7 @@ async function loadSubscriptionFromSupabase(pocketBaseToken) {
 
   const { data: client, error: clientError } = await supabase
     .from('clients')
-    .select('id,user_id,nom_client,date_inscription,date_fin_abonnement,auth_user_id')
+    .select('id,user_id,email,nom_client,date_inscription,date_fin_abonnement,auth_user_id')
     .eq('id', clientId)
     .single();
   if (clientError) throw clientError;
@@ -187,6 +187,7 @@ async function loadSubscriptionFromSupabase(pocketBaseToken) {
         source: 'subscriptions+clients',
       }),
       clientPublicId: client.user_id || client.id,
+      clientEmail: client.email || null,
     };
   }
 
@@ -199,6 +200,7 @@ async function loadSubscriptionFromSupabase(pocketBaseToken) {
       source: 'clients',
     }),
     clientPublicId: client.user_id || client.id,
+    clientEmail: client.email || null,
   };
 }
 
@@ -412,7 +414,7 @@ export default function SubscriptionPage() {
   const copyTimeoutRef = useRef(null);
 
   const clientPublicId = subscription?.clientPublicId || '';
-  const accountEmail = user?.email || '';
+  const accountEmail = subscription?.clientEmail || user?.email || '';
 
   useEffect(() => {
     if (subscription) syncSubscriptionAnalytics(subscription);
