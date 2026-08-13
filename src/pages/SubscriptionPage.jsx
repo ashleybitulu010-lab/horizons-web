@@ -21,7 +21,6 @@ const ACCENT = '#FF6B00';
 const MS_PER_DAY = 86400000;
 const PREMIUM_PRICE = '10 $ / 30 jours';
 const WHATSAPP_PROOF_NUMBER = '243802831083';
-const CLIENT_ID_STORAGE_KEY = 'ash_supabase_client_id';
 
 const PAYMENT_METHODS = [
   {
@@ -82,30 +81,21 @@ function openUssdCode(ussd) {
   }
 }
 
-function resolveAccountLabel(user) {
-  if (user?.email) return user.email;
-  try {
-    const clientId = localStorage.getItem(CLIENT_ID_STORAGE_KEY);
-    if (clientId) return clientId;
-  } catch {
-    /* ignore */
-  }
-  if (user?.id) return user.id;
-  return null;
-}
-
-function buildWhatsAppProofUrl(accountLabel) {
-  const accountLine = accountLabel
-    ? `Mon compte Ash Ledger : ${accountLabel}`
-    : 'Mon compte Ash Ledger : (indiquez votre email ou identifiant)';
+function buildWhatsAppProofUrl({ clientPublicId, accountEmail, paymentMethodLabel }) {
   const message = [
     'Bonjour Ash Ledger 👋',
-    'Je viens de payer mon abonnement Premium de 10 $ / 30 jours.',
-    accountLine,
-    'Mode de paiement : [à compléter]',
+    `Je viens de payer mon abonnement Premium de ${PREMIUM_PRICE}.`,
+    `ID client : ${clientPublicId}`,
+    `Compte Ash Ledger : ${accountEmail}`,
+    `Mode de paiement : ${paymentMethodLabel}`,
     'Je joins ma preuve de paiement.',
   ].join('\n');
   return `https://wa.me/${WHATSAPP_PROOF_NUMBER}?text=${encodeURIComponent(message)}`;
+}
+
+function resolvePaymentMethodLabel(selectedPaymentMethodId) {
+  const method = PAYMENT_METHODS.find((item) => item.id === selectedPaymentMethodId);
+  return method?.label || PAYMENT_METHODS[0].label;
 }
 
 const STATUS_LABELS = {
@@ -168,7 +158,7 @@ async function loadSubscriptionFromSupabase(pocketBaseToken) {
 
   const { data: client, error: clientError } = await supabase
     .from('clients')
-    .select('id,nom_client,date_inscription,date_fin_abonnement,auth_user_id')
+    .select('id,user_id,nom_client,date_inscription,date_fin_abonnement,auth_user_id')
     .eq('id', clientId)
     .single();
   if (clientError) throw clientError;
@@ -188,22 +178,28 @@ async function loadSubscriptionFromSupabase(pocketBaseToken) {
   }
 
   if (subRow?.end_date || subRow?.start_date) {
-    return rowFromDates({
-      plan: subRow.plan,
-      status: subRow.status,
-      start_date: subRow.start_date || client.date_inscription,
-      end_date: subRow.end_date || client.date_fin_abonnement,
-      source: 'subscriptions+clients',
-    });
+    return {
+      ...rowFromDates({
+        plan: subRow.plan,
+        status: subRow.status,
+        start_date: subRow.start_date || client.date_inscription,
+        end_date: subRow.end_date || client.date_fin_abonnement,
+        source: 'subscriptions+clients',
+      }),
+      clientPublicId: client.user_id || client.id,
+    };
   }
 
-  return rowFromDates({
-    plan: 'trial',
-    status: null,
-    start_date: client.date_inscription,
-    end_date: client.date_fin_abonnement,
-    source: 'clients',
-  });
+  return {
+    ...rowFromDates({
+      plan: 'trial',
+      status: null,
+      start_date: client.date_inscription,
+      end_date: client.date_fin_abonnement,
+      source: 'clients',
+    }),
+    clientPublicId: client.user_id || client.id,
+  };
 }
 
 function useSubscription(user, token) {
@@ -256,11 +252,17 @@ function LoadingSkeleton() {
   );
 }
 
-function PaymentMethodCard({ method, copiedId, onCopy, onPay }) {
+function PaymentMethodCard({ method, copiedId, isSelected, onCopy, onPay, onSelect }) {
   const isCopied = copiedId === method.id;
 
   return (
-    <div className="rounded-xl border border-stone-100 bg-stone-50/80 p-4 space-y-3">
+    <div
+      className={`rounded-xl border bg-stone-50/80 p-4 space-y-3 transition-shadow ${
+        isSelected ? 'border-orange-300 ring-1 ring-orange-200' : 'border-stone-100'
+      }`}
+      onClick={() => onSelect(method)}
+      role="presentation"
+    >
       <div className="flex items-center gap-2">
         <span className="text-base leading-none" aria-hidden>{method.emoji}</span>
         <span className="text-sm font-bold text-stone-800">{method.label}</span>
@@ -270,7 +272,10 @@ function PaymentMethodCard({ method, copiedId, onCopy, onPay }) {
         <span className="text-sm font-semibold text-stone-700">{method.displayNumber}</span>
         <button
           type="button"
-          onClick={() => onCopy(method)}
+          onClick={(event) => {
+            event.stopPropagation();
+            onCopy(method);
+          }}
           className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-stone-600 transition-colors hover:bg-stone-50 active:scale-[0.98]"
           aria-label={`Copier le numéro ${method.label}`}
         >
@@ -281,7 +286,10 @@ function PaymentMethodCard({ method, copiedId, onCopy, onPay }) {
 
       <button
         type="button"
-        onClick={() => onPay(method)}
+        onClick={(event) => {
+          event.stopPropagation();
+          onPay(method);
+        }}
         className="w-full rounded-xl py-3 text-sm font-semibold text-white active:scale-[0.98]"
         style={{ backgroundColor: ACCENT, boxShadow: '0 2px 10px rgba(255,107,0,0.22)' }}
       >
@@ -297,8 +305,22 @@ function PaymentMethodCard({ method, copiedId, onCopy, onPay }) {
   );
 }
 
-function PremiumPaymentSection({ accountLabel, highlighted, sectionRef, onCopy, onPay, copiedId }) {
-  const whatsAppUrl = useMemo(() => buildWhatsAppProofUrl(accountLabel), [accountLabel]);
+function PremiumPaymentSection({
+  clientPublicId,
+  accountEmail,
+  selectedPaymentMethodId,
+  highlighted,
+  sectionRef,
+  onCopy,
+  onPay,
+  onSelect,
+  copiedId,
+}) {
+  const whatsAppUrl = useMemo(() => buildWhatsAppProofUrl({
+    clientPublicId,
+    accountEmail,
+    paymentMethodLabel: resolvePaymentMethodLabel(selectedPaymentMethodId),
+  }), [clientPublicId, accountEmail, selectedPaymentMethodId]);
 
   return (
     <motion.div
@@ -324,8 +346,10 @@ function PremiumPaymentSection({ accountLabel, highlighted, sectionRef, onCopy, 
             key={method.id}
             method={method}
             copiedId={copiedId}
+            isSelected={selectedPaymentMethodId === method.id}
             onCopy={onCopy}
             onPay={onPay}
+            onSelect={onSelect}
           />
         ))}
       </div>
@@ -383,10 +407,12 @@ export default function SubscriptionPage() {
   const { subscription, loading, error, refresh } = useSubscription(user, token);
   const paymentSectionRef = useRef(null);
   const [copiedId, setCopiedId] = useState(null);
+  const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState(PAYMENT_METHODS[0].id);
   const [paymentHighlighted, setPaymentHighlighted] = useState(false);
   const copyTimeoutRef = useRef(null);
 
-  const accountLabel = useMemo(() => resolveAccountLabel(user), [user]);
+  const clientPublicId = subscription?.clientPublicId || '';
+  const accountEmail = user?.email || '';
 
   useEffect(() => {
     if (subscription) syncSubscriptionAnalytics(subscription);
@@ -404,6 +430,7 @@ export default function SubscriptionPage() {
   };
 
   const handleCopyNumber = async (method) => {
+    setSelectedPaymentMethodId(method.id);
     const ok = await copyText(method.copyNumber);
     if (!ok) return;
     setCopiedId(method.id);
@@ -412,8 +439,13 @@ export default function SubscriptionPage() {
   };
 
   const handlePayNow = (method) => {
+    setSelectedPaymentMethodId(method.id);
     trackEvent('subscription_ussd_opened', { provider: method.id, ussd: method.ussd });
     openUssdCode(method.ussd);
+  };
+
+  const handleSelectPaymentMethod = (method) => {
+    setSelectedPaymentMethodId(method.id);
   };
 
   return (
@@ -541,12 +573,15 @@ export default function SubscriptionPage() {
                   </button>
 
                   <PremiumPaymentSection
-                    accountLabel={accountLabel}
+                    clientPublicId={clientPublicId}
+                    accountEmail={accountEmail}
+                    selectedPaymentMethodId={selectedPaymentMethodId}
                     highlighted={paymentHighlighted}
                     sectionRef={paymentSectionRef}
                     copiedId={copiedId}
                     onCopy={handleCopyNumber}
                     onPay={handlePayNow}
+                    onSelect={handleSelectPaymentMethod}
                   />
                 </>
               )}
