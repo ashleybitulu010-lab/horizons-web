@@ -1,5 +1,9 @@
 import { needsHumanEscalation } from '@/lib/onboardingChecks';
+import { createDashboardSession, supabase } from '@/lib/supabaseRest';
+import pb from '@/lib/pocketbaseClient';
 
+const SUPPORT_BRIDGE_URL = import.meta.env.VITE_SUPPORT_BRIDGE_URL
+  || 'https://ashledger.tech/hcgi/support-bridge/';
 const TELEGRAM_WEBHOOK = import.meta.env.VITE_TELEGRAM_SUPPORT_WEBHOOK || '';
 
 const FAQ = [
@@ -73,20 +77,89 @@ export function localAshyReply(text) {
     }
   }
   return {
-    type: 'fallback',
-    reply: `Vous êtes sur le Service client (compte, technique, abonnement).
-
-Pour produits, stock, ventes, dépenses et rapports, parlez à Ashy dans le chat principal.
-
-Décrivez ici un problème de compte, d'abonnement ou un bug technique et nous vous aiderons.`,
+    type: 'human',
+    reply: 'Votre message a été envoyé au Service client. Notre équipe vous répondra ici dans ce même panneau.',
   };
 }
 
+async function resolveClientIdentity(user, pocketBaseToken) {
+  let clientPublicId = '';
+  let email = String(user?.email || '').trim().toLowerCase();
+  let displayName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim()
+    || user?.name
+    || email
+    || 'Client';
+
+  try {
+    const token = pocketBaseToken || pb?.authStore?.token;
+    if (token && supabase) {
+      const clientId = await createDashboardSession(token);
+      const { data } = await supabase
+        .from('clients')
+        .select('id,user_id,email,nom_client')
+        .eq('id', clientId)
+        .maybeSingle();
+      if (data?.user_id) clientPublicId = String(data.user_id);
+      if (data?.email) email = String(data.email).trim().toLowerCase();
+      if (data?.nom_client && !user?.firstName && !user?.lastName) {
+        displayName = String(data.nom_client);
+      }
+    }
+  } catch {
+    /* fallback below */
+  }
+
+  if (!clientPublicId) clientPublicId = String(user?.id || '');
+  return { clientPublicId, email, displayName };
+}
+
 /**
- * Escalate to human support (Telegram webhook if configured).
- * Never call this during onboarding tutorial mode.
+ * Send a Service client message to human support (Telegram) via the support-bridge.
+ * Falls back to the legacy VITE_TELEGRAM_SUPPORT_WEBHOOK if configured.
  */
-export async function escalateToTelegramSupport({ user, message, chatId }) {
+export async function escalateToTelegramSupport({
+  user,
+  message,
+  chatId,
+  pocketBaseToken,
+}) {
+  const token = pocketBaseToken || pb?.authStore?.token || '';
+  const identity = await resolveClientIdentity(user, token);
+
+  // Preferred path: secure edge function (server holds Telegram bot token).
+  if (SUPPORT_BRIDGE_URL && token) {
+    try {
+      const res = await fetch(SUPPORT_BRIDGE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=UTF-8',
+          Accept: 'application/json; charset=UTF-8',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          source: 'ashy-support',
+          message,
+          chatId: chatId || '',
+          supportChatId: chatId || '',
+          clientPublicId: identity.clientPublicId,
+          email: identity.email,
+          displayName: identity.displayName,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      return {
+        sent: res.ok && payload?.sent !== false,
+        status: res.status,
+        via: 'support-bridge',
+        identity,
+        payload,
+      };
+    } catch (err) {
+      return { sent: false, reason: err?.message || 'network', via: 'support-bridge' };
+    }
+  }
+
+  // Legacy webhook path (n8n), if still configured.
   if (!TELEGRAM_WEBHOOK) {
     return { sent: false, reason: 'no_webhook' };
   }
@@ -100,20 +173,22 @@ export async function escalateToTelegramSupport({ user, message, chatId }) {
       body: JSON.stringify({
         source: 'ashy-support',
         userId: user?.id || '',
-        email: user?.email || '',
+        clientPublicId: identity.clientPublicId,
+        email: identity.email,
         firstName: user?.firstName || '',
         lastName: user?.lastName || '',
+        displayName: identity.displayName,
         chatId: chatId || '',
         message,
         createdAt: new Date().toISOString(),
       }),
     });
-    return { sent: res.ok, status: res.status };
+    return { sent: res.ok, status: res.status, via: 'legacy-webhook', identity };
   } catch (err) {
-    return { sent: false, reason: err?.message || 'network' };
+    return { sent: false, reason: err?.message || 'network', via: 'legacy-webhook' };
   }
 }
 
 export function telegramEscalationConfigured() {
-  return Boolean(TELEGRAM_WEBHOOK);
+  return Boolean(SUPPORT_BRIDGE_URL || TELEGRAM_WEBHOOK);
 }

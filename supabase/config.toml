@@ -2,3 +2,6 @@ project_id = "knrwplidgvuvjnuqqmrt"
 
 [functions.dashboard-session]
 verify_jwt = false
+
+[functions.support-bridge]
+verify_jwt = false

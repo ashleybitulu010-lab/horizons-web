@@ -478,13 +478,35 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
           return [...prev, e.record];
         });
         setNewMsgIds((prev) => new Set([...prev, e.record.id]));
-        if (!open && e.record.sender_type === 'support') setUnread((n) => n + 1);
+        if (e.record.sender_type === 'support') {
+          if (!open) {
+            setUnread((n) => n + 1);
+            showToast('Nouveau message du service client');
+          } else {
+            void pb.collection('support_messages').update(e.record.id, { is_read: true }).catch(() => {});
+          }
+        }
       }
     }, { requestKey: 'sc-realtime' }).catch(() => {});
     return () => { void pb.collection('support_messages').unsubscribe('*').catch(() => {}); };
-  }, [chat?.id, open, isGuideMode]);
+  }, [chat?.id, open, isGuideMode, showToast]);
 
-  useEffect(() => { if (open) setUnread(0); }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    setUnread(0);
+    // Mark support messages as read when the panel is open.
+    setMessages((prev) => {
+      prev.forEach((m) => {
+        if (m?.id && !String(m.id).startsWith('local-') && m.sender_type === 'support' && m.is_read === false) {
+          void pb.collection('support_messages').update(m.id, { is_read: true }).catch(() => {});
+        }
+      });
+      return prev.map((m) => (m.sender_type === 'support' ? { ...m, is_read: true } : m));
+    });
+    if (chat?.id) {
+      void pb.collection('support_chats').update(chat.id, { unread_count: 0 }).catch(() => {});
+    }
+  }, [open, chat?.id]);
 
   // Capture baselines once (non-blocking for chat-based validation).
   useEffect(() => {
@@ -730,6 +752,9 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
   const sendNormalMessage = async (text) => {
     const activeChat = chat?.id ? chat : await initChat();
     const decision = localAshyReply(text);
+    // Always route human support messages to Telegram (outside tutorial).
+    // FAQ tips stay local; escalate/human always notify support.
+    const shouldNotifySupport = decision?.type !== 'faq';
 
     if (!activeChat) {
       const localUser = makeLocalMsg(text, 'user');
@@ -739,8 +764,13 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
         setMessages((prev) => [...prev, reply]);
         setNewMsgIds((prev) => new Set([...prev, reply.id]));
         trackFromAssistantReply(decision.reply);
-        if (decision.type === 'escalate') {
-          void escalateToTelegramSupport({ user, message: text, chatId: '' });
+        if (shouldNotifySupport) {
+          void escalateToTelegramSupport({
+            user,
+            message: text,
+            chatId: '',
+            pocketBaseToken: pb.authStore?.token,
+          });
         }
       }, 900);
       return;
@@ -748,11 +778,25 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
 
     try {
       const msg = await pb.collection('support_messages').create({
-        chat: activeChat.id, content: text, sender_type: 'user', is_read: false,
+        chat: activeChat.id, content: text, sender_type: 'user', is_read: true,
       });
       setMessages((prev) => [...prev, msg]);
       setNewMsgIds((prev) => new Set([...prev, msg.id]));
       setCelebrateSignal((s) => s + 1);
+
+      // Forward to Telegram immediately (identity resolved server-side / via bridge).
+      if (shouldNotifySupport) {
+        void escalateToTelegramSupport({
+          user,
+          message: text,
+          chatId: activeChat.id,
+          pocketBaseToken: pb.authStore?.token,
+        }).then((result) => {
+          if (!result?.sent) {
+            console.warn('Support Telegram relay failed', result);
+          }
+        });
+      }
 
       withTyping(async () => {
         try {
@@ -760,7 +804,7 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
             chat: activeChat.id,
             content: decision.reply,
             sender_type: 'support',
-            is_read: false,
+            is_read: true,
           });
           setMessages((prev) => [...prev, reply]);
           setNewMsgIds((prev) => new Set([...prev, reply.id]));
@@ -769,16 +813,7 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
           setMessages((prev) => [...prev, local]);
         }
         trackFromAssistantReply(decision.reply);
-
-        // Human / Telegram escalation only outside tutorial
-        if (decision.type === 'escalate') {
-          await escalateToTelegramSupport({
-            user,
-            message: text,
-            chatId: activeChat.id,
-          });
-        }
-      }, 1000 + Math.random() * 600);
+      }, 700 + Math.random() * 400);
     } catch (err) {
       console.error('Failed to send support message', err);
     }
