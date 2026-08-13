@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import {
-  ArrowLeft, Calendar, CheckCircle2, AlertCircle, Clock, Crown, RefreshCw, Sparkles, WifiOff,
+  ArrowLeft, Calendar, Check, CheckCircle2, AlertCircle, Clock, Copy, Crown,
+  RefreshCw, Sparkles, WifiOff,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/context/LanguageContext';
@@ -18,6 +19,94 @@ const FEATURES = [
 ];
 const ACCENT = '#FF6B00';
 const MS_PER_DAY = 86400000;
+const PREMIUM_PRICE = '10 $ / 30 jours';
+const WHATSAPP_PROOF_NUMBER = '243802831083';
+const CLIENT_ID_STORAGE_KEY = 'ash_supabase_client_id';
+
+const PAYMENT_METHODS = [
+  {
+    id: 'mpesa',
+    label: 'M-Pesa',
+    emoji: '🟢',
+    displayNumber: '+243 821 386 516',
+    copyNumber: '+243821386516',
+    ussd: '*1122#',
+  },
+  {
+    id: 'orange',
+    label: 'Orange Money',
+    emoji: '🟠',
+    displayNumber: '+243 893 490 125',
+    copyNumber: '+243893490125',
+    ussd: '*144#',
+  },
+];
+
+async function copyText(text) {
+  const value = String(text || '');
+  if (!value) return false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function openUssdCode(ussd) {
+  try {
+    const link = document.createElement('a');
+    link.href = `tel:${encodeURIComponent(ussd)}`;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } catch {
+    /* fallback hint shown in UI */
+  }
+}
+
+function resolveAccountLabel(user) {
+  if (user?.email) return user.email;
+  try {
+    const clientId = localStorage.getItem(CLIENT_ID_STORAGE_KEY);
+    if (clientId) return clientId;
+  } catch {
+    /* ignore */
+  }
+  if (user?.id) return user.id;
+  return null;
+}
+
+function buildWhatsAppProofUrl(accountLabel) {
+  const accountLine = accountLabel
+    ? `Mon compte Ash Ledger : ${accountLabel}`
+    : 'Mon compte Ash Ledger : (indiquez votre email ou identifiant)';
+  const message = [
+    'Bonjour Ash Ledger 👋',
+    'Je viens de payer mon abonnement Premium de 10 $ / 30 jours.',
+    accountLine,
+    'Mode de paiement : [à compléter]',
+    'Je joins ma preuve de paiement.',
+  ].join('\n');
+  return `https://wa.me/${WHATSAPP_PROOF_NUMBER}?text=${encodeURIComponent(message)}`;
+}
 
 const STATUS_LABELS = {
   trial: 'Essai en cours',
@@ -167,6 +256,102 @@ function LoadingSkeleton() {
   );
 }
 
+function PaymentMethodCard({ method, copiedId, onCopy, onPay }) {
+  const isCopied = copiedId === method.id;
+
+  return (
+    <div className="rounded-xl border border-stone-100 bg-stone-50/80 p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="text-base leading-none" aria-hidden>{method.emoji}</span>
+        <span className="text-sm font-bold text-stone-800">{method.label}</span>
+      </div>
+
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-semibold text-stone-700">{method.displayNumber}</span>
+        <button
+          type="button"
+          onClick={() => onCopy(method)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-stone-600 transition-colors hover:bg-stone-50 active:scale-[0.98]"
+          aria-label={`Copier le numéro ${method.label}`}
+        >
+          {isCopied ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+          {isCopied ? 'Numéro copié' : 'Copier'}
+        </button>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onPay(method)}
+        className="w-full rounded-xl py-3 text-sm font-semibold text-white active:scale-[0.98]"
+        style={{ backgroundColor: ACCENT, boxShadow: '0 2px 10px rgba(255,107,0,0.22)' }}
+      >
+        Payer maintenant
+      </button>
+
+      <p className="text-[11px] leading-relaxed text-stone-500">
+        Ce bouton ouvre le menu USSD {method.ussd} sur votre téléphone. Le paiement n&apos;est pas automatique.
+        {' '}
+        Si rien ne s&apos;ouvre, composez manuellement {method.ussd} sur votre téléphone.
+      </p>
+    </div>
+  );
+}
+
+function PremiumPaymentSection({ accountLabel, highlighted, sectionRef, onCopy, onPay, copiedId }) {
+  const whatsAppUrl = useMemo(() => buildWhatsAppProofUrl(accountLabel), [accountLabel]);
+
+  return (
+    <motion.div
+      ref={sectionRef}
+      id="premium-payment"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`bg-white rounded-2xl shadow-sm p-5 space-y-4 transition-shadow ${
+        highlighted ? 'ring-2 ring-orange-300 ring-offset-2' : ''
+      }`}
+    >
+      <div className="space-y-1">
+        <h3 className="text-base font-bold text-stone-900">Passer à Premium</h3>
+        <p className="text-lg font-bold" style={{ color: ACCENT }}>{PREMIUM_PRICE}</p>
+        <p className="text-sm text-stone-600 leading-relaxed">
+          Pour continuer à utiliser Ash Ledger après votre période d&apos;essai, effectuez un paiement de 10 $.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {PAYMENT_METHODS.map((method) => (
+          <PaymentMethodCard
+            key={method.id}
+            method={method}
+            copiedId={copiedId}
+            onCopy={onCopy}
+            onPay={onPay}
+          />
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-stone-100 bg-stone-50/50 p-4 space-y-3">
+        <h4 className="text-sm font-bold text-stone-800">Après le paiement</h4>
+        <p className="text-sm text-stone-600 leading-relaxed">
+          Envoyez votre preuve de paiement sur WhatsApp afin que nous puissions vérifier et activer votre abonnement.
+        </p>
+        <a
+          href={whatsAppUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-semibold text-white active:scale-[0.98]"
+          style={{ backgroundColor: '#25D366', boxShadow: '0 4px 14px rgba(37,211,102,0.28)' }}
+        >
+          💬 Envoyer ma preuve de paiement
+        </a>
+        <p className="text-[11px] text-stone-500 leading-relaxed">
+          Vous pourrez joindre votre capture ou reçu directement dans WhatsApp. L&apos;activation Premium se fait après vérification manuelle.
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
 function StatusBadge({ subscription }) {
   if (subscription.isExpired) return (
     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-600 border border-red-200">
@@ -196,15 +381,39 @@ export default function SubscriptionPage() {
   const { user, token } = useAuth();
   const { t } = useLanguage();
   const { subscription, loading, error, refresh } = useSubscription(user, token);
+  const paymentSectionRef = useRef(null);
+  const [copiedId, setCopiedId] = useState(null);
+  const [paymentHighlighted, setPaymentHighlighted] = useState(false);
+  const copyTimeoutRef = useRef(null);
+
+  const accountLabel = useMemo(() => resolveAccountLabel(user), [user]);
 
   useEffect(() => {
     if (subscription) syncSubscriptionAnalytics(subscription);
   }, [subscription]);
 
+  useEffect(() => () => {
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+  }, []);
+
   const handleSubscribe = () => {
-    // Intent signal while WhatsApp checkout completes offline.
-    trackEvent('subscription_checkout_started', { channel: 'whatsapp' });
-    window.open('https://wa.me/243821386516?text=Bonjour%2C%20je%20souhaite%20m%27abonner%20%C3%A0%20Ash%20Ledger%20Premium.', '_blank', 'noopener,noreferrer');
+    trackEvent('subscription_checkout_started', { channel: 'manual_payment' });
+    paymentSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setPaymentHighlighted(true);
+    window.setTimeout(() => setPaymentHighlighted(false), 2000);
+  };
+
+  const handleCopyNumber = async (method) => {
+    const ok = await copyText(method.copyNumber);
+    if (!ok) return;
+    setCopiedId(method.id);
+    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    copyTimeoutRef.current = window.setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handlePayNow = (method) => {
+    trackEvent('subscription_ussd_opened', { provider: method.id, ussd: method.ussd });
+    openUssdCode(method.ussd);
   };
 
   return (
@@ -321,14 +530,25 @@ export default function SubscriptionPage() {
               </div>
 
               {(subscription.isTrial || subscription.isExpired) && (
-                <button
-                  type="button"
-                  onClick={handleSubscribe}
-                  className="w-full py-3.5 rounded-xl text-white text-sm font-semibold active:scale-[0.98]"
-                  style={{ backgroundColor: ACCENT, boxShadow: '0 4px 14px rgba(255,107,0,0.28)' }}
-                >
-                  Passer à Premium
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={handleSubscribe}
+                    className="w-full py-3.5 rounded-xl text-white text-sm font-semibold active:scale-[0.98]"
+                    style={{ backgroundColor: ACCENT, boxShadow: '0 4px 14px rgba(255,107,0,0.28)' }}
+                  >
+                    Passer à Premium
+                  </button>
+
+                  <PremiumPaymentSection
+                    accountLabel={accountLabel}
+                    highlighted={paymentHighlighted}
+                    sectionRef={paymentSectionRef}
+                    copiedId={copiedId}
+                    onCopy={handleCopyNumber}
+                    onPay={handlePayNow}
+                  />
+                </>
               )}
 
               <p className="text-center text-[11px] text-stone-400 pb-2">
