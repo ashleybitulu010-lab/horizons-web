@@ -50,7 +50,7 @@ export default function LoginPage() {
         <title>{t('login.title')} — Ash Ledger</title>
         <meta name="description" content="Gérez vos finances, ventes, dépenses, stocks et rapports grâce à l'intelligence artificielle." />
       </Helmet>
-      <div className="min-h-screen bg-gray-50 flex flex-col">
+      <div className="min-h-[100dvh] bg-gray-50 flex flex-col">
         <InstallAppBanner />
         <div className="flex flex-1 items-center justify-center px-4 py-10">
         <motion.div
@@ -81,18 +81,22 @@ export default function LoginPage() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
               {/* Email */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Adresse email</label>
+                <label htmlFor="login-email" className="block text-sm font-medium text-gray-700 mb-1.5">Adresse email</label>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" strokeWidth={1.8} style={{ width: 18, height: 18 }} />
                   <input
+                    id="login-email"
+                    name="email"
                     type="email"
+                    autoComplete="email"
+                    inputMode="email"
                     value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
                     placeholder="vous@exemple.com"
-                    className={`w-full pl-11 pr-4 py-3 rounded-xl border text-sm outline-none transition-all ${errors.email ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50 focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-100'}`}
+                    className={`w-full pl-11 pr-4 py-3 rounded-xl border text-base outline-none transition-all ${errors.email ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50 focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-100'}`}
                   />
                 </div>
                 {errors.email && <p className="mt-1.5 text-xs text-red-500">{errors.email}</p>}
@@ -101,19 +105,22 @@ export default function LoginPage() {
               {/* Password */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-sm font-medium text-gray-700">{t('login.password')}</label>
+                  <label htmlFor="login-password" className="block text-sm font-medium text-gray-700">{t('login.password')}</label>
                   <Link to="/forgot-password" className="text-xs font-medium hover:underline" style={{ color: '#FF6B00' }}>{t('login.forgot')}</Link>
                 </div>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" strokeWidth={1.8} style={{ width: 18, height: 18 }} />
                   <input
+                    id="login-password"
+                    name="password"
                     type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
                     placeholder="Votre mot de passe"
-                    className={`w-full pl-11 pr-11 py-3 rounded-xl border text-sm outline-none transition-all ${errors.password ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50 focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-100'}`}
+                    className={`w-full pl-11 pr-11 py-3 rounded-xl border text-base outline-none transition-all ${errors.password ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50 focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-100'}`}
                   />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-1 top-1/2 -translate-y-1/2 min-w-11 min-h-11 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors" aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}>
                     {showPassword ? <EyeOff style={{ width: 18, height: 18 }} strokeWidth={1.8} /> : <Eye style={{ width: 18, height: 18 }} strokeWidth={1.8} />}
                   </button>
                 </div>

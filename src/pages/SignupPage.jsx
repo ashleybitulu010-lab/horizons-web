@@ -85,7 +85,7 @@ export default function SignupPage() {
   };
 
   const fieldClass = (key) =>
-    `w-full pl-11 pr-4 py-3 rounded-xl border text-sm outline-none transition-all ${errors[key] ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50 focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-100'}`;
+    `w-full pl-11 pr-4 py-3 rounded-xl border text-base outline-none transition-all ${errors[key] ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50 focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-100'}`;
 
   return (
     <>
@@ -93,7 +93,7 @@ export default function SignupPage() {
         <title>Inscription — Ash Ledger</title>
         <meta name="description" content="Gérez vos finances, ventes, dépenses, stocks et rapports grâce à l'intelligence artificielle." />
       </Helmet>
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-10">
+      <div className="min-h-[100dvh] bg-gray-50 flex items-center justify-center px-4 py-10">
         <motion.div
           className="w-full max-w-md"
           initial={{ opacity: 0, y: 24 }}
@@ -122,15 +122,18 @@ export default function SignupPage() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
               {/* First + Last name row */}
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Prénom</label>
+                  <label htmlFor="signup-firstName" className="block text-sm font-medium text-gray-700 mb-1.5">Prénom</label>
                   <div className="relative">
                     <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" strokeWidth={1.8} style={{ width: 18, height: 18 }} />
                     <input
+                      id="signup-firstName"
+                      name="given-name"
                       type="text"
+                      autoComplete="given-name"
                       value={form.firstName}
                       onChange={(e) => setForm({ ...form, firstName: e.target.value })}
                       placeholder="Prénom"
@@ -140,11 +143,14 @@ export default function SignupPage() {
                   {errors.firstName && <p className="mt-1.5 text-xs text-red-500">{errors.firstName}</p>}
                 </div>
                 <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Nom</label>
+                  <label htmlFor="signup-lastName" className="block text-sm font-medium text-gray-700 mb-1.5">Nom</label>
                   <div className="relative">
                     <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" strokeWidth={1.8} style={{ width: 18, height: 18 }} />
                     <input
+                      id="signup-lastName"
+                      name="family-name"
                       type="text"
+                      autoComplete="family-name"
                       value={form.lastName}
                       onChange={(e) => setForm({ ...form, lastName: e.target.value })}
                       placeholder="Nom"
@@ -157,11 +163,15 @@ export default function SignupPage() {
 
               {/* Email */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Adresse email</label>
+                <label htmlFor="signup-email" className="block text-sm font-medium text-gray-700 mb-1.5">Adresse email</label>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" strokeWidth={1.8} style={{ width: 18, height: 18 }} />
                   <input
+                    id="signup-email"
+                    name="email"
                     type="email"
+                    autoComplete="email"
+                    inputMode="email"
                     value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
                     placeholder="vous@exemple.com"
@@ -173,17 +183,20 @@ export default function SignupPage() {
 
               {/* Password */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Mot de passe</label>
+                <label htmlFor="signup-password" className="block text-sm font-medium text-gray-700 mb-1.5">Mot de passe</label>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" strokeWidth={1.8} style={{ width: 18, height: 18 }} />
                   <input
+                    id="signup-password"
+                    name="new-password"
                     type={showPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
                     placeholder="Minimum 8 caractères"
-                    className={`w-full pl-11 pr-11 py-3 rounded-xl border text-sm outline-none transition-all ${errors.password ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50 focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-100'}`}
+                    className={`w-full pl-11 pr-11 py-3 rounded-xl border text-base outline-none transition-all ${errors.password ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50 focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-100'}`}
                   />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-1 top-1/2 -translate-y-1/2 min-w-11 min-h-11 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors" aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}>
                     {showPassword ? <EyeOff style={{ width: 18, height: 18 }} strokeWidth={1.8} /> : <Eye style={{ width: 18, height: 18 }} strokeWidth={1.8} />}
                   </button>
                 </div>
@@ -192,17 +205,20 @@ export default function SignupPage() {
 
               {/* Confirm */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Confirmer le mot de passe</label>
+                <label htmlFor="signup-confirm" className="block text-sm font-medium text-gray-700 mb-1.5">Confirmer le mot de passe</label>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" strokeWidth={1.8} style={{ width: 18, height: 18 }} />
                   <input
+                    id="signup-confirm"
+                    name="new-password"
                     type={showConfirm ? 'text' : 'password'}
+                    autoComplete="new-password"
                     value={form.confirm}
                     onChange={(e) => setForm({ ...form, confirm: e.target.value })}
                     placeholder="Répétez le mot de passe"
-                    className={`w-full pl-11 pr-11 py-3 rounded-xl border text-sm outline-none transition-all ${errors.confirm ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50 focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-100'}`}
+                    className={`w-full pl-11 pr-11 py-3 rounded-xl border text-base outline-none transition-all ${errors.confirm ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50 focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-100'}`}
                   />
-                  <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
+                  <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-1 top-1/2 -translate-y-1/2 min-w-11 min-h-11 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors" aria-label={showConfirm ? 'Masquer la confirmation' : 'Afficher la confirmation'}>
                     {showConfirm ? <EyeOff style={{ width: 18, height: 18 }} strokeWidth={1.8} /> : <Eye style={{ width: 18, height: 18 }} strokeWidth={1.8} />}
                   </button>
                 </div>

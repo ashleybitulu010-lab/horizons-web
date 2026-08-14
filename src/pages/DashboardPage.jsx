@@ -621,12 +621,12 @@ export default function DashboardPage() {
       </Helmet>
 
       <div className="min-h-[100dvh] bg-[#F6F2EC] text-stone-900">
-        <header className="sticky top-0 z-30 border-b border-orange-100/70 bg-white/90 backdrop-blur-xl">
-          <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
+        <header className="safe-area-top sticky top-0 z-30 border-b border-orange-100/70 bg-white/90 backdrop-blur-xl">
+          <div className="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center gap-2 px-4 py-2 sm:gap-3 sm:px-6 sm:py-0 lg:px-8">
             <button
               type="button"
               onClick={() => navigate('/chat')}
-              className="flex h-10 w-10 items-center justify-center rounded-2xl text-stone-500 transition hover:bg-orange-50 hover:text-orange-600 active:scale-95"
+              className="flex min-h-11 min-w-11 items-center justify-center rounded-2xl text-stone-500 transition hover:bg-orange-50 hover:text-orange-600 active:scale-95"
               aria-label="Retour à Ashy"
             >
               <ArrowLeft size={20} />
@@ -634,7 +634,7 @@ export default function DashboardPage() {
             <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-orange-500 text-white shadow-md shadow-orange-200">
               <BarChart3 size={20} />
             </span>
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 basis-[40%] sm:basis-auto">
               <h1 className="truncate text-base font-bold tracking-tight">{t('dashboard.title')}</h1>
               <div className="flex items-center gap-1.5 text-[11px] font-medium text-stone-400">
                 {realtimeStatus === 'connected' ? (
@@ -642,15 +642,16 @@ export default function DashboardPage() {
                 ) : (
                   <WifiOff size={11} className={realtimeStatus === 'error' ? 'text-rose-500' : 'text-amber-500'} />
                 )}
-                <span>
+                <span className="truncate">
                   {realtimeStatus === 'connected'
                     ? 'Synchronisé en temps réel'
                     : realtimeStatus === 'connecting' ? 'Connexion en cours…' : 'Synchronisation interrompue'}
                 </span>
               </div>
             </div>
+            <div className="ml-auto flex items-center gap-2 sm:ml-0">
             {lastUpdated && (
-              <span className="hidden text-[11px] text-stone-400 sm:block">
+              <span className="hidden text-[11px] text-stone-400 md:block">
                 Mis à jour {formatRelativeDate(lastUpdated).toLowerCase()}
               </span>
             )}
@@ -660,7 +661,7 @@ export default function DashboardPage() {
               value={currency}
               disabled={loading || savingCurrency || !clientId}
               onChange={(event) => changeCurrency(event.target.value)}
-              className="h-10 rounded-2xl border border-stone-100 bg-white px-3 text-xs font-semibold text-stone-600 shadow-sm outline-none transition hover:border-orange-100 focus:border-orange-300 disabled:opacity-50"
+              className="h-11 min-w-[5.5rem] rounded-2xl border border-stone-100 bg-white px-3 text-xs font-semibold text-stone-600 shadow-sm outline-none transition hover:border-orange-100 focus:border-orange-300 disabled:opacity-50"
               aria-label="Choisir la devise"
             >
               <option value="USD">USD ($)</option>
@@ -670,11 +671,12 @@ export default function DashboardPage() {
               type="button"
               onClick={refresh}
               disabled={refreshing || loading}
-              className="flex h-10 w-10 items-center justify-center rounded-2xl border border-stone-100 bg-white text-stone-500 shadow-sm transition hover:border-orange-100 hover:text-orange-600 active:scale-95 disabled:opacity-50"
+              className="flex min-h-11 min-w-11 items-center justify-center rounded-2xl border border-stone-100 bg-white text-stone-500 shadow-sm transition hover:border-orange-100 hover:text-orange-600 active:scale-95 disabled:opacity-50"
               aria-label="Actualiser les données"
             >
               <RefreshCw size={17} className={refreshing ? 'animate-spin' : ''} />
             </button>
+            </div>
           </div>
         </header>
 

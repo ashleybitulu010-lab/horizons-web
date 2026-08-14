@@ -68,9 +68,13 @@ textarea {
     right: 12px !important;
     bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
     width: min(300px, calc(100vw - 72px)) !important;
-    height: min(480px, 58vh) !important;
-    max-height: 58vh !important;
+    height: min(480px, 62dvh) !important;
+    max-height: 62dvh !important;
   }
+}
+
+.safe-area-top {
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
 /* Robot mascot eye blink */

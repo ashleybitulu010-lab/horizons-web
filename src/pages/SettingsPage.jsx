@@ -82,7 +82,7 @@ function Input({ label, value, onChange, type = 'text', right }) {
           type={type}
           value={value}
           onChange={onChange}
-          className={`w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-sm text-gray-800 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-all ${right ? 'pr-11' : ''}`}
+          className={`w-full px-4 py-3 rounded-xl border border-gray-200 bg-white text-base text-gray-800 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-all ${right ? 'pr-11' : ''}`}
         />
         {right && <div className="absolute right-3">{right}</div>}
       </div>
@@ -300,12 +300,13 @@ export default function SettingsPage() {
 
       <div className="min-h-[100dvh] flex flex-col" style={{ backgroundColor: '#F5F1EB' }}>
         <header
-          className="flex items-center gap-3 px-4 py-3 flex-shrink-0"
+          className="safe-area-top flex items-center gap-3 px-4 py-3 flex-shrink-0"
           style={{ backgroundColor: '#FF6B00', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
         >
           <button
             onClick={() => navigate('/chat')}
-            className="w-9 h-9 flex items-center justify-center rounded-full text-white/80 hover:text-white hover:bg-white/15 transition-colors active:scale-95"
+            className="min-w-11 min-h-11 flex items-center justify-center rounded-full text-white/80 hover:text-white hover:bg-white/15 transition-colors active:scale-95"
+            aria-label="Retour au chat"
           >
             <ArrowLeft size={20} strokeWidth={2} />
           </button>

@@ -152,11 +152,28 @@ function saleUnitPrice(sale, product) {
   return Math.max(0, firstNumber(product, PRODUCT_SALE_PRICE_FIELDS) ?? 0);
 }
 
+function normalizeDateInput(raw) {
+  if (raw == null || raw === '') return null;
+  if (raw instanceof Date) return raw;
+  if (typeof raw === 'number') {
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const text = String(raw).trim();
+  if (!text) return null;
+  // Safari rejects "YYYY-MM-DD HH:mm:ss" — normalize to ISO-like form.
+  const spaced = text.replace(/^(\d{4}-\d{2}-\d{2})\s+/, '$1T');
+  const candidates = [text, spaced, spaced.endsWith('Z') ? spaced : `${spaced}Z`];
+  for (const candidate of candidates) {
+    const date = new Date(candidate);
+    if (!Number.isNaN(date.getTime())) return date;
+  }
+  return null;
+}
+
 function parseDate(row, type) {
   const raw = firstValue(row, DATE_FIELDS[type] || []);
-  if (!raw) return null;
-  const date = new Date(raw);
-  return Number.isNaN(date.getTime()) ? null : date;
+  return normalizeDateInput(raw);
 }
 
 function productName(product) {

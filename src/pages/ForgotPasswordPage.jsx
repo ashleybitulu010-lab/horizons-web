@@ -45,7 +45,7 @@ export default function ForgotPasswordPage() {
         <title>Mot de passe oublié — Ash Ledger</title>
         <meta name="description" content="Réinitialisez votre mot de passe Ash Ledger." />
       </Helmet>
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-10">
+      <div className="min-h-[100dvh] bg-gray-50 flex items-center justify-center px-4 py-10">
         <motion.div
           className="w-full max-w-md"
           initial={{ opacity: 0, y: 24 }}
@@ -89,9 +89,9 @@ export default function ForgotPasswordPage() {
                     {error}
                   </div>
                 )}
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    <label htmlFor="forgot-email" className="block text-sm font-medium text-gray-700 mb-1.5">
                       Adresse email
                     </label>
                     <div className="relative">
@@ -101,11 +101,15 @@ export default function ForgotPasswordPage() {
                         style={{ width: 18, height: 18 }}
                       />
                       <input
+                        id="forgot-email"
+                        name="email"
                         type="email"
+                        autoComplete="email"
+                        inputMode="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="vous@exemple.com"
-                        className="w-full pl-11 pr-4 py-3 rounded-xl border text-sm outline-none transition-all border-gray-200 bg-gray-50 focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-100"
+                        className="w-full pl-11 pr-4 py-3 rounded-xl border text-base outline-none transition-all border-gray-200 bg-gray-50 focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-100"
                       />
                     </div>
                   </div>

@@ -206,6 +206,9 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [toast, setToast] = useState(null);
+  const [viewportHeight, setViewportHeight] = useState(
+    () => (typeof window !== 'undefined' ? window.visualViewport?.height || window.innerHeight : 700),
+  );
 
   const [pos, setPos] = useState(() => loadPos() || getDefaultPos());
   const [isDragging, setIsDragging] = useState(false);
@@ -408,6 +411,23 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  useEffect(() => {
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+    if (!vv) return undefined;
+
+    const update = () => {
+      setViewportHeight(vv.height || window.innerHeight);
+    };
+
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
   }, []);
 
   useEffect(() => {
@@ -705,15 +725,15 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
 
   // Small bottom-right popup — never covers the full chat.
   const getPanelStyle = () => {
-    const vh = typeof window !== 'undefined' ? window.innerHeight : 700;
+    const vh = viewportHeight || (typeof window !== 'undefined' ? window.innerHeight : 700);
     const vw = typeof window !== 'undefined' ? window.innerWidth : 400;
     const side = isMobile ? 12 : 20;
     const bubbleClearance = (isMobile ? 56 : BUBBLE_SIZE) + 12;
     const panelW = isMobile
       ? Math.min(300, vw - 72)
       : Math.min(340, vw - 80);
-    const panelH = isMobile
-      ? Math.min(480, Math.round(vh * 0.58))
+    const maxPanelH = isMobile
+      ? Math.min(480, Math.round(vh * 0.62))
       : Math.min(500, Math.round(vh * 0.54));
 
     return {
@@ -723,9 +743,9 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
       top: 'auto',
       bottom: `calc(${bubbleClearance}px + env(safe-area-inset-bottom, 0px))`,
       width: panelW,
-      height: panelH,
+      height: maxPanelH,
       maxWidth: 'calc(100vw - 72px)',
-      maxHeight: isMobile ? '58vh' : '54vh',
+      maxHeight: isMobile ? '62dvh' : '54dvh',
       zIndex: 99,
     };
   };
@@ -899,7 +919,7 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
               )}
               <button
                 onClick={handleClose}
-                className="w-7 h-7 flex items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/15 transition-colors"
+                className="min-w-11 min-h-11 flex items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/15 transition-colors"
                 aria-label="Réduire"
               >
                 <ChevronDown size={18} />
@@ -1164,7 +1184,11 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
                 )}
                 <div
                   className="flex-shrink-0 px-3 py-2.5 flex items-end gap-2"
-                  style={{ backgroundColor: '#F0EBE2', borderTop: '1px solid rgba(0,0,0,0.06)' }}
+                  style={{
+                    backgroundColor: '#F0EBE2',
+                    borderTop: '1px solid rgba(0,0,0,0.06)',
+                    paddingBottom: 'max(10px, env(safe-area-inset-bottom, 0px))',
+                  }}
                 >
                   <div className="flex-1 bg-white rounded-2xl overflow-hidden flex items-end px-3 py-2 border border-gray-100 shadow-sm">
                     <textarea
@@ -1175,14 +1199,14 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
                       enterKeyHint="enter"
                       placeholder={t('ashy.placeholder')}
                       rows={1}
-                      className="chat-input w-full resize-none bg-transparent text-sm text-gray-800 placeholder-gray-400 outline-none leading-relaxed"
+                      className="chat-input w-full resize-none bg-transparent text-base text-gray-800 placeholder-gray-400 outline-none leading-relaxed"
                       style={{ minHeight: 20, maxHeight: 88 }}
                     />
                   </div>
                   <motion.button
                     onClick={sendMessage}
                     disabled={!input.trim() || sending}
-                    className="w-9 h-9 flex-shrink-0 rounded-full flex items-center justify-center text-white transition-opacity"
+                    className="min-w-11 min-h-11 flex-shrink-0 rounded-full flex items-center justify-center text-white transition-opacity touch-manipulation"
                     whileTap={{ scale: 0.88 }}
                     style={{ backgroundColor: '#FF6B00', opacity: (!input.trim() || sending) ? 0.4 : 1 }}
                   >
@@ -1209,7 +1233,8 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
-            className="pointer-events-none fixed inset-x-0 bottom-28 z-[130] flex justify-center px-4"
+            className="pointer-events-none fixed inset-x-0 z-[130] flex justify-center px-4"
+            style={{ bottom: 'calc(7rem + env(safe-area-inset-bottom, 0px))' }}
           >
             <div className="rounded-full bg-stone-900/90 px-4 py-2 text-xs font-semibold text-white shadow-lg">
               {toast}

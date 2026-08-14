@@ -20,6 +20,7 @@ import {
 } from '@/lib/textEncoding';
 import pb from '@/lib/pocketbaseClient';
 import { useLanguage } from '@/context/LanguageContext';
+import { openPdfFromMeta } from '@/lib/pdfDownload';
 
 const LONG_PRESS_MS = 480;
 const LONG_PRESS_MOVE_PX = 12;
@@ -245,17 +246,19 @@ function Message({
           <EmojiText>{content}</EmojiText>
         </p>
         {!isUser && message.pdf?.url && (
-          <a
-            href={message.pdf.url}
-            download={message.pdf.filename || 'bilan-ash-ledger.pdf'}
+          <button
+            type="button"
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            className="mt-2 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white"
+            onClick={(e) => {
+              e.stopPropagation();
+              void openPdfFromMeta(message.pdf);
+            }}
+            className="mt-2 inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white touch-manipulation"
             style={{ backgroundColor: '#FF6B00' }}
           >
             <FileDown size={14} />
             Télécharger {message.pdf.filename || 'le PDF'}
-          </a>
+          </button>
         )}
         <div className="flex items-center justify-end gap-0.5 mt-1">
           <span
@@ -368,7 +371,8 @@ function SideDrawer({ open, onClose, onLogout, onNavigate, onSupport, user }) {
               </div>
               <button
                 onClick={onClose}
-                className="w-8 h-8 flex items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/15 transition-colors"
+                className="min-w-11 min-h-11 flex items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/15 transition-colors"
+                aria-label="Fermer le menu"
               >
                 <X size={18} />
               </button>
@@ -610,7 +614,7 @@ export default function ChatPage() {
 
         {/* ── Header ── */}
         <header
-          className="sticky top-0 flex items-center gap-3 px-4 py-3 z-30 flex-shrink-0"
+          className="safe-area-top sticky top-0 flex items-center gap-3 px-4 py-3 z-30 flex-shrink-0"
           style={{ backgroundColor: '#FF6B00', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
         >
           <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 border-2 border-white/40 shadow-md">
@@ -626,7 +630,7 @@ export default function ChatPage() {
           {/* Hamburger menu button */}
           <button
             onClick={() => setDrawerOpen(true)}
-            className="w-9 h-9 flex items-center justify-center rounded-full text-white/80 hover:text-white hover:bg-white/15 transition-colors active:scale-95"
+            className="min-w-11 min-h-11 flex items-center justify-center rounded-full text-white/80 hover:text-white hover:bg-white/15 transition-colors active:scale-95"
             aria-label="Menu"
           >
             <Menu size={22} strokeWidth={2} />
@@ -1080,7 +1084,8 @@ export default function ChatPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 12 }}
-            className="pointer-events-none fixed inset-x-0 bottom-24 z-[95] flex justify-center px-4"
+            className="pointer-events-none fixed inset-x-0 z-[95] flex justify-center px-4"
+            style={{ bottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))' }}
           >
             <div className="rounded-full bg-stone-900/90 px-4 py-2 text-xs font-semibold text-white shadow-lg">
               {toast}

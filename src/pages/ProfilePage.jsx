@@ -4,6 +4,7 @@ import { Helmet } from 'react-helmet';
 import { ArrowLeft, Save, Eye, EyeOff, Camera } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/context/LanguageContext';
+import { isAcceptedImageFile, normalizeImageUploadFile } from '@/lib/imageUpload';
 import pb from '@/lib/pocketbaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cleanUtf8Text } from '@/lib/textEncoding';
@@ -20,11 +21,12 @@ function Toast({ message, onDismiss }) {
           initial={{ opacity: 0, y: -16 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -16 }}
-          className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-lg text-sm font-medium ${
+          className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-lg text-sm font-medium safe-area-top ${
             message.type === 'success'
               ? 'bg-green-50 text-green-700 border border-green-200'
               : 'bg-red-50 text-red-700 border border-red-200'
           }`}
+          style={{ marginTop: 'env(safe-area-inset-top, 0px)' }}
         >
           {message.text}
         </motion.div>
@@ -43,7 +45,7 @@ function Input({ label, value, onChange, type = 'text', readOnly = false, right 
           value={value}
           onChange={onChange}
           readOnly={readOnly}
-          className={`w-full px-4 py-3 rounded-xl border text-sm outline-none transition-all ${
+          className={`w-full px-4 py-3 rounded-xl border text-base outline-none transition-all ${
             readOnly
               ? 'bg-gray-50 text-gray-400 border-gray-100 cursor-default'
               : 'bg-white text-gray-800 border-gray-200 focus:border-orange-400 focus:ring-2 focus:ring-orange-100'
@@ -134,18 +136,20 @@ export default function ProfilePage() {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file || !user?.id) return;
-    if (!file.type.startsWith('image/')) {
-      setToast({ type: 'error', text: 'Choisissez une image (JPG, PNG ou WebP).' });
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      setToast({ type: 'error', text: 'La photo doit faire moins de 2 Mo.' });
+    if (!isAcceptedImageFile(file)) {
+      setToast({ type: 'error', text: 'Choisissez une image (JPG, PNG, WebP ou HEIC).' });
       return;
     }
     setUploadingAvatar(true);
     try {
+      const normalized = await normalizeImageUploadFile(file);
+      const uploadFile = normalized || file;
+      if (uploadFile.size > 2 * 1024 * 1024) {
+        setToast({ type: 'error', text: 'La photo doit faire moins de 2 Mo.' });
+        return;
+      }
       const formData = new FormData();
-      formData.append('avatar', file);
+      formData.append('avatar', uploadFile);
       const updated = await pb.collection('users').update(user.id, formData);
       setProfile(updated);
       updateUserRecord(updated);
@@ -178,12 +182,13 @@ export default function ProfilePage() {
       <div className="min-h-[100dvh] flex flex-col" style={{ backgroundColor: '#F5F1EB' }}>
         {/* Header */}
         <header
-          className="flex items-center gap-3 px-4 py-3 flex-shrink-0"
+          className="safe-area-top flex items-center gap-3 px-4 py-3 flex-shrink-0"
           style={{ backgroundColor: '#FF6B00', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
         >
           <button
             onClick={() => navigate('/chat')}
-            className="w-9 h-9 flex items-center justify-center rounded-full text-white/80 hover:text-white hover:bg-white/15 transition-colors active:scale-95"
+            className="min-w-11 min-h-11 flex items-center justify-center rounded-full text-white/80 hover:text-white hover:bg-white/15 transition-colors active:scale-95"
+            aria-label="Retour au chat"
           >
             <ArrowLeft size={20} strokeWidth={2} />
           </button>
@@ -202,7 +207,7 @@ export default function ProfilePage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/jpeg,image/png,image/webp"
+                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
                   className="hidden"
                   onChange={uploadAvatar}
                 />

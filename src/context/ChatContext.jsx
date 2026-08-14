@@ -4,7 +4,12 @@ import apiServerClient from '@/lib/apiServerClient';
 import { readStoredCurrencyPreference } from '@/lib/currency';
 import { cleanUtf8Text, normalizeMessageText } from '@/lib/textEncoding';
 import { trackChatMessageSent, trackFromAssistantReply, trackReportGenerated } from '@/lib/analytics';
-import { downloadPdfFromBase64, isUsablePdfBase64 } from '@/lib/pdfDownload';
+import {
+  createPdfBlobUrl,
+  downloadPdfFromBase64,
+  isUsablePdfBase64,
+  requiresUserGestureForPdfDownload,
+} from '@/lib/pdfDownload';
 import { saveGeneratedReport } from '@/lib/saveReport';
 
 export const WELCOME_MESSAGE = {
@@ -280,10 +285,17 @@ export function ChatProvider({ children }) {
         const filename = data.filename || 'bilan-ash-ledger.pdf';
         if (isUsablePdfBase64(data.pdf_base64)) {
           try {
-            const url = downloadPdfFromBase64(data.pdf_base64, filename);
-            pdfMeta = { filename, url, mimeType: data.mime_type || 'application/pdf' };
+            const mimeType = data.mime_type || 'application/pdf';
+            const url = createPdfBlobUrl(data.pdf_base64, mimeType);
+            pdfMeta = { filename, url, mimeType, base64: data.pdf_base64 };
+            if (!requiresUserGestureForPdfDownload()) {
+              downloadPdfFromBase64(data.pdf_base64, filename);
+            }
             if (!/📄|pdf|télécharg|telecharg/i.test(replyText)) {
-              replyText = `${replyText}\n\n📄 ${filename}`;
+              const hint = requiresUserGestureForPdfDownload()
+                ? `\n\n📄 ${filename}\nAppuyez sur « Télécharger » ci-dessous.`
+                : `\n\n📄 ${filename}`;
+              replyText = `${replyText}${hint}`;
             }
             trackReportGenerated({ source: 'chat_pdf_download', report_type: 'monthly' });
             // Persist for /reports (PocketBase + local fallback).
