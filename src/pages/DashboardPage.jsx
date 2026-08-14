@@ -119,8 +119,67 @@ function filterTimelineByPeriod(timeline, period) {
   });
 }
 
-function FinancialChart({ data, currency, period, onPeriodChange }) {
+function sumTimelineField(data, field) {
+  return (data || []).reduce((total, point) => total + (Number(point?.[field]) || 0), 0);
+}
+
+function formatSignedPercent(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
+  const n = Number(value);
+  const sign = n > 0 ? '+' : '';
+  return `${sign}${n.toFixed(0)} %`;
+}
+
+function formatSharePercent(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
+  return `${Number(value).toFixed(0)} %`;
+}
+
+function EvolutionStat({
+  label,
+  amount,
+  percentLabel,
+  percentDisplay,
+  accent,
+  accentSoft,
+  percentTone,
+}) {
+  return (
+    <div
+      className="relative overflow-hidden rounded-2xl border border-stone-100/80 px-4 py-3.5"
+      style={{ background: accentSoft }}
+    >
+      <div
+        className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full opacity-25"
+        style={{ background: accent }}
+      />
+      <div className="relative flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-stone-500">{label}</p>
+          <p className="mt-1.5 break-words text-base font-bold tracking-tight text-stone-900 sm:text-lg">
+            {amount}
+          </p>
+          <p className="mt-1 text-[11px] font-semibold text-stone-500">{percentLabel}</p>
+        </div>
+        <p className={`shrink-0 text-4xl font-black leading-none tracking-tight sm:text-5xl ${percentTone}`}>
+          {percentDisplay}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function FinancialChart({ data, currency, period, onPeriodChange, referenceChange }) {
   const { t } = useLanguage();
+  const stats = useMemo(() => {
+    const revenue = sumTimelineField(data, 'ventes');
+    const expenses = sumTimelineField(data, 'depenses');
+    const profit = sumTimelineField(data, 'benefice');
+    const expenseShare = revenue > 0 ? (expenses / revenue) * 100 : null;
+    const marginShare = revenue > 0 ? (profit / revenue) * 100 : null;
+    return { revenue, expenses, profit, expenseShare, marginShare };
+  }, [data]);
+
   return (
     <SectionCard>
       <div className="flex flex-col gap-3 px-5 pb-1 pt-5 sm:flex-row sm:items-start sm:justify-between sm:px-6">
@@ -150,63 +209,108 @@ function FinancialChart({ data, currency, period, onPeriodChange }) {
           ))}
         </div>
       </div>
-      {!data.length ? (
-        <div className="flex h-[165px] flex-col items-center justify-center px-6 text-center">
-          <BarChart3 size={25} className="mb-2 text-stone-200" />
-          <p className="text-sm font-semibold text-stone-400">{t('dashboard.noOps')}</p>
-        </div>
-      ) : (
-        <div className="h-[200px] w-full px-2 pb-3 pr-4">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 12, right: 4, left: 0, bottom: 0 }}>
-              <CartesianGrid stroke="#F2EEE9" strokeDasharray="4 4" vertical={false} />
-              <XAxis
-                dataKey="date"
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: '#A8A29E', fontSize: 10 }}
-                minTickGap={24}
-              />
-              <YAxis
-                axisLine={false}
-                tickLine={false}
-                width={58}
-                tick={{ fill: '#A8A29E', fontSize: 10 }}
-                tickFormatter={(value) => formatCompactCurrency(value, currency)}
-              />
-              <Tooltip
-                formatter={(value, name) => [
-                  formatCurrency(value, currency),
-                  {
+
+      <div className="grid gap-4 px-4 pb-5 pt-2 sm:px-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(260px,0.9fr)] lg:items-stretch lg:gap-5 lg:px-6">
+        {!data.length ? (
+          <div className="flex h-[200px] flex-col items-center justify-center rounded-2xl bg-stone-50/70 px-6 text-center">
+            <BarChart3 size={25} className="mb-2 text-stone-200" />
+            <p className="text-sm font-semibold text-stone-400">{t('dashboard.noOps')}</p>
+          </div>
+        ) : (
+          <div className="h-[220px] w-full min-w-0 sm:h-[240px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data} margin={{ top: 12, right: 4, left: 0, bottom: 0 }}>
+                <CartesianGrid stroke="#F2EEE9" strokeDasharray="4 4" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: '#A8A29E', fontSize: 10 }}
+                  minTickGap={24}
+                />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  width={58}
+                  tick={{ fill: '#A8A29E', fontSize: 10 }}
+                  tickFormatter={(value) => formatCompactCurrency(value, currency)}
+                />
+                <Tooltip
+                  formatter={(value, name) => [
+                    formatCurrency(value, currency),
+                    {
+                      ventes: 'Chiffre d’affaires',
+                      depenses: 'Dépenses',
+                      benefice: 'Bénéfice',
+                    }[name] || name,
+                  ]}
+                  contentStyle={{
+                    border: '1px solid #F3E8DE',
+                    borderRadius: 14,
+                    boxShadow: '0 10px 30px rgba(70,50,30,.12)',
+                    fontSize: 12,
+                  }}
+                />
+                <Legend
+                  iconType="circle"
+                  iconSize={7}
+                  formatter={(value) => ({
                     ventes: 'Chiffre d’affaires',
                     depenses: 'Dépenses',
                     benefice: 'Bénéfice',
-                  }[name] || name,
-                ]}
-                contentStyle={{
-                  border: '1px solid #F3E8DE',
-                  borderRadius: 14,
-                  boxShadow: '0 10px 30px rgba(70,50,30,.12)',
-                  fontSize: 12,
-                }}
-              />
-              <Legend
-                iconType="circle"
-                iconSize={7}
-                formatter={(value) => ({
-                  ventes: 'Chiffre d’affaires',
-                  depenses: 'Dépenses',
-                  benefice: 'Bénéfice',
-                }[value] || value)}
-                wrapperStyle={{ fontSize: 10 }}
-              />
-              <Line type="monotone" dataKey="ventes" stroke="#10B981" strokeWidth={2.3} dot={data.length === 1} />
-              <Line type="monotone" dataKey="depenses" stroke="#F43F5E" strokeWidth={2.3} dot={data.length === 1} />
-              <Line type="monotone" dataKey="benefice" stroke="#3B82F6" strokeWidth={2.3} dot={data.length === 1} />
-            </LineChart>
-          </ResponsiveContainer>
+                  }[value] || value)}
+                  wrapperStyle={{ fontSize: 10 }}
+                />
+                <Line type="monotone" dataKey="ventes" stroke="#10B981" strokeWidth={2.3} dot={data.length === 1} />
+                <Line type="monotone" dataKey="depenses" stroke="#F43F5E" strokeWidth={2.3} dot={data.length === 1} />
+                <Line type="monotone" dataKey="benefice" stroke="#3B82F6" strokeWidth={2.3} dot={data.length === 1} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-2.5">
+          <EvolutionStat
+            label="Chiffre d’affaires"
+            amount={formatCurrency(stats.revenue, currency)}
+            percentLabel="% vs période de référence"
+            percentDisplay={formatSignedPercent(referenceChange)}
+            accent="#10B981"
+            accentSoft="#ECFDF5"
+            percentTone={
+              referenceChange === null || referenceChange === undefined
+                ? 'text-stone-400'
+                : referenceChange >= 0
+                  ? 'text-emerald-600'
+                  : 'text-amber-600'
+            }
+          />
+          <EvolutionStat
+            label="Dépenses"
+            amount={formatCurrency(stats.expenses, currency)}
+            percentLabel="% du chiffre d’affaires"
+            percentDisplay={formatSharePercent(stats.expenseShare)}
+            accent="#F43F5E"
+            accentSoft="#FFF1F2"
+            percentTone="text-rose-600"
+          />
+          <EvolutionStat
+            label="Bénéfice / marge"
+            amount={formatCurrency(stats.profit, currency)}
+            percentLabel="Marge bénéficiaire (% du CA)"
+            percentDisplay={formatSharePercent(stats.marginShare)}
+            accent="#3B82F6"
+            accentSoft="#EFF6FF"
+            percentTone={
+              stats.marginShare === null
+                ? 'text-stone-400'
+                : stats.marginShare >= 0
+                  ? 'text-blue-600'
+                  : 'text-rose-600'
+            }
+          />
         </div>
-      )}
+      </div>
     </SectionCard>
   );
 }
@@ -607,6 +711,7 @@ export default function DashboardPage() {
               currency={currency}
               period={chartPeriod}
               onPeriodChange={setChartPeriod}
+              referenceChange={trends.salesChange}
             />
 
             <DebtSummary debts={debts} currency={currency} />
