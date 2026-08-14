@@ -174,7 +174,8 @@ function FinancialChart({ data, currency, period, onPeriodChange, referenceChang
   const stats = useMemo(() => {
     const revenue = sumTimelineField(data, 'ventes');
     const expenses = sumTimelineField(data, 'depenses');
-    const profit = sumTimelineField(data, 'benefice');
+    // Bénéfice = CA − dépenses (cohérent avec le graphique).
+    const profit = revenue - expenses;
     const expenseShare = revenue > 0 ? (expenses / revenue) * 100 : null;
     const marginShare = revenue > 0 ? (profit / revenue) * 100 : null;
     return { revenue, expenses, profit, expenseShare, marginShare };
@@ -189,7 +190,9 @@ function FinancialChart({ data, currency, period, onPeriodChange, referenceChang
           </span>
           <div>
             <h2 className="text-sm font-bold text-stone-800">{t('dashboard.evolution')}</h2>
-            <p className="mt-0.5 text-xs text-stone-400">Chiffre d’affaires, dépenses et bénéfice</p>
+            <p className="mt-0.5 text-xs text-stone-400">
+              CA réalisé (encaissé + créances), dépenses et bénéfice
+            </p>
           </div>
         </div>
         <div className="flex gap-1 overflow-x-auto rounded-xl bg-stone-50 p-1">
@@ -288,7 +291,7 @@ function FinancialChart({ data, currency, period, onPeriodChange, referenceChang
           <EvolutionStat
             label="Dépenses"
             amount={formatCurrency(stats.expenses, currency)}
-            percentLabel="% du chiffre d’affaires"
+            percentLabel="% des dépenses par rapport au CA"
             percentDisplay={formatSharePercent(stats.expenseShare)}
             accent="#F43F5E"
             accentSoft="#FFF1F2"
@@ -297,7 +300,7 @@ function FinancialChart({ data, currency, period, onPeriodChange, referenceChang
           <EvolutionStat
             label="Bénéfice / marge"
             amount={formatCurrency(stats.profit, currency)}
-            percentLabel="Marge bénéficiaire (% du CA)"
+            percentLabel="% du CA conservé en bénéfice"
             percentDisplay={formatSharePercent(stats.marginShare)}
             accent="#3B82F6"
             accentSoft="#EFF6FF"
@@ -555,11 +558,11 @@ export default function DashboardPage() {
   const metricCards = useMemo(() => [
     {
       icon: BadgeDollarSign,
-      label: 'Chiffre d’affaires',
+      label: 'Encaissements',
       value: formatCurrency(metrics.revenue, currency),
       color: '#059669',
       background: '#ECFDF5',
-      change: trends.salesChange,
+      change: trends.collectionsChange ?? trends.salesChange,
     },
     {
       icon: WalletCards,

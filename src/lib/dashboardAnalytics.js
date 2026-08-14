@@ -54,13 +54,12 @@ const STOCK_FALLBACK_QUANTITY_FIELDS = [
   'mouvement',
 ];
 const SALE_QUANTITY_FIELDS = ['quantite', 'quantity', 'quantite_vendue', 'qte', 'units'];
-const SALE_AMOUNT_FIELDS = [
+/** Fields for realized revenue (CA) — never use montant_paye alone here. */
+const SALE_REVENUE_FIELDS = [
   'total_brut',
   'montant_total',
   'total_vente',
   'total',
-  'montant',
-  'montant_paye',
   'chiffre_affaires',
   'amount',
 ];
@@ -180,10 +179,29 @@ function saleQuantity(sale) {
   return Math.max(0, firstNumber(sale, SALE_QUANTITY_FIELDS) ?? 0);
 }
 
-function saleAmount(sale, product) {
-  const direct = firstNumber(sale, SALE_AMOUNT_FIELDS);
-  if (direct !== null) return Math.max(0, direct);
+/** Cash actually collected on a sale (encaissements). */
+function saleCollectedAmount(sale) {
+  return Math.max(0, firstNumber(sale, ['montant_paye']) ?? 0);
+}
+
+/**
+ * Realized revenue (chiffre d'affaires) = encashed + credit/outstanding.
+ * Prefer total_brut; else montant_paye + reste_a_payer; else qty × unit price.
+ */
+function saleRevenueAmount(sale, product) {
+  const brut = firstNumber(sale, SALE_REVENUE_FIELDS);
+  if (brut !== null) return Math.max(0, brut);
+
+  const paid = saleCollectedAmount(sale);
+  const remaining = Math.max(0, firstNumber(sale, ['reste_a_payer', 'montant_restant', 'remaining']) ?? 0);
+  if (paid > 0 || remaining > 0) return paid + remaining;
+
   return Math.max(0, saleQuantity(sale) * saleUnitPrice(sale, product));
+}
+
+/** Realized sale value for activity / top-product displays. */
+function saleAmount(sale, product) {
+  return saleRevenueAmount(sale, product);
 }
 
 function expenseAmount(expense) {
@@ -194,17 +212,11 @@ function paymentAmount(payment) {
   return Math.max(0, firstNumber(payment, PAYMENT_AMOUNT_FIELDS) ?? 0);
 }
 
-function saleCost(sale, product) {
-  const directCost = firstNumber(sale, ['cout_total', 'total_cost', 'cout_achat_total']);
-  if (directCost !== null) return Math.max(0, directCost);
-  return saleQuantity(sale) * Math.max(0, firstNumber(product, PRODUCT_PURCHASE_PRICE_FIELDS) ?? 0);
-}
-
 function buildDebtMetrics(ventes, payments = []) {
   const debtSales = ventes
     .map((sale) => ({
       sale,
-      total: Math.max(0, firstNumber(sale, ['total_brut', 'montant_total', 'total']) ?? saleAmount(sale)),
+      total: saleRevenueAmount(sale),
       remaining: Math.max(0, firstNumber(sale, ['reste_a_payer', 'montant_restant', 'remaining']) ?? 0),
     }))
     .filter(({ remaining }) => remaining > 0);
@@ -230,7 +242,7 @@ function buildDebtMetrics(ventes, payments = []) {
       startOfToday.getTime(),
       endOfToday.getTime(),
     )),
-    (sale) => Math.max(0, firstNumber(sale, ['montant_paye']) ?? 0),
+    saleCollectedAmount,
   );
 
   const outstandingFromPayments = sum(
@@ -286,10 +298,11 @@ function periodTotals(ventes, depenses, productById, products, now) {
   const calculate = (start, end) => {
     const periodSales = ventes.filter((sale) => inPeriod(parseDate(sale, 'ventes'), start, end));
     const periodExpenses = depenses.filter((expense) => inPeriod(parseDate(expense, 'depenses'), start, end));
-    const revenue = sum(periodSales, (sale) => saleAmount(sale, resolveProduct(sale, productById, products)));
+    // Realized CA (encashed + credit), not cash collections only.
+    const revenue = sum(periodSales, (sale) => saleRevenueAmount(sale, resolveProduct(sale, productById, products)));
+    const collections = sum(periodSales, saleCollectedAmount);
     const expenses = sum(periodExpenses, expenseAmount);
-    const cost = sum(periodSales, (sale) => saleCost(sale, resolveProduct(sale, productById, products)));
-    return { revenue, expenses, profit: revenue - expenses - cost };
+    return { revenue, collections, expenses, profit: revenue - expenses };
   };
 
   const current = calculate(currentStart, now + 1);
@@ -298,6 +311,7 @@ function periodTotals(ventes, depenses, productById, products, now) {
     current,
     previous,
     salesChange: percentChange(current.revenue, previous.revenue),
+    collectionsChange: percentChange(current.collections, previous.collections),
     expenseChange: percentChange(current.expenses, previous.expenses),
     profitChange: percentChange(current.profit, previous.profit),
   };
@@ -369,9 +383,10 @@ function buildTimeline(ventes, depenses, productById, products) {
     const point = ensureDay(parseDate(sale, 'ventes'));
     if (!point) return;
     const product = resolveProduct(sale, productById, products);
-    const revenue = saleAmount(sale, product);
+    // Graph CA = ventes réalisées (encaissées + créances).
+    const revenue = saleRevenueAmount(sale, product);
     point.ventes += revenue;
-    point.benefice += revenue - saleCost(sale, product);
+    point.benefice += revenue;
   });
 
   depenses.forEach((expense) => {
@@ -379,6 +394,7 @@ function buildTimeline(ventes, depenses, productById, products) {
     if (!point) return;
     const amount = expenseAmount(expense);
     point.depenses += amount;
+    // Bénéfice période = CA − dépenses (pas de coût d'achat ici).
     point.benefice -= amount;
   });
 
@@ -602,15 +618,16 @@ function buildInsights(inventory, trends, topProducts, debts) {
 
 /**
  * Map synthese_mensuelle columns → dashboard KPI cards:
- *   total_recettes → Chiffre d’affaires
+ *   total_recettes → Encaissements (cash collected = sum montant_paye)
  *   total_depenses → Dépenses
- *   benefice_net   → Bénéfice estimé
- *   dette_client   → Dettes clients
+ *   benefice_net   → Bénéfice estimé (encaissements − dépenses in the view)
+ *   dette_client   → Dettes clients (sum reste_a_payer)
  * Sums all monthly rows (full history via the monthly view).
  */
 function metricsFromSynthese(rows = []) {
   if (!Array.isArray(rows) || rows.length === 0) return null;
   return {
+    // Kept as `revenue` in metrics object for compatibility; UI label = Encaissements.
     revenue: sum(rows, (row) => Math.max(0, toNumber(row.total_recettes) ?? 0)),
     expenses: sum(rows, (row) => Math.max(0, toNumber(row.total_depenses) ?? 0)),
     profit: sum(rows, (row) => toNumber(row.benefice_net) ?? 0),
@@ -628,9 +645,9 @@ export function buildDashboardAnalytics({
 }) {
   const productById = new Map(produits.map((product) => [rowId(product), product]));
   const fromSynthese = metricsFromSynthese(synthese_mensuelle);
-  const revenueFallback = sum(ventes, (sale) => saleAmount(sale, resolveProduct(sale, productById, produits)));
+  // Top-card "Encaissements" = cash collected only.
+  const collectionsFallback = sum(ventes, saleCollectedAmount);
   const expensesFallback = sum(depenses, expenseAmount);
-  const soldCost = sum(ventes, (sale) => saleCost(sale, resolveProduct(sale, productById, produits)));
   const inventory = calculateInventory(produits, stocks, ventes, productById);
   const trends = periodTotals(ventes, depenses, productById, produits, Date.now());
   const topProducts = buildTopProducts(ventes, productById, produits);
@@ -645,9 +662,10 @@ export function buildDashboardAnalytics({
     produits,
   );
 
-  const revenue = fromSynthese?.revenue ?? revenueFallback;
+  const revenue = fromSynthese?.revenue ?? collectionsFallback;
   const expenses = fromSynthese?.expenses ?? expensesFallback;
-  const profit = fromSynthese?.profit ?? (revenueFallback - expensesFallback - soldCost);
+  // Top-card profit stays aligned with synthese (encaissements − dépenses).
+  const profit = fromSynthese?.profit ?? (collectionsFallback - expensesFallback);
   const clientDebt = fromSynthese?.clientDebt ?? debtMetrics.remaining;
   const debts = fromSynthese
     ? { ...debtMetrics, remaining: clientDebt }
