@@ -143,6 +143,7 @@ function EvolutionStat({
   accent,
   accentSoft,
   percentTone,
+  secondaryNote = null,
 }) {
   return (
     <div
@@ -160,6 +161,9 @@ function EvolutionStat({
             {amount}
           </p>
           <p className="mt-1 text-[11px] font-semibold text-stone-500">{percentLabel}</p>
+          {secondaryNote ? (
+            <p className="mt-1 text-[11px] font-bold text-stone-600">{secondaryNote}</p>
+          ) : null}
         </div>
         <p className={`shrink-0 text-4xl font-black leading-none tracking-tight sm:text-5xl ${percentTone}`}>
           {percentDisplay}
@@ -276,17 +280,16 @@ function FinancialChart({ data, currency, period, onPeriodChange, referenceChang
           <EvolutionStat
             label="Chiffre d’affaires"
             amount={formatCurrency(stats.revenue, currency)}
-            percentLabel="% vs période de référence"
-            percentDisplay={formatSignedPercent(referenceChange)}
+            percentLabel="Base de référence"
+            percentDisplay={stats.revenue > 0 ? '100 %' : '—'}
+            secondaryNote={
+              referenceChange === null || referenceChange === undefined
+                ? null
+                : `${formatSignedPercent(referenceChange)} vs période précédente`
+            }
             accent="#10B981"
             accentSoft="#ECFDF5"
-            percentTone={
-              referenceChange === null || referenceChange === undefined
-                ? 'text-stone-400'
-                : referenceChange >= 0
-                  ? 'text-emerald-600'
-                  : 'text-amber-600'
-            }
+            percentTone={stats.revenue > 0 ? 'text-emerald-600' : 'text-stone-400'}
           />
           <EvolutionStat
             label="Dépenses"
