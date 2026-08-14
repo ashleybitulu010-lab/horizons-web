@@ -3,6 +3,8 @@ import { buildDashboardAnalytics } from '@/lib/dashboardAnalytics';
 import { DEFAULT_CURRENCY_SETTINGS, normalizeCurrencySettings } from '@/lib/currency';
 import { createDashboardSession, supabase, supabaseConfigured } from '@/lib/supabaseRest';
 
+export const DASHBOARD_REFRESH_EVENT = 'ash:dashboard-refresh';
+
 const DASHBOARD_TABLES = [
   'produits',
   'stocks',
@@ -199,7 +201,9 @@ export function useDashboardData(user, authToken) {
     const refreshWhenActive = () => {
       if (document.visibilityState === 'visible') scheduleRefresh();
     };
-    const fallbackRefresh = window.setInterval(scheduleRefresh, 15_000);
+    const fallbackRefresh = window.setInterval(scheduleRefresh, 8_000);
+    const onDashboardRefresh = () => scheduleRefresh();
+    window.addEventListener(DASHBOARD_REFRESH_EVENT, onDashboardRefresh);
     document.addEventListener('visibilitychange', refreshWhenActive);
     window.addEventListener('focus', refreshWhenActive);
     window.addEventListener('online', refreshWhenActive);
@@ -207,6 +211,7 @@ export function useDashboardData(user, authToken) {
     return () => {
       window.clearTimeout(refreshTimer);
       window.clearInterval(fallbackRefresh);
+      window.removeEventListener(DASHBOARD_REFRESH_EVENT, onDashboardRefresh);
       document.removeEventListener('visibilitychange', refreshWhenActive);
       window.removeEventListener('focus', refreshWhenActive);
       window.removeEventListener('online', refreshWhenActive);
@@ -215,6 +220,14 @@ export function useDashboardData(user, authToken) {
   }, [clientId, fetchData]);
 
   const analytics = useMemo(() => buildDashboardAnalytics(data), [data]);
+
+  const refresh = useCallback(() => {
+    if (clientId) return fetchData({ silent: true });
+    setError(null);
+    setLoading(true);
+    setResolutionAttempt((attempt) => attempt + 1);
+    return undefined;
+  }, [clientId, fetchData]);
 
   return {
     ...analytics,
@@ -226,12 +239,6 @@ export function useDashboardData(user, authToken) {
     realtimeStatus,
     currencySettings,
     setCurrencySettings,
-    refresh: () => {
-      if (clientId) return fetchData({ silent: true });
-      setError(null);
-      setLoading(true);
-      setResolutionAttempt((attempt) => attempt + 1);
-      return undefined;
-    },
+    refresh,
   };
 }

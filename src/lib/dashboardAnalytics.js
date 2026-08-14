@@ -679,14 +679,16 @@ export function buildDashboardAnalytics({
     produits,
   );
 
-  const revenue = fromSynthese?.revenue ?? collectionsFallback;
-  const expenses = fromSynthese?.expenses ?? expensesFallback;
-  // Top-card profit stays aligned with synthese (encaissements − dépenses).
-  const profit = fromSynthese?.profit ?? (collectionsFallback - expensesFallback);
-  const clientDebt = fromSynthese?.clientDebt ?? debtMetrics.remaining;
-  const debts = fromSynthese
-    ? { ...debtMetrics, remaining: clientDebt }
-    : debtMetrics;
+  // Prefer live ventes/depenses (refreshed by RPC + realtime). synthese_mensuelle
+  // can lag behind chat writes; use it only when row tables are still empty.
+  const useLiveRows = ventes.length > 0 || depenses.length > 0;
+  const revenue = useLiveRows ? collectionsFallback : (fromSynthese?.revenue ?? collectionsFallback);
+  const expenses = useLiveRows ? expensesFallback : (fromSynthese?.expenses ?? expensesFallback);
+  const profit = useLiveRows
+    ? (collectionsFallback - expensesFallback)
+    : (fromSynthese?.profit ?? (collectionsFallback - expensesFallback));
+  const clientDebt = useLiveRows ? debtMetrics.remaining : (fromSynthese?.clientDebt ?? debtMetrics.remaining);
+  const debts = { ...debtMetrics, remaining: clientDebt };
 
   const metrics = {
     revenue,

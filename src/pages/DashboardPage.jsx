@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { trackDashboardViewed } from '@/lib/analytics';
 import {
@@ -510,12 +510,14 @@ export default function DashboardPage() {
   const { t } = useLanguage();
   const { user, token } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [chartPeriod, setChartPeriod] = useState('month');
   const [savingCurrency, setSavingCurrency] = useState(false);
 
   useEffect(() => {
     trackDashboardViewed();
   }, []);
+
   const {
     metrics,
     trends,
@@ -534,6 +536,11 @@ export default function DashboardPage() {
     setCurrencySettings,
     refresh,
   } = useDashboardData(user, token);
+
+  useEffect(() => {
+    if (!clientId) return;
+    refresh();
+  }, [location.key, clientId, refresh]);
 
   const currency = currencySettings.currency || currencySettings.displayCurrency;
   const filteredTimeline = useMemo(

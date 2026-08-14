@@ -44,6 +44,26 @@ function writeStoredClientId(clientId) {
   }
 }
 
+/** Resolve client id from the authenticated Supabase session (RLS-scoped). */
+export async function resolveAuthenticatedClientId() {
+  if (!supabase) return null;
+  try {
+    const session = await sessionStillValid();
+    if (!session?.access_token) return readStoredClientId();
+
+    const { data, error } = await supabase
+      .from('clients')
+      .select('id')
+      .maybeSingle();
+
+    if (error || !data?.id) return readStoredClientId();
+    writeStoredClientId(data.id);
+    return data.id;
+  } catch {
+    return readStoredClientId();
+  }
+}
+
 async function sessionStillValid(minTtlMs = 60_000) {
   if (!supabase) return null;
   const { data, error } = await supabase.auth.getSession();
@@ -154,10 +174,10 @@ export async function createDashboardSession(pocketBaseToken) {
   }
 
   const existing = await sessionStillValid(90_000);
-  const storedClientId = readStoredClientId();
-  if (existing?.access_token && storedClientId) {
+  if (existing?.access_token) {
     await supabase.realtime.setAuth(existing.access_token);
-    return storedClientId;
+    const verifiedId = await resolveAuthenticatedClientId();
+    if (verifiedId) return verifiedId;
   }
 
   const response = await fetch(`${SUPABASE_URL}/functions/v1/dashboard-session`, {
@@ -186,7 +206,7 @@ export async function createDashboardSession(pocketBaseToken) {
 
   writeStoredClientId(payload.client_id);
   await supabase.realtime.setAuth(payload.access_token);
-  return payload.client_id;
+  return (await resolveAuthenticatedClientId()) || payload.client_id;
 }
 
 /** Clear persisted Supabase Auth (explicit logout only). */

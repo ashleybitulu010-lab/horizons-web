@@ -4,6 +4,7 @@ import apiServerClient from '@/lib/apiServerClient';
 import { readStoredCurrencyPreference } from '@/lib/currency';
 import { cleanUtf8Text, normalizeMessageText } from '@/lib/textEncoding';
 import { trackChatMessageSent, trackFromAssistantReply, trackReportGenerated } from '@/lib/analytics';
+import { DASHBOARD_REFRESH_EVENT } from '@/hooks/useDashboardData';
 import {
   createPdfBlobUrl,
   downloadPdfFromBase64,
@@ -332,6 +333,9 @@ export function ChatProvider({ children }) {
       setNewIds((prev) => new Set(prev).add(replyId));
       persist('assistant', replyText);
       trackFromAssistantReply(replyText);
+      if (res.ok && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(DASHBOARD_REFRESH_EVENT));
+      }
     } catch {
       const errId = Date.now() + 1;
       setMessages((prev) => {
