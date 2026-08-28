@@ -12,8 +12,9 @@ export function getToolDefinition(name) {
 
 /**
  * Future: execute a registered tool with Supabase-backed services.
+ * Tools must receive user context from createToolExecutionContext(req).
  */
-export async function executeTool(name, _context, _input) {
+export async function executeTool(name, context, _input) {
 	const def = getToolDefinition(name);
 	if (!def) {
 		throw new Error(`Unknown tool: ${name}`);

@@ -4,10 +4,10 @@ const N8N_WEBHOOK_URL = process.env.N8N_CHAT_WEBHOOK || process.env.N8N_WEBHOOK_
 const N8N_API_KEY = process.env.N8N_CHAT_API_KEY || process.env.N8N_CHAT_WEBHOOK_API_KEY;
 
 export default async (req, res) => {
-	const { user_id } = req.body ?? {};
+	const trustedUserId = req.user.businessUserId || req.user.id;
 
-	if (!user_id) {
-		return res.status(422).json({ error: 'user_id is required' });
+	if (!trustedUserId) {
+		return res.status(422).json({ error: 'user identity is unavailable' });
 	}
 
 	if (!N8N_WEBHOOK_URL) {
@@ -22,7 +22,7 @@ export default async (req, res) => {
 			'User-Agent': 'AshLedger/1.0',
 			...(N8N_API_KEY ? { 'x-api-key': N8N_API_KEY } : {}),
 		},
-		body: JSON.stringify({ action: 'history', user_id }),
+		body: JSON.stringify({ action: 'history', user_id: trustedUserId }),
 	});
 
 	const rawBody = await upstream.text();

@@ -13,8 +13,8 @@ function n8nHeaders() {
 }
 
 export async function getThread(req, res) {
-	const { userId } = req.params;
-	if (!userId) return res.status(422).json({ error: 'userId is required' });
+	const trustedUserId = req.user.businessUserId || req.user.id;
+	if (!trustedUserId) return res.status(422).json({ error: 'user identity is unavailable' });
 
 	if (!N8N_GET_THREAD_WEBHOOK) {
 		// Return empty thread if webhook not configured yet
@@ -24,7 +24,7 @@ export async function getThread(req, res) {
 	const upstream = await fetch(N8N_GET_THREAD_WEBHOOK, {
 		method: 'POST',
 		headers: n8nHeaders(),
-		body: JSON.stringify({ userId }),
+		body: JSON.stringify({ userId: trustedUserId }),
 	});
 
 	const rawBody = await upstream.text();
@@ -54,9 +54,12 @@ export async function getThread(req, res) {
 }
 
 export async function saveMessage(req, res) {
-	const { userId, role, content, timestamp, email, firstName, lastName } = req.body ?? {};
-	if (!userId || !role || !content) {
-		return res.status(422).json({ error: 'userId, role, and content are required' });
+	const { role, content, timestamp, email, firstName, lastName } = req.body ?? {};
+	const user = req.user;
+	const trustedUserId = user.businessUserId || user.id;
+
+	if (!trustedUserId || !role || !content) {
+		return res.status(422).json({ error: 'user identity, role, and content are required' });
 	}
 
 	if (!N8N_SAVE_MESSAGE_WEBHOOK) {
@@ -68,13 +71,14 @@ export async function saveMessage(req, res) {
 		method: 'POST',
 		headers: n8nHeaders(),
 		body: JSON.stringify({
-			userId,
+			userId: trustedUserId,
+			pbUserId: user.id,
 			role,
 			content,
 			timestamp: timestamp || new Date().toISOString(),
-			email: email || '',
-			firstName: firstName || '',
-			lastName: lastName || '',
+			email: user.email || email || '',
+			firstName: user.firstName || firstName || '',
+			lastName: user.lastName || lastName || '',
 		}),
 	});
 

@@ -1,5 +1,5 @@
 /**
  * Business services layer (phase 0 placeholder).
- * Future home for ventes, depenses, stock rules migrated from n8n.
+ * Phase 1: use req.user + supabase-scoped.js for all service role queries.
  */
 export const servicesReady = false;

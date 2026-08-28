@@ -4,20 +4,20 @@ import { pocketbaseClient as pb } from '../utils/pocketbaseClient.js';
 const N8N_GET_USER_WEBHOOK = process.env.N8N_GET_USER_WEBHOOK;
 
 export const getAirtableId = async (req, res) => {
-  const { email, userId } = req.body ?? {};
-  if (!email && !userId) {
-    return res.status(422).json({ error: 'email or userId is required' });
-  }
+  const user = req.user;
 
   if (!N8N_GET_USER_WEBHOOK) {
-    // Not configured — return null gracefully
-    return res.json({ airtableId: null });
+    return res.json({ airtableId: user.airtableId || null });
   }
 
   const upstream = await fetch(N8N_GET_USER_WEBHOOK, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, userId }),
+    body: JSON.stringify({
+      email: user.email,
+      userId: user.businessUserId || user.id,
+      pbUserId: user.id,
+    }),
     signal: AbortSignal.timeout(10000),
   });
 

@@ -4,7 +4,8 @@ const N8N_WEBHOOK_URL = process.env.N8N_CHAT_WEBHOOK || process.env.N8N_WEBHOOK_
 const N8N_API_KEY = process.env.N8N_CHAT_API_KEY;
 
 export default async (req, res) => {
-	const { message, sessionId, userId, firstName, lastName, email } = req.body ?? {};
+	const { message, sessionId, firstName, lastName, email } = req.body ?? {};
+	const user = req.user;
 
 	if (!message || typeof message !== 'string' || !message.trim()) {
 		return res.status(422).json({ error: 'message is required' });
@@ -13,6 +14,11 @@ export default async (req, res) => {
 	if (!N8N_WEBHOOK_URL) {
 		throw new Error('N8N_WEBHOOK_URL is not set in apps/api/.env');
 	}
+
+	const trustedUserId = user.businessUserId || user.id;
+	const trustedFirstName = user.firstName || firstName || '';
+	const trustedLastName = user.lastName || lastName || '';
+	const trustedEmail = user.email || email || '';
 
 	const upstream = await fetch(N8N_WEBHOOK_URL, {
 		method: 'POST',
@@ -25,11 +31,12 @@ export default async (req, res) => {
 		body: JSON.stringify({
 			message: message.trim(),
 			chatInput: message.trim(),
-			sessionId: sessionId || userId || 'default',
-			userId: userId || '',
-			firstName: firstName || '',
-			lastName: lastName || '',
-			email: email || '',
+			sessionId: sessionId || trustedUserId || 'default',
+			userId: trustedUserId,
+			pbUserId: user.id,
+			firstName: trustedFirstName,
+			lastName: trustedLastName,
+			email: trustedEmail,
 		}),
 	});
 
