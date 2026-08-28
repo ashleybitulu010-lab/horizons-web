@@ -1,15 +1,15 @@
 export function successToolResult(tool, data, meta = {}) {
-	return {
+	return normalizeToolResult({
 		success: true,
 		tool,
 		data,
 		meta,
 		error: null,
-	};
+	});
 }
 
 export function errorToolResult(tool, code, message, meta = {}) {
-	return {
+	return normalizeToolResult({
 		success: false,
 		tool,
 		data: null,
@@ -18,7 +18,36 @@ export function errorToolResult(tool, code, message, meta = {}) {
 			code,
 			message,
 		},
+	});
+}
+
+export function normalizeToolResult(result) {
+	if (!result || typeof result !== 'object') {
+		return result;
+	}
+
+	const success = Boolean(result.success);
+	return {
+		success,
+		tool: result.tool,
+		data: success ? (result.data ?? null) : null,
+		meta: result.meta ?? {},
+		error: success ? null : (result.error ?? {
+			code: 'UNKNOWN_ERROR',
+			message: 'Tool execution failed',
+		}),
 	};
+}
+
+export function assertToolResultShape(result) {
+	const normalized = normalizeToolResult(result);
+	if (typeof normalized.success !== 'boolean') throw new Error('ToolResult.success must be boolean');
+	if (typeof normalized.tool !== 'string') throw new Error('ToolResult.tool must be string');
+	if (normalized.success && normalized.data == null) throw new Error('Successful ToolResult requires data');
+	if (!normalized.success && normalized.data !== null) throw new Error('Failed ToolResult must set data to null');
+	if (normalized.success && normalized.error !== null) throw new Error('Successful ToolResult requires error null');
+	if (!normalized.success && !normalized.error) throw new Error('Failed ToolResult requires error object');
+	return normalized;
 }
 
 export function mapServiceError(tool, err) {

@@ -59,6 +59,11 @@ Interface :
 
 Implémentation Phase 2.1 : `Map` en mémoire (TTL 2 h). Remplaçable plus tard par Supabase ou Redis sans réécrire l’agent.
 
+Sémantique TTL :
+- chaque entrée stocke `savedAt` (timestamp de dernière écriture) ;
+- une session expire quand `now - savedAt > ttlMs` (défaut : 2 heures) ;
+- le TTL est réinitialisé à chaque `saveConversationState`.
+
 Structure d’état :
 
 ```json
@@ -208,6 +213,48 @@ Scénarios couverts :
 - Migrer progressivement les workflows n8n tool par tool ;
 - Remplacer le store mémoire par Redis ou Supabase si nécessaire ;
 - Activer les write tools avec confirmation et validation Supabase.
+
+## Phase 2.1 final architecture
+
+```
+Utilisateur
+  ↓
+Frontend
+  ↓
+POST /api/ashy/chat
+  ↓
+Auth / user context (PocketBase → req.user)
+  ↓
+Ashy orchestrator
+  ↓
+Intent resolution (regex Phase 2.1, LLM Phase 3+)
+  ↓
+Tool planner (steps génériques { tool, input, postProcess? })
+  ↓
+Tool registry
+  ↓
+Tool (validation entrée, pas d’identité modèle)
+  ↓
+Service (scope client_id depuis req.user)
+  ↓
+Supabase (source de vérité métier)
+  ↓
+ToolResult { success, tool, data, meta, error }
+  ↓
+Ashy (response formatter)
+  ↓
+Réponse utilisateur
+  ↓
+Conversation store (contexte de compréhension seulement)
+```
+
+Précisions finales :
+
+- **Mémoire conversationnelle** : sert à comprendre (topic, références de période, dernier intent). Ne stocke jamais de totaux financiers.
+- **Supabase** : seule source de vérité pour ventes, dépenses, stock, dettes.
+- **Tools** : interface contrôlée entre Ashy et les services ; identité injectée par le backend.
+- **Phase 3** : ajoutera le resolver LLM, de nouveaux tools read/write, et une migration n8n progressive (tool par tool, sans coupure brutale).
+- **n8n** : reste actif en parallèle via `POST /chat` pendant toute la transition.
 
 ## Fichiers clés
 

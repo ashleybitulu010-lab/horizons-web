@@ -1,14 +1,24 @@
-const DEFAULT_TTL_MS = 2 * 60 * 60 * 1000;
+export const DEFAULT_CONVERSATION_TTL_MS = 2 * 60 * 60 * 1000;
 
 function sessionKey(userId, sessionId) {
 	return `${userId}:${sessionId || 'default'}`;
 }
 
+function isExpired(savedAt, ttlMs, now = Date.now()) {
+	return now - savedAt > ttlMs;
+}
+
 /**
  * In-memory conversation store (Phase 2.1).
  * Replaceable later by Supabase/Redis without changing the agent.
+ *
+ * TTL semantics: each entry stores `savedAt` (last write time).
+ * A session expires when `now - savedAt > ttlMs` (default 2 hours).
  */
-export function createInMemoryConversationStore({ ttlMs = DEFAULT_TTL_MS } = {}) {
+export function createInMemoryConversationStore({
+	ttlMs = DEFAULT_CONVERSATION_TTL_MS,
+	now = () => Date.now(),
+} = {}) {
 	const sessions = new Map();
 
 	return {
@@ -16,7 +26,7 @@ export function createInMemoryConversationStore({ ttlMs = DEFAULT_TTL_MS } = {})
 			const key = sessionKey(userId, sessionId);
 			const existing = sessions.get(key);
 			if (!existing) return null;
-			if (Date.now() - existing.expiresAt > ttlMs) {
+			if (isExpired(existing.savedAt, ttlMs, now())) {
 				sessions.delete(key);
 				return null;
 			}
@@ -27,7 +37,7 @@ export function createInMemoryConversationStore({ ttlMs = DEFAULT_TTL_MS } = {})
 			const key = sessionKey(userId, sessionId);
 			sessions.set(key, {
 				state: structuredClone(state),
-				expiresAt: Date.now(),
+				savedAt: now(),
 			});
 		},
 
@@ -54,3 +64,5 @@ export function setConversationStore(store) {
 export function resetConversationStoreForTests() {
 	activeStore = createInMemoryConversationStore();
 }
+
+export { isExpired };

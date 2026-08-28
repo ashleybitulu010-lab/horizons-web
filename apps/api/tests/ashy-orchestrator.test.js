@@ -175,7 +175,7 @@ test('clearing conversation store does not remove Supabase truth', async () => {
 	assert.equal(getConversationState(USER.id, 'sess-clear').topic, null);
 
 	const afterClear = await agent.run({
-		message: 'Combien ai-je vendu ce mois-ci ?',
+		message: 'Combien ai-je vendu ?',
 		user: USER,
 		sessionId: 'sess-clear',
 		referenceDate: REFERENCE_DATE,
@@ -232,5 +232,12 @@ test('conversation memory never stores financial totals', async () => {
 	const stored = getConversationState(USER.id, 'sess-mem');
 	assert.equal(stored.filters.totalRevenue, undefined);
 	assert.equal(stored.references.totalRevenue, undefined);
+	assert.equal(stored.filters.summary, undefined);
 	assert.ok(stored.references.lastPeriod);
+	assert.ok(Object.keys(stored.references).every((key) => [
+		'lastPeriod',
+		'previousPeriod',
+		'lastProduct',
+		'lastEntity',
+	].includes(key)));
 });

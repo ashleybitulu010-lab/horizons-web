@@ -53,6 +53,13 @@ test('resolves best product intent', () => {
 	assert.equal(resolved.filters.period, 'current_month');
 });
 
+test('resolves generic sales query without prior context', () => {
+	const resolved = resolveIntent('Combien ai-je vendu ?');
+	assert.equal(resolved.intent, 'query_sales');
+	assert.equal(resolved.filters.period, 'current_month');
+	assert.equal(resolved.needsTool, true);
+});
+
 test('switches topic to expenses without sales follow-up', () => {
 	const resolved = resolveIntent('Combien ai-je dépensé ?', {
 		topic: 'sales',

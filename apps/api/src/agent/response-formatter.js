@@ -79,6 +79,10 @@ export function formatUnimplementedTopicReply(toolName) {
 	return `Je peux bientôt consulter ${subject} depuis Supabase. Pour l’instant, seules les ventes sont disponibles.`;
 }
 
+export function formatUnimplementedWriteReply(toolName) {
+	return `Je pourrai bientôt exécuter ${toolName} dans Supabase après validation. Cette action d’écriture n’est pas encore disponible.`;
+}
+
 export function formatCapabilitiesReply() {
 	const readable = listToolDefinitions()
 		.filter((tool) => tool.access === 'read' && tool.implemented)
@@ -93,12 +97,13 @@ const REPLY_FORMATTERS = {
 	compare_sales: formatCompareReply,
 	tool_error: formatToolErrorReply,
 	unimplemented_topic: (_payload, toolName) => formatUnimplementedTopicReply(toolName),
+	unimplemented_write: (_payload, toolName) => formatUnimplementedWriteReply(toolName),
 	unknown: formatCapabilitiesReply,
 };
 
 export function formatAshyReply(responseKind, payload, meta = {}) {
 	const formatter = REPLY_FORMATTERS[responseKind] || REPLY_FORMATTERS.unknown;
-	if (responseKind === 'unimplemented_topic') {
+	if (responseKind === 'unimplemented_topic' || responseKind === 'unimplemented_write') {
 		return formatter(payload, meta.unimplementedTool);
 	}
 	return formatter(payload);

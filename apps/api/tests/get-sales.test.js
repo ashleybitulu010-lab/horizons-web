@@ -90,6 +90,12 @@ test('invalid period returns validation error', async () => {
 	assert.equal(result.error.code, 'INVALID_PERIOD');
 });
 
+test('forbidden businessUserId parameter is rejected', async () => {
+	const result = await runGetSales({ user: USER_A }, { period: 'current_month', businessUserId: 'rec_b' });
+	assert.equal(result.success, false);
+	assert.equal(result.error.code, 'FORBIDDEN_PARAMETER');
+});
+
 test('validateGetSalesInput rejects userId', () => {
 	assert.throws(
 		() => validateGetSalesInput({ userId: 'x' }),

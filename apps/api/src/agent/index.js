@@ -1,9 +1,9 @@
 import { assertAshyContract } from './contract.js';
 import {
+	applyReferenceUpdateFromPlan,
 	getConversationState,
 	mergeConversationState,
 	saveConversationState,
-	updateReferencesAfterSalesQuery,
 } from './conversation-state.js';
 import { conversationPatchFromIntent, resolveIntent } from './intent-resolver.js';
 import { formatAshyReply } from './response-formatter.js';
@@ -33,10 +33,10 @@ export function createAshyAgent() {
 				conversationPatchFromIntent(resolved),
 			);
 
-			if (plan.responseKind === 'unimplemented_topic') {
+			if (plan.responseKind === 'unimplemented_topic' || plan.responseKind === 'unimplemented_write') {
 				saveConversationState(user.id, sessionId, nextState);
 				return {
-					reply: formatAshyReply('unimplemented_topic', null, { unimplementedTool: plan.unimplementedTool }),
+					reply: formatAshyReply(plan.responseKind, null, { unimplementedTool: plan.unimplementedTool }),
 					conversation: sanitizeConversationForClient(nextState),
 					toolResults: [],
 				};
@@ -74,14 +74,8 @@ export function createAshyAgent() {
 				lastTool: plan.steps[plan.steps.length - 1]?.tool || null,
 				lastAction: resolved.intent,
 				filters: resolved.filters || {},
+				references: applyReferenceUpdateFromPlan(plan, nextState, toolResults),
 			};
-
-			if (resolved.topic === 'sales' && plan.steps.length === 1 && toolResults[0]?.success) {
-				statePatch.references = updateReferencesAfterSalesQuery(
-					nextState,
-					toolResults[0].meta?.period || resolved.filters?.period,
-				);
-			}
 
 			saveConversationState(user.id, sessionId, mergeConversationState(nextState, statePatch));
 

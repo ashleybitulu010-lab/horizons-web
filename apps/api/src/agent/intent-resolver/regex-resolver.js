@@ -32,6 +32,12 @@ const EXPENSE_PATTERNS = [
 	/total.*d[eé]penses/i,
 ];
 
+const GENERIC_SALES_PATTERNS = [
+	/combien.*(vendu|ventes)/i,
+	/total.*ventes/i,
+	/chiffre.*affaires/i,
+];
+
 export function resolveIntentRegex(message, conversationState = createFallbackState()) {
 	const text = String(message || '').trim();
 	const lower = text.toLowerCase();
@@ -122,6 +128,17 @@ export function resolveIntentRegex(message, conversationState = createFallbackSt
 		};
 	}
 
+	if (GENERIC_SALES_PATTERNS.some((pattern) => pattern.test(text))) {
+		return {
+			intent: 'query_sales',
+			topic: 'sales',
+			filters: { period: 'current_month' },
+			references: {},
+			needsTool: true,
+			resolver: 'regex',
+		};
+	}
+
 	return {
 		intent: 'unknown',
 		topic: conversationState.topic || null,
@@ -151,24 +168,15 @@ function emptyResolved(conversationState) {
 	};
 }
 
+import { primaryToolForIntent } from '../tool-planner.js';
+
 export function conversationPatchFromIntent(resolved) {
 	return {
 		topic: resolved.topic,
 		intent: resolved.intent,
 		filters: resolved.filters || {},
 		references: resolved.references || {},
-		lastTool: resolved.needsTool ? toolForIntent(resolved.intent) : null,
+		lastTool: resolved.needsTool ? primaryToolForIntent(resolved.intent) : null,
 		lastAction: resolved.intent,
 	};
-}
-
-function toolForIntent(intent) {
-	switch (intent) {
-	case 'query_sales':
-	case 'compare_sales':
-	case 'best_product':
-		return 'get_sales';
-	default:
-		return null;
-	}
 }
