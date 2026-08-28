@@ -1,3 +1,5 @@
+import { listToolDefinitions } from '../tools/registry.js';
+
 const PERIOD_LABELS = {
 	today: 'aujourd’hui',
 	yesterday: 'hier',
@@ -49,32 +51,55 @@ export function formatBestProductReply(toolResult) {
 }
 
 export function formatCompareReply(results) {
-	const [current, previous] = results;
-	if (!current?.success || !previous?.success) {
+	const [first, second] = results;
+	if (!first?.success || !second?.success) {
 		return 'Je n’ai pas pu comparer tes ventes sur les deux périodes demandées.';
 	}
 
-	const currentSummary = current.data.summary;
-	const previousSummary = previous.data.summary;
-	const delta = Number((currentSummary.totalRevenue - previousSummary.totalRevenue).toFixed(2));
+	const firstSummary = first.data.summary;
+	const secondSummary = second.data.summary;
+	const delta = Number((secondSummary.totalRevenue - firstSummary.totalRevenue).toFixed(2));
 	const direction = delta > 0 ? 'augmentation' : delta < 0 ? 'baisse' : 'stagnation';
 
-	return `Comparaison des ventes : ${formatMoney(currentSummary.totalRevenue)} ${PERIOD_LABELS.current_month} contre ${formatMoney(previousSummary.totalRevenue)} ${PERIOD_LABELS.previous_month}. C’est une ${direction} de ${formatMoney(Math.abs(delta))}.`;
+	return `Comparaison des ventes : ${formatMoney(firstSummary.totalRevenue)} ${periodLabel(first.meta)} contre ${formatMoney(secondSummary.totalRevenue)} ${periodLabel(second.meta)}. C’est une ${direction} de ${formatMoney(Math.abs(delta))}.`;
 }
 
-export function formatUnknownReply() {
-	return 'Je peux t’aider sur tes ventes. Par exemple : « Combien ai-je vendu ce mois-ci ? »';
+export function formatToolErrorReply(toolResult) {
+	return toolResult?.error?.message
+		|| 'Je n’ai pas pu récupérer tes données depuis Supabase. Réessaie dans un instant.';
 }
 
-export function formatAshyReply(intent, payload) {
-	switch (intent) {
-	case 'query_sales':
-		return formatSalesQueryReply(payload);
-	case 'best_product':
-		return formatBestProductReply(payload);
-	case 'compare_sales':
-		return formatCompareReply(payload);
-	default:
-		return formatUnknownReply();
+export function formatUnimplementedTopicReply(toolName) {
+	const labels = {
+		get_expenses: 'tes dépenses',
+		get_stock: 'ton stock',
+		get_debts: 'tes dettes',
+	};
+	const subject = labels[toolName] || 'cette information';
+	return `Je peux bientôt consulter ${subject} depuis Supabase. Pour l’instant, seules les ventes sont disponibles.`;
+}
+
+export function formatCapabilitiesReply() {
+	const readable = listToolDefinitions()
+		.filter((tool) => tool.access === 'read' && tool.implemented)
+		.map((tool) => tool.name.replace(/^get_/, ''));
+	const upcoming = ['dépenses', 'stock', 'dettes'];
+	return `Je peux consulter tes ${readable.join(', ')} depuis Supabase. Bientôt aussi : ${upcoming.join(', ')}. Que veux-tu vérifier ?`;
+}
+
+const REPLY_FORMATTERS = {
+	query_sales: formatSalesQueryReply,
+	best_product: formatBestProductReply,
+	compare_sales: formatCompareReply,
+	tool_error: formatToolErrorReply,
+	unimplemented_topic: (_payload, toolName) => formatUnimplementedTopicReply(toolName),
+	unknown: formatCapabilitiesReply,
+};
+
+export function formatAshyReply(responseKind, payload, meta = {}) {
+	const formatter = REPLY_FORMATTERS[responseKind] || REPLY_FORMATTERS.unknown;
+	if (responseKind === 'unimplemented_topic') {
+		return formatter(payload, meta.unimplementedTool);
 	}
+	return formatter(payload);
 }

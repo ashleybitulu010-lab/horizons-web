@@ -1,18 +1,11 @@
 import { getSales } from '../services/sales-service.js';
 import { errorToolResult, mapServiceError, successToolResult } from '../utils/tool-result.js';
+import { assertNoIdentityParams } from './validation.js';
 
 export const GET_SALES_TOOL = 'get_sales';
 
 export function validateGetSalesInput(input = {}) {
-	const forbiddenKeys = ['userId', 'clientId', 'client_id', 'user_id'];
-	for (const key of forbiddenKeys) {
-		if (input[key] != null && input[key] !== '') {
-			const error = new Error(`Forbidden parameter: ${key}`);
-			error.code = 'FORBIDDEN_PARAMETER';
-			throw error;
-		}
-	}
-	return input;
+	return assertNoIdentityParams(input, GET_SALES_TOOL);
 }
 
 export async function runGetSales(context, input = {}, referenceDate = new Date()) {

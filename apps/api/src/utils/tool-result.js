@@ -4,6 +4,7 @@ export function successToolResult(tool, data, meta = {}) {
 		tool,
 		data,
 		meta,
+		error: null,
 	};
 }
 
@@ -11,11 +12,12 @@ export function errorToolResult(tool, code, message, meta = {}) {
 	return {
 		success: false,
 		tool,
+		data: null,
+		meta,
 		error: {
 			code,
 			message,
 		},
-		meta,
 	};
 }
 

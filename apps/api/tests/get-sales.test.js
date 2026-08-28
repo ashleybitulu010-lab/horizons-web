@@ -93,8 +93,19 @@ test('invalid period returns validation error', async () => {
 test('validateGetSalesInput rejects userId', () => {
 	assert.throws(
 		() => validateGetSalesInput({ userId: 'x' }),
-		/Forbidden parameter: userId/,
+		/Forbidden parameter for get_sales: userId/,
 	);
+});
+
+test('error result never exposes data payload', async () => {
+	setSalesQueryImplForTests(async () => {
+		const error = new Error('db down');
+		error.code = 'SUPABASE_QUERY_FAILED';
+		throw error;
+	});
+	const result = await runGetSales({ user: USER_A }, { period: 'current_month' });
+	assert.equal(result.success, false);
+	assert.equal(result.data, null);
 });
 
 test('empty sales returns success with zero count', async () => {

@@ -3,9 +3,11 @@ import {
 	getConversationState,
 	mergeConversationState,
 	saveConversationState,
+	updateReferencesAfterSalesQuery,
 } from './conversation-state.js';
 import { conversationPatchFromIntent, resolveIntent } from './intent-resolver.js';
 import { formatAshyReply } from './response-formatter.js';
+import { planToolExecution } from './tool-planner.js';
 import { createToolExecutionContext } from '../tools/context.js';
 import { executeTool } from '../tools/registry.js';
 
@@ -25,12 +27,22 @@ export function createAshyAgent() {
 
 			const previousState = getConversationState(user.id, sessionId);
 			const resolved = resolveIntent(message, previousState);
+			const plan = planToolExecution(resolved);
 			const nextState = mergeConversationState(
 				previousState,
 				conversationPatchFromIntent(resolved),
 			);
 
-			if (!resolved.needsTool) {
+			if (plan.responseKind === 'unimplemented_topic') {
+				saveConversationState(user.id, sessionId, nextState);
+				return {
+					reply: formatAshyReply('unimplemented_topic', null, { unimplementedTool: plan.unimplementedTool }),
+					conversation: sanitizeConversationForClient(nextState),
+					toolResults: [],
+				};
+			}
+
+			if (plan.steps.length === 0) {
 				saveConversationState(user.id, sessionId, nextState);
 				return {
 					reply: formatAshyReply('unknown'),
@@ -42,42 +54,43 @@ export function createAshyAgent() {
 			const context = createToolExecutionContext({ user });
 			const toolResults = [];
 
-			if (resolved.intent === 'compare_sales') {
-				const [currentPeriod, previousPeriod] = resolved.filters.periods;
-				const current = await executeTool('get_sales', context, { period: currentPeriod }, referenceDate);
-				const previous = await executeTool('get_sales', context, { period: previousPeriod }, referenceDate);
-				toolResults.push(current, previous);
-
-				saveConversationState(user.id, sessionId, mergeConversationState(nextState, {
-					filters: {
-						periods: [currentPeriod, previousPeriod],
-						period: currentPeriod,
-					},
-					lastTool: 'get_sales',
-				}));
-
-				return {
-					reply: formatAshyReply('compare_sales', toolResults),
-					conversation: sanitizeConversationForClient(getConversationState(user.id, sessionId)),
-					toolResults: toolResults.map(sanitizeToolResultForClient),
-				};
+			for (const step of plan.steps) {
+				const result = await executeTool(step.tool, context, step.input, referenceDate);
+				toolResults.push(result);
+				if (!result.success) {
+					saveConversationState(user.id, sessionId, mergeConversationState(nextState, {
+						lastTool: step.tool,
+						lastAction: resolved.intent,
+					}));
+					return {
+						reply: formatAshyReply('tool_error', result),
+						conversation: sanitizeConversationForClient(getConversationState(user.id, sessionId)),
+						toolResults: toolResults.map(sanitizeToolResultForClient),
+					};
+				}
 			}
 
-			const toolInput = {
-				period: resolved.filters.period || 'current_month',
-				...(resolved.filters.product ? { product: resolved.filters.product } : {}),
+			const statePatch = {
+				lastTool: plan.steps[plan.steps.length - 1]?.tool || null,
+				lastAction: resolved.intent,
+				filters: resolved.filters || {},
 			};
 
-			const toolResult = await executeTool('get_sales', context, toolInput, referenceDate);
-			toolResults.push(toolResult);
+			if (resolved.topic === 'sales' && plan.steps.length === 1 && toolResults[0]?.success) {
+				statePatch.references = updateReferencesAfterSalesQuery(
+					nextState,
+					toolResults[0].meta?.period || resolved.filters?.period,
+				);
+			}
 
-			saveConversationState(user.id, sessionId, mergeConversationState(nextState, {
-				filters: toolInput,
-				lastTool: 'get_sales',
-			}));
+			saveConversationState(user.id, sessionId, mergeConversationState(nextState, statePatch));
+
+			const payload = plan.responseKind === 'compare_sales'
+				? toolResults
+				: toolResults[0];
 
 			return {
-				reply: formatAshyReply(resolved.intent, toolResult),
+				reply: formatAshyReply(plan.responseKind, payload),
 				conversation: sanitizeConversationForClient(getConversationState(user.id, sessionId)),
 				toolResults: toolResults.map(sanitizeToolResultForClient),
 			};
@@ -90,7 +103,9 @@ export function sanitizeConversationForClient(state) {
 		topic: state.topic,
 		intent: state.intent,
 		filters: state.filters,
+		references: state.references,
 		lastTool: state.lastTool,
+		lastAction: state.lastAction,
 		updatedAt: state.updatedAt,
 	};
 }

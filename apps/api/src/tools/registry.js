@@ -1,4 +1,4 @@
-import { TOOL_NAMES } from './definitions.js';
+import { TOOL_DEFINITIONS, TOOL_METADATA, TOOL_NAMES } from './definitions.js';
 import { runGetSales } from './get-sales.js';
 
 const IMPLEMENTED = new Set(['get_sales']);
@@ -8,16 +8,14 @@ const executors = {
 	get_sales: runGetSales,
 };
 
-export const TOOL_DEFINITIONS = TOOL_NAMES.map((name) => ({
-	name,
-	description: name === 'get_sales'
-		? 'Read authenticated sales from Supabase ventes table'
-		: `Stub for ${name} — migrate from n8n in a later phase`,
-	access: name.startsWith('get_') || name === 'generate_report' ? 'read' : 'write',
-	implemented: IMPLEMENTED.has(name),
-}));
+const registry = new Map(
+	TOOL_NAMES.map((name) => [name, {
+		...TOOL_METADATA[name],
+		implemented: IMPLEMENTED.has(name),
+	}]),
+);
 
-const registry = new Map(TOOL_DEFINITIONS.map((def) => [def.name, def]));
+export { TOOL_DEFINITIONS, TOOL_NAMES };
 
 export function listToolDefinitions() {
 	return [...registry.values()];
@@ -25,6 +23,11 @@ export function listToolDefinitions() {
 
 export function getToolDefinition(name) {
 	return registry.get(name) || null;
+}
+
+export function isWriteTool(name) {
+	const def = getToolDefinition(name);
+	return def?.access === 'write';
 }
 
 export async function executeTool(name, context, input = {}, referenceDate = new Date()) {

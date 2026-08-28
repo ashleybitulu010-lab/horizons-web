@@ -21,8 +21,15 @@ test('tool registry lists all planned tools with get_sales implemented', () => {
 	for (const name of TOOL_NAMES) {
 		const def = getToolDefinition(name);
 		assert.ok(def);
+		assert.equal(def.sourceOfTruth, 'supabase');
+		assert.ok(def.inputSchema);
 		if (name === 'get_sales') {
 			assert.equal(def.implemented, true);
+			assert.equal(def.mutatesData, false);
+		} else if (name.startsWith('create_') || name.startsWith('update_') || name === 'adjust_stock') {
+			assert.equal(def.implemented, false);
+			assert.equal(def.mutatesData, true);
+			assert.equal(def.requiresConfirmation, true);
 		} else {
 			assert.equal(def.implemented, false);
 		}

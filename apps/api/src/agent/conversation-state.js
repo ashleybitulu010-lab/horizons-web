@@ -1,44 +1,43 @@
-const DEFAULT_TTL_MS = 2 * 60 * 60 * 1000;
-const sessions = new Map();
-
-function sessionKey(userId, sessionId) {
-	return `${userId}:${sessionId || 'default'}`;
-}
+import {
+	getConversationStore,
+	resetConversationStoreForTests,
+} from './conversation-store.js';
 
 export function createEmptyConversationState() {
 	return {
 		topic: null,
 		intent: null,
 		filters: {},
+		references: {
+			lastPeriod: null,
+			previousPeriod: null,
+			lastProduct: null,
+			lastEntity: null,
+		},
 		lastTool: null,
+		lastAction: null,
 		updatedAt: null,
 	};
 }
 
 export function getConversationState(userId, sessionId) {
-	const key = sessionKey(userId, sessionId);
-	const existing = sessions.get(key);
-	if (!existing) return createEmptyConversationState();
-	if (Date.now() - existing.updatedAt > DEFAULT_TTL_MS) {
-		sessions.delete(key);
-		return createEmptyConversationState();
-	}
-	return { ...existing.state };
+	const stored = getConversationStore().getConversationState(userId, sessionId);
+	return stored || createEmptyConversationState();
 }
 
 export function saveConversationState(userId, sessionId, state) {
-	const key = sessionKey(userId, sessionId);
-	sessions.set(key, {
-		state: {
-			...state,
-			updatedAt: new Date().toISOString(),
-		},
-		updatedAt: Date.now(),
+	getConversationStore().saveConversationState(userId, sessionId, {
+		...state,
+		updatedAt: new Date().toISOString(),
 	});
 }
 
+export function clearConversationState(userId, sessionId) {
+	getConversationStore().clearConversationState(userId, sessionId);
+}
+
 export function clearConversationSessionsForTests() {
-	sessions.clear();
+	resetConversationStoreForTests();
 }
 
 export function mergeConversationState(current, patch) {
@@ -49,6 +48,27 @@ export function mergeConversationState(current, patch) {
 			...current.filters,
 			...(patch.filters || {}),
 		},
+		references: {
+			...current.references,
+			...(patch.references || {}),
+		},
 		updatedAt: new Date().toISOString(),
 	};
+}
+
+export function updateReferencesAfterSalesQuery(current, period, product = null) {
+	const references = { ...current.references };
+
+	if (period && references.lastPeriod && references.lastPeriod !== period) {
+		references.previousPeriod = references.lastPeriod;
+	}
+	if (period) {
+		references.lastPeriod = period;
+	}
+	if (product) {
+		references.lastProduct = product;
+	}
+	references.lastEntity = 'sales';
+
+	return references;
 }
