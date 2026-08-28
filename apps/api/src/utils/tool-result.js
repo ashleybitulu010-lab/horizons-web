@@ -61,7 +61,9 @@ export function mapServiceError(tool, err) {
 		return errorToolResult(tool, 'INVALID_DATE_RANGE', err.message);
 	}
 	if (err?.code === 'SUPABASE_QUERY_FAILED') {
-		return errorToolResult(tool, 'SUPABASE_ERROR', 'Unable to retrieve sales data');
+		const resource = tool === 'get_expenses' ? 'expenses' : 'sales';
+		return errorToolResult(tool, 'SUPABASE_ERROR', `Unable to retrieve ${resource} data`);
 	}
-	return errorToolResult(tool, 'INTERNAL_ERROR', 'Unable to complete the sales request');
+	const action = tool === 'get_expenses' ? 'expenses' : 'sales';
+	return errorToolResult(tool, 'INTERNAL_ERROR', `Unable to complete the ${action} request`);
 }

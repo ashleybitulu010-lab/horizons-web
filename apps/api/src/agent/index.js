@@ -79,7 +79,7 @@ export function createAshyAgent() {
 
 			saveConversationState(user.id, sessionId, mergeConversationState(nextState, statePatch));
 
-			const payload = plan.responseKind === 'compare_sales'
+			const payload = plan.responseKind === 'compare_sales' || plan.responseKind === 'compare_expenses'
 				? toolResults
 				: toolResults[0];
 

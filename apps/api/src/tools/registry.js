@@ -1,11 +1,13 @@
 import { TOOL_DEFINITIONS, TOOL_METADATA, TOOL_NAMES } from './definitions.js';
+import { runGetExpenses } from './get-expenses.js';
 import { runGetSales } from './get-sales.js';
 
-const IMPLEMENTED = new Set(['get_sales']);
+const IMPLEMENTED = new Set(['get_sales', 'get_expenses']);
 
 /** @type {Record<string, Function>} */
 const executors = {
 	get_sales: runGetSales,
+	get_expenses: runGetExpenses,
 };
 
 const registry = new Map(

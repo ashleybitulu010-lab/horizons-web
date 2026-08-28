@@ -8,6 +8,10 @@ import {
 	getConversationState,
 } from '../src/agent/conversation-state.js';
 import { setSalesQueryImplForTests, resetSalesQueryImplForTests } from '../src/services/sales-service.js';
+import {
+	setExpensesQueryImplForTests,
+	resetExpensesQueryImplForTests,
+} from '../src/services/expenses-service.js';
 
 const USER = {
 	id: 'pb_user',
@@ -49,14 +53,40 @@ function salesForPeriod(period) {
 	return [];
 }
 
+function expensesForPeriod(period) {
+	if (period === 'current_month') {
+		return [{
+			id: '10',
+			client_id: 'client_1',
+			libelle_depense: 'Transport',
+			type_depense: 'Transport',
+			montant_depense: 25,
+			date: '2026-08-10T10:00:00.000Z',
+		}];
+	}
+	if (period === 'previous_month') {
+		return [{
+			id: '11',
+			client_id: 'client_1',
+			libelle_depense: 'Loyer',
+			type_depense: 'Loyer',
+			montant_depense: 15,
+			date: '2026-07-10T10:00:00.000Z',
+		}];
+	}
+	return [];
+}
+
 test.beforeEach(() => {
 	clearConversationSessionsForTests();
 	setSalesQueryImplForTests(async (_clientId, _range, input) => salesForPeriod(input.period));
+	setExpensesQueryImplForTests(async (_clientId, _range, input) => expensesForPeriod(input.period));
 });
 
 test.afterEach(() => {
 	clearConversationSessionsForTests();
 	resetSalesQueryImplForTests();
+	resetExpensesQueryImplForTests();
 });
 
 test('full flow: current month sales question', async () => {
@@ -138,7 +168,7 @@ test('best product question uses sales summary', async () => {
 	assert.equal(result.toolResults.length, 1);
 });
 
-test('expenses question switches topic away from sales', async () => {
+test('expenses question switches topic away from sales and reads Supabase', async () => {
 	const agent = createAshyAgent();
 
 	await agent.run({
@@ -156,9 +186,130 @@ test('expenses question switches topic away from sales', async () => {
 	});
 
 	assert.equal(expenses.conversation.topic, 'expenses');
-	assert.equal(expenses.toolResults.length, 0);
-	assert.match(expenses.reply, /dépenses/i);
+	assert.equal(expenses.toolResults.length, 1);
+	assert.equal(expenses.toolResults[0].tool, 'get_expenses');
+	assert.match(expenses.reply, /25/);
 	assert.doesNotMatch(expenses.reply, /30/);
+});
+
+test('expenses current month natural question', async () => {
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Quel est le total de mes dépenses ce mois-ci ?',
+		user: USER,
+		sessionId: 'sess-exp-current',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].tool, 'get_expenses');
+	assert.match(result.reply, /25/);
+});
+
+test('expenses follow-up previous month triggers new read', async () => {
+	const agent = createAshyAgent();
+
+	await agent.run({
+		message: 'Combien ai-je dépensé ce mois-ci ?',
+		user: USER,
+		sessionId: 'sess-exp-follow',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	const second = await agent.run({
+		message: 'Et le mois dernier ?',
+		user: USER,
+		sessionId: 'sess-exp-follow',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(second.toolResults[0].tool, 'get_expenses');
+	assert.match(second.reply, /15/);
+});
+
+test('expenses compare uses two fresh tool reads', async () => {
+	const agent = createAshyAgent();
+
+	await agent.run({
+		message: 'Combien ai-je dépensé ce mois-ci ?',
+		user: USER,
+		sessionId: 'sess-exp-compare',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	await agent.run({
+		message: 'Et le mois dernier ?',
+		user: USER,
+		sessionId: 'sess-exp-compare',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	const compare = await agent.run({
+		message: 'Compare les deux.',
+		user: USER,
+		sessionId: 'sess-exp-compare',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(compare.toolResults.length, 2);
+	assert.equal(compare.toolResults[0].tool, 'get_expenses');
+	assert.match(compare.reply, /25/);
+	assert.match(compare.reply, /15/);
+});
+
+test('domain switch expenses to sales', async () => {
+	const agent = createAshyAgent();
+
+	await agent.run({
+		message: 'Combien ai-je dépensé ce mois-ci ?',
+		user: USER,
+		sessionId: 'sess-switch',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	const sales = await agent.run({
+		message: 'Combien ai-je vendu ?',
+		user: USER,
+		sessionId: 'sess-switch',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(sales.conversation.topic, 'sales');
+	assert.equal(sales.toolResults[0].tool, 'get_sales');
+	assert.match(sales.reply, /30/);
+});
+
+test('expenses supabase failure never returns success reply', async () => {
+	setExpensesQueryImplForTests(async () => {
+		const error = new Error('db down');
+		error.code = 'SUPABASE_QUERY_FAILED';
+		throw error;
+	});
+
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Combien ai-je dépensé ce mois-ci ?',
+		user: USER,
+		sessionId: 'sess-exp-err',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].success, false);
+	assert.match(result.reply, /expenses/i);
+	assert.doesNotMatch(result.reply, /25/);
+});
+
+test('empty expenses does not invent totals', async () => {
+	setExpensesQueryImplForTests(async () => []);
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Combien ai-je dépensé ce mois-ci ?',
+		user: USER,
+		sessionId: 'sess-exp-empty',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.match(result.reply, /aucune dépense/i);
+	assert.equal(result.toolResults[0].summary.count, 0);
 });
 
 test('clearing conversation store does not remove Supabase truth', async () => {

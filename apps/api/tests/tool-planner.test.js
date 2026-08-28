@@ -42,6 +42,30 @@ test('best_product keeps postProcess metadata on the step', () => {
 	assert.equal(plan.responseKind, 'best_product');
 });
 
+test('query_expenses produces a generic read step', () => {
+	const plan = planToolExecution({
+		intent: 'query_expenses',
+		topic: 'expenses',
+		filters: { period: 'current_month' },
+	});
+	assert.equal(plan.steps.length, 1);
+	assert.equal(plan.steps[0].tool, 'get_expenses');
+	assert.deepEqual(plan.steps[0].input, { period: 'current_month' });
+	assert.equal(plan.responseKind, 'query_expenses');
+	assert.equal(plan.referenceUpdate.entity, 'expenses');
+});
+
+test('compare_expenses produces one step per period', () => {
+	const plan = planToolExecution({
+		intent: 'compare_expenses',
+		topic: 'expenses',
+		filters: { periods: ['previous_month', 'current_month'] },
+	});
+	assert.equal(plan.steps.length, 2);
+	assert.deepEqual(plan.steps.map((step) => step.tool), ['get_expenses', 'get_expenses']);
+	assert.equal(plan.responseKind, 'compare_expenses');
+});
+
 test('future read intents return unimplemented plans without steps', () => {
 	for (const intent of Object.keys(PLANNED_READ_TOOLS)) {
 		const plan = planToolExecution({ intent, topic: intent.replace('query_', ''), filters: {} });
@@ -62,5 +86,6 @@ test('future write intents return unimplemented write plans', () => {
 test('primaryToolForIntent maps intents to tool names', () => {
 	assert.equal(primaryToolForIntent('query_sales'), 'get_sales');
 	assert.equal(primaryToolForIntent('query_expenses'), 'get_expenses');
+	assert.equal(primaryToolForIntent('compare_expenses'), 'get_expenses');
 	assert.equal(primaryToolForIntent('create_sale'), 'create_sale');
 });

@@ -165,7 +165,9 @@ Métadonnées explicites dans `tools/definitions.js` :
 | `sourceOfTruth` | `supabase` | `supabase` |
 | `inputSchema` | JSON Schema | JSON Schema |
 
-Tools planifiés : `get_sales` (implémenté), `get_expenses`, `get_stock`, `get_products`, `get_debts`, `create_sale`, `create_expense`, `update_sale`, `update_expense`, `adjust_stock`, `generate_report`.
+Tools planifiés : `get_sales` et `get_expenses` (implémentés), `get_stock`, `get_products`, `get_debts`, `create_sale`, `create_expense`, `update_sale`, `update_expense`, `adjust_stock`, `generate_report`.
+
+Documentation détaillée de `get_expenses` : `ashy-get-expenses.md`.
 
 ## READ vs WRITE
 

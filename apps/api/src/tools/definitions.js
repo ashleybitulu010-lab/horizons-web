@@ -41,13 +41,23 @@ export const TOOL_METADATA = {
 	},
 	get_expenses: {
 		name: 'get_expenses',
-		description: 'Read authenticated expenses from Supabase',
+		description: 'Read authenticated expenses from Supabase public.depenses',
 		access: 'read',
-		implemented: false,
+		implemented: true,
 		requiresConfirmation: false,
 		mutatesData: false,
 		sourceOfTruth: 'supabase',
-		inputSchema: BASE_SCHEMA,
+		inputSchema: {
+			...BASE_SCHEMA,
+			properties: {
+				period: { type: 'string' },
+				startDate: { type: 'string' },
+				endDate: { type: 'string' },
+				category: { type: 'string' },
+				limit: { type: 'number' },
+				order: { type: 'string', enum: ['date_desc', 'date_asc'] },
+			},
+		},
 	},
 	get_stock: {
 		name: 'get_stock',

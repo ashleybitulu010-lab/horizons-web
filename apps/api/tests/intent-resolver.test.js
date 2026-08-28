@@ -68,5 +68,43 @@ test('switches topic to expenses without sales follow-up', () => {
 	});
 	assert.equal(resolved.intent, 'query_expenses');
 	assert.equal(resolved.topic, 'expenses');
-	assert.equal(resolved.needsTool, false);
+	assert.equal(resolved.needsTool, true);
+	assert.equal(resolved.filters.period, 'current_month');
+});
+
+test('resolves expense current month query', () => {
+	const resolved = resolveIntent('Combien ai-je dépensé ce mois-ci ?');
+	assert.equal(resolved.intent, 'query_expenses');
+	assert.equal(resolved.filters.period, 'current_month');
+	assert.equal(resolved.needsTool, true);
+});
+
+test('resolves expense previous month follow-up from topic', () => {
+	const resolved = resolveIntent('Et le mois dernier ?', {
+		topic: 'expenses',
+		references: { lastPeriod: 'current_month' },
+	});
+	assert.equal(resolved.intent, 'query_expenses');
+	assert.equal(resolved.filters.period, 'previous_month');
+});
+
+test('resolves compare expenses from topic', () => {
+	const resolved = resolveIntent('Compare les deux.', {
+		topic: 'expenses',
+		references: {
+			lastPeriod: 'previous_month',
+			previousPeriod: 'current_month',
+		},
+	});
+	assert.equal(resolved.intent, 'compare_expenses');
+	assert.deepEqual(resolved.filters.periods, ['current_month', 'previous_month']);
+});
+
+test('switches from expenses topic to sales query', () => {
+	const resolved = resolveIntent('Combien ai-je vendu ?', {
+		topic: 'expenses',
+		references: { lastPeriod: 'current_month' },
+	});
+	assert.equal(resolved.intent, 'query_sales');
+	assert.equal(resolved.topic, 'sales');
 });

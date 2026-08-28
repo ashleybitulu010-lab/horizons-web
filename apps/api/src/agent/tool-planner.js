@@ -4,7 +4,6 @@
  */
 
 export const PLANNED_READ_TOOLS = Object.freeze({
-	query_expenses: 'get_expenses',
 	query_stock: 'get_stock',
 	query_products: 'get_products',
 	query_debts: 'get_debts',
@@ -56,17 +55,33 @@ function periodReferenceUpdate(entity) {
 	return { type: 'period', entity };
 }
 
+function buildPeriodReadInput(resolved, extra = {}) {
+	return {
+		period: resolved.filters?.period || 'current_month',
+		...extra,
+	};
+}
+
 export function planToolExecution(resolved) {
 	const intent = resolved?.intent;
 
 	if (intent === 'query_sales') {
 		return createReadPlan({
-			steps: [createStep('get_sales', {
-				period: resolved.filters?.period || 'current_month',
+			steps: [createStep('get_sales', buildPeriodReadInput(resolved, {
 				...(resolved.filters?.product ? { product: resolved.filters.product } : {}),
-			})],
+			}))],
 			responseKind: 'query_sales',
 			referenceUpdate: periodReferenceUpdate(resolved.topic || 'sales'),
+		});
+	}
+
+	if (intent === 'query_expenses') {
+		return createReadPlan({
+			steps: [createStep('get_expenses', buildPeriodReadInput(resolved, {
+				...(resolved.filters?.category ? { category: resolved.filters.category } : {}),
+			}))],
+			responseKind: 'query_expenses',
+			referenceUpdate: periodReferenceUpdate(resolved.topic || 'expenses'),
 		});
 	}
 
@@ -78,18 +93,20 @@ export function planToolExecution(resolved) {
 		});
 	}
 
-	if (intent === 'best_product') {
+	if (intent === 'compare_expenses') {
+		const periods = resolved.filters?.periods || ['current_month', 'previous_month'];
 		return createReadPlan({
-			steps: [createStep('get_sales', {
-				period: resolved.filters?.period || 'current_month',
-			}, 'best_product')],
-			responseKind: 'best_product',
-			referenceUpdate: periodReferenceUpdate(resolved.topic || 'sales'),
+			steps: periods.map((period) => createStep('get_expenses', { period })),
+			responseKind: 'compare_expenses',
 		});
 	}
 
-	if (intent === 'query_expenses') {
-		return createUnimplementedPlan(PLANNED_READ_TOOLS.query_expenses);
+	if (intent === 'best_product') {
+		return createReadPlan({
+			steps: [createStep('get_sales', buildPeriodReadInput(resolved), 'best_product')],
+			responseKind: 'best_product',
+			referenceUpdate: periodReferenceUpdate(resolved.topic || 'sales'),
+		});
 	}
 
 	if (PLANNED_READ_TOOLS[intent]) {
@@ -106,6 +123,9 @@ export function planToolExecution(resolved) {
 export function primaryToolForIntent(intent) {
 	if (intent === 'query_sales' || intent === 'compare_sales' || intent === 'best_product') {
 		return 'get_sales';
+	}
+	if (intent === 'query_expenses' || intent === 'compare_expenses') {
+		return 'get_expenses';
 	}
 	return PLANNED_READ_TOOLS[intent] || PLANNED_WRITE_TOOLS[intent] || null;
 }

@@ -64,6 +64,35 @@ export function formatCompareReply(results) {
 	return `Comparaison des ventes : ${formatMoney(firstSummary.totalRevenue)} ${periodLabel(first.meta)} contre ${formatMoney(secondSummary.totalRevenue)} ${periodLabel(second.meta)}. C’est une ${direction} de ${formatMoney(Math.abs(delta))}.`;
 }
 
+export function formatExpensesQueryReply(toolResult) {
+	if (!toolResult.success) {
+		return toolResult.error?.message || 'Je n’ai pas pu récupérer tes dépenses.';
+	}
+
+	const summary = toolResult.data.summary;
+	const label = periodLabel(toolResult.meta);
+
+	if (!summary.count) {
+		return `Je n’ai trouvé aucune dépense ${label}.`;
+	}
+
+	return `Sur ${label}, tu as enregistré ${summary.count} dépense${summary.count > 1 ? 's' : ''} pour un total de ${formatMoney(summary.totalAmount)}.`;
+}
+
+export function formatCompareExpensesReply(results) {
+	const [first, second] = results;
+	if (!first?.success || !second?.success) {
+		return 'Je n’ai pas pu comparer tes dépenses sur les deux périodes demandées.';
+	}
+
+	const firstSummary = first.data.summary;
+	const secondSummary = second.data.summary;
+	const delta = Number((secondSummary.totalAmount - firstSummary.totalAmount).toFixed(2));
+	const direction = delta > 0 ? 'augmentation' : delta < 0 ? 'baisse' : 'stagnation';
+
+	return `Comparaison des dépenses : ${formatMoney(firstSummary.totalAmount)} ${periodLabel(first.meta)} contre ${formatMoney(secondSummary.totalAmount)} ${periodLabel(second.meta)}. C’est une ${direction} de ${formatMoney(Math.abs(delta))}.`;
+}
+
 export function formatToolErrorReply(toolResult) {
 	return toolResult?.error?.message
 		|| 'Je n’ai pas pu récupérer tes données depuis Supabase. Réessaie dans un instant.';
@@ -71,12 +100,11 @@ export function formatToolErrorReply(toolResult) {
 
 export function formatUnimplementedTopicReply(toolName) {
 	const labels = {
-		get_expenses: 'tes dépenses',
 		get_stock: 'ton stock',
 		get_debts: 'tes dettes',
 	};
 	const subject = labels[toolName] || 'cette information';
-	return `Je peux bientôt consulter ${subject} depuis Supabase. Pour l’instant, seules les ventes sont disponibles.`;
+	return `Je peux bientôt consulter ${subject} depuis Supabase. Pour l’instant, seules les ventes et les dépenses sont disponibles.`;
 }
 
 export function formatUnimplementedWriteReply(toolName) {
@@ -87,14 +115,16 @@ export function formatCapabilitiesReply() {
 	const readable = listToolDefinitions()
 		.filter((tool) => tool.access === 'read' && tool.implemented)
 		.map((tool) => tool.name.replace(/^get_/, ''));
-	const upcoming = ['dépenses', 'stock', 'dettes'];
+	const upcoming = ['stock', 'dettes'];
 	return `Je peux consulter tes ${readable.join(', ')} depuis Supabase. Bientôt aussi : ${upcoming.join(', ')}. Que veux-tu vérifier ?`;
 }
 
 const REPLY_FORMATTERS = {
 	query_sales: formatSalesQueryReply,
+	query_expenses: formatExpensesQueryReply,
 	best_product: formatBestProductReply,
 	compare_sales: formatCompareReply,
+	compare_expenses: formatCompareExpensesReply,
 	tool_error: formatToolErrorReply,
 	unimplemented_topic: (_payload, toolName) => formatUnimplementedTopicReply(toolName),
 	unimplemented_write: (_payload, toolName) => formatUnimplementedWriteReply(toolName),
