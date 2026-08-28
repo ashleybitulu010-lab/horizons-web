@@ -13,6 +13,7 @@ export function getEnv() {
 		supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
 		ashInternalHealthKey: process.env.ASH_INTERNAL_HEALTH_KEY || '',
 		n8nChatWebhook: process.env.N8N_CHAT_WEBHOOK || process.env.N8N_WEBHOOK_URL || '',
+		ledgerTimezone: process.env.ASH_LEDGER_TIMEZONE || 'Africa/Kinshasa',
 	};
 }
 

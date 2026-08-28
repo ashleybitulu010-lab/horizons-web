@@ -5,7 +5,7 @@ import { getEnv, isSupabaseConfigured, publicConfigSnapshot } from '../src/confi
 import { TOOL_NAMES } from '../src/tools/definitions.js';
 import { getToolDefinition, listToolDefinitions } from '../src/tools/registry.js';
 import { assertAshyContract } from '../src/agent/contract.js';
-import { createAshyAgentStub } from '../src/agent/index.js';
+import { createAshyAgent } from '../src/agent/index.js';
 
 test('publicConfigSnapshot never exposes secret fields', () => {
 	const snapshot = publicConfigSnapshot(getEnv());
@@ -15,13 +15,17 @@ test('publicConfigSnapshot never exposes secret fields', () => {
 	assert.equal(typeof snapshot.supabaseConfigured, 'boolean');
 });
 
-test('tool registry lists all planned stubs', () => {
+test('tool registry lists all planned tools with get_sales implemented', () => {
 	const tools = listToolDefinitions();
 	assert.equal(tools.length, TOOL_NAMES.length);
 	for (const name of TOOL_NAMES) {
 		const def = getToolDefinition(name);
 		assert.ok(def);
-		assert.equal(def.implemented, false);
+		if (name === 'get_sales') {
+			assert.equal(def.implemented, true);
+		} else {
+			assert.equal(def.implemented, false);
+		}
 	}
 });
 
@@ -32,10 +36,10 @@ test('Ashy contract enforces Supabase truth rules', () => {
 	assert.equal(contract.writesRequireSupabaseConfirmation, true);
 });
 
-test('Ashy agent stub exposes tools but does not run yet', () => {
-	const agent = createAshyAgentStub();
-	assert.ok(agent.availableTools.includes('get_sales'));
-	assert.rejects(() => agent.run(), /not implemented/i);
+test('Ashy agent exposes implemented tools', () => {
+	const agent = createAshyAgent();
+	assert.equal(typeof agent.run, 'function');
+	assert.equal(agent.contract.supabaseIsBusinessTruth, true);
 });
 
 test('isSupabaseConfigured requires url and service role key', () => {
@@ -47,6 +51,7 @@ test('isSupabaseConfigured requires url and service role key', () => {
 		supabaseServiceRoleKey: '',
 		ashInternalHealthKey: '',
 		n8nChatWebhook: '',
+		ledgerTimezone: 'Africa/Kinshasa',
 	}), false);
 
 	assert.equal(isSupabaseConfigured({
@@ -57,5 +62,6 @@ test('isSupabaseConfigured requires url and service role key', () => {
 		supabaseServiceRoleKey: 'secret-key',
 		ashInternalHealthKey: '',
 		n8nChatWebhook: '',
+		ledgerTimezone: 'Africa/Kinshasa',
 	}), true);
 });
