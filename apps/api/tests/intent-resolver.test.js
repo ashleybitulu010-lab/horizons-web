@@ -108,3 +108,40 @@ test('switches from expenses topic to sales query', () => {
 	assert.equal(resolved.intent, 'query_sales');
 	assert.equal(resolved.topic, 'sales');
 });
+
+test('resolves generic stock query', () => {
+	const resolved = resolveIntent('Quel est mon stock ?');
+	assert.equal(resolved.intent, 'query_stock');
+	assert.equal(resolved.topic, 'stock');
+	assert.equal(resolved.needsTool, true);
+});
+
+test('resolves stock product filter', () => {
+	const resolved = resolveIntent('Combien me reste-t-il de cahiers ?');
+	assert.equal(resolved.intent, 'query_stock');
+	assert.equal(resolved.filters.product, 'cahiers');
+});
+
+test('resolves low stock query', () => {
+	const resolved = resolveIntent('Quels produits sont presque épuisés ?');
+	assert.equal(resolved.intent, 'query_stock');
+	assert.equal(resolved.filters.lowStockOnly, true);
+});
+
+test('switches from stock topic to sales query', () => {
+	const resolved = resolveIntent('Combien ai-je vendu ?', {
+		topic: 'stock',
+		references: { lastProduct: 'Cahiers' },
+	});
+	assert.equal(resolved.intent, 'query_sales');
+	assert.equal(resolved.topic, 'sales');
+});
+
+test('follow-up stock after expenses uses stock tool intent', () => {
+	const resolved = resolveIntent('Et mon stock ?', {
+		topic: 'expenses',
+		references: { lastPeriod: 'current_month' },
+	});
+	assert.equal(resolved.intent, 'query_stock');
+	assert.equal(resolved.topic, 'stock');
+});

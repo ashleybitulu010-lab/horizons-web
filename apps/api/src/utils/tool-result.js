@@ -50,6 +50,15 @@ export function assertToolResultShape(result) {
 	return normalized;
 }
 
+const TOOL_RESOURCE_LABELS = Object.freeze({
+	get_sales: 'sales',
+	get_expenses: 'expenses',
+	get_stock: 'stock',
+});
+
+function resourceLabel(tool) {
+	return TOOL_RESOURCE_LABELS[tool] || 'data';
+}
 export function mapServiceError(tool, err) {
 	if (err?.code === 'SUPABASE_CLIENT_SCOPE_MISSING') {
 		return errorToolResult(tool, 'CLIENT_SCOPE_MISSING', 'No Supabase client scope is available for this user');
@@ -61,9 +70,7 @@ export function mapServiceError(tool, err) {
 		return errorToolResult(tool, 'INVALID_DATE_RANGE', err.message);
 	}
 	if (err?.code === 'SUPABASE_QUERY_FAILED') {
-		const resource = tool === 'get_expenses' ? 'expenses' : 'sales';
-		return errorToolResult(tool, 'SUPABASE_ERROR', `Unable to retrieve ${resource} data`);
+		return errorToolResult(tool, 'SUPABASE_ERROR', `Unable to retrieve ${resourceLabel(tool)} data`);
 	}
-	const action = tool === 'get_expenses' ? 'expenses' : 'sales';
-	return errorToolResult(tool, 'INTERNAL_ERROR', `Unable to complete the ${action} request`);
+	return errorToolResult(tool, 'INTERNAL_ERROR', `Unable to complete the ${resourceLabel(tool)} request`);
 }

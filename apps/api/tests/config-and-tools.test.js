@@ -23,7 +23,7 @@ test('tool registry lists all planned tools with get_sales implemented', () => {
 		assert.ok(def);
 		assert.equal(def.sourceOfTruth, 'supabase');
 		assert.ok(def.inputSchema);
-		if (name === 'get_sales' || name === 'get_expenses') {
+		if (name === 'get_sales' || name === 'get_expenses' || name === 'get_stock') {
 			assert.equal(def.implemented, true);
 			assert.equal(def.mutatesData, false);
 		} else if (name.startsWith('create_') || name.startsWith('update_') || name === 'adjust_stock') {

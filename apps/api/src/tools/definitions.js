@@ -61,13 +61,20 @@ export const TOOL_METADATA = {
 	},
 	get_stock: {
 		name: 'get_stock',
-		description: 'Read authenticated stock levels from Supabase',
+		description: 'Read authenticated stock levels from Supabase public.stocks',
 		access: 'read',
-		implemented: false,
+		implemented: true,
 		requiresConfirmation: false,
 		mutatesData: false,
 		sourceOfTruth: 'supabase',
-		inputSchema: BASE_SCHEMA,
+		inputSchema: {
+			...BASE_SCHEMA,
+			properties: {
+				product: { type: 'string' },
+				lowStockOnly: { type: 'boolean' },
+				limit: { type: 'number' },
+			},
+		},
 	},
 	get_products: {
 		name: 'get_products',

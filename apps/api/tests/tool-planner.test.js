@@ -55,6 +55,28 @@ test('query_expenses produces a generic read step', () => {
 	assert.equal(plan.referenceUpdate.entity, 'expenses');
 });
 
+test('query_stock produces a generic read step', () => {
+	const plan = planToolExecution({
+		intent: 'query_stock',
+		topic: 'stock',
+		filters: { product: 'Cahiers' },
+	});
+	assert.equal(plan.steps.length, 1);
+	assert.equal(plan.steps[0].tool, 'get_stock');
+	assert.deepEqual(plan.steps[0].input, { product: 'Cahiers' });
+	assert.equal(plan.responseKind, 'query_stock');
+});
+
+test('query_stock lowStockOnly uses low_stock response kind', () => {
+	const plan = planToolExecution({
+		intent: 'query_stock',
+		topic: 'stock',
+		filters: { lowStockOnly: true },
+	});
+	assert.equal(plan.steps[0].input.lowStockOnly, true);
+	assert.equal(plan.responseKind, 'low_stock');
+});
+
 test('compare_expenses produces one step per period', () => {
 	const plan = planToolExecution({
 		intent: 'compare_expenses',
@@ -86,6 +108,7 @@ test('future write intents return unimplemented write plans', () => {
 test('primaryToolForIntent maps intents to tool names', () => {
 	assert.equal(primaryToolForIntent('query_sales'), 'get_sales');
 	assert.equal(primaryToolForIntent('query_expenses'), 'get_expenses');
+	assert.equal(primaryToolForIntent('query_stock'), 'get_stock');
 	assert.equal(primaryToolForIntent('compare_expenses'), 'get_expenses');
 	assert.equal(primaryToolForIntent('create_sale'), 'create_sale');
 });

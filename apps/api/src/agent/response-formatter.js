@@ -93,6 +93,48 @@ export function formatCompareExpensesReply(results) {
 	return `Comparaison des dépenses : ${formatMoney(firstSummary.totalAmount)} ${periodLabel(first.meta)} contre ${formatMoney(secondSummary.totalAmount)} ${periodLabel(second.meta)}. C’est une ${direction} de ${formatMoney(Math.abs(delta))}.`;
 }
 
+export function formatStockQueryReply(toolResult) {
+	if (!toolResult.success) {
+		return toolResult.error?.message || 'Je n’ai pas pu récupérer ton stock.';
+	}
+
+	const summary = toolResult.data.summary;
+	const product = toolResult.meta?.product;
+
+	if (product) {
+		const match = summary.items.find((item) => item.name.toLowerCase().includes(product.toLowerCase()));
+		if (!match) {
+			return `Je n’ai trouvé aucun stock pour « ${product} ».`;
+		}
+		return `Il te reste ${match.quantity} ${match.name}${match.quantity > 1 ? '' : ''} en stock.`;
+	}
+
+	if (!summary.count) {
+		return 'Je n’ai trouvé aucun stock enregistré pour ton activité.';
+	}
+
+	return `Tu as ${summary.count} produit${summary.count > 1 ? 's' : ''} en stock pour un total de ${summary.totalQuantity} unité${summary.totalQuantity > 1 ? 's' : ''}.`;
+}
+
+export function formatLowStockReply(toolResult) {
+	if (!toolResult.success) {
+		return toolResult.error?.message || 'Je n’ai pas pu analyser ton stock.';
+	}
+
+	const summary = toolResult.data.summary;
+	if (!summary.lowStockCount) {
+		return 'Aucun produit n’est presque épuisé selon les seuils enregistrés.';
+	}
+
+	const names = summary.items
+		.filter((item) => item.isLow)
+		.slice(0, 5)
+		.map((item) => `${item.name} (${item.quantity})`)
+		.join(', ');
+
+	return `${summary.lowStockCount} produit${summary.lowStockCount > 1 ? 's' : ''} ${summary.lowStockCount > 1 ? 'sont' : 'est'} presque épuisé${summary.lowStockCount > 1 ? 's' : ''} : ${names}.`;
+}
+
 export function formatToolErrorReply(toolResult) {
 	return toolResult?.error?.message
 		|| 'Je n’ai pas pu récupérer tes données depuis Supabase. Réessaie dans un instant.';
@@ -104,7 +146,7 @@ export function formatUnimplementedTopicReply(toolName) {
 		get_debts: 'tes dettes',
 	};
 	const subject = labels[toolName] || 'cette information';
-	return `Je peux bientôt consulter ${subject} depuis Supabase. Pour l’instant, seules les ventes et les dépenses sont disponibles.`;
+	return `Je peux bientôt consulter ${subject} depuis Supabase. Pour l’instant, les ventes, les dépenses et le stock sont disponibles.`;
 }
 
 export function formatUnimplementedWriteReply(toolName) {
@@ -115,13 +157,15 @@ export function formatCapabilitiesReply() {
 	const readable = listToolDefinitions()
 		.filter((tool) => tool.access === 'read' && tool.implemented)
 		.map((tool) => tool.name.replace(/^get_/, ''));
-	const upcoming = ['stock', 'dettes'];
+	const upcoming = ['dettes'];
 	return `Je peux consulter tes ${readable.join(', ')} depuis Supabase. Bientôt aussi : ${upcoming.join(', ')}. Que veux-tu vérifier ?`;
 }
 
 const REPLY_FORMATTERS = {
 	query_sales: formatSalesQueryReply,
 	query_expenses: formatExpensesQueryReply,
+	query_stock: formatStockQueryReply,
+	low_stock: formatLowStockReply,
 	best_product: formatBestProductReply,
 	compare_sales: formatCompareReply,
 	compare_expenses: formatCompareExpensesReply,

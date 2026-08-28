@@ -12,6 +12,10 @@ import {
 	setExpensesQueryImplForTests,
 	resetExpensesQueryImplForTests,
 } from '../src/services/expenses-service.js';
+import {
+	setStockQueryImplForTests,
+	resetStockQueryImplForTests,
+} from '../src/services/stock-service.js';
 
 const USER = {
 	id: 'pb_user',
@@ -77,16 +81,36 @@ function expensesForPeriod(period) {
 	return [];
 }
 
+function stockRows() {
+	return [{
+		numero: 1,
+		client_id: 'client_1',
+		produit_id: 'prod-1',
+		nom_article: 'Cahiers',
+		stock_actuel: 12,
+		seuil_alerte: 5,
+	}, {
+		numero: 2,
+		client_id: 'client_1',
+		produit_id: 'prod-2',
+		nom_article: 'Stylos',
+		stock_actuel: 2,
+		seuil_alerte: 5,
+	}];
+}
+
 test.beforeEach(() => {
 	clearConversationSessionsForTests();
 	setSalesQueryImplForTests(async (_clientId, _range, input) => salesForPeriod(input.period));
 	setExpensesQueryImplForTests(async (_clientId, _range, input) => expensesForPeriod(input.period));
+	setStockQueryImplForTests(async () => ({ stocks: stockRows(), products: [] }));
 });
 
 test.afterEach(() => {
 	clearConversationSessionsForTests();
 	resetSalesQueryImplForTests();
 	resetExpensesQueryImplForTests();
+	resetStockQueryImplForTests();
 });
 
 test('full flow: current month sales question', async () => {
@@ -391,4 +415,107 @@ test('conversation memory never stores financial totals', async () => {
 		'lastProduct',
 		'lastEntity',
 	].includes(key)));
+});
+
+test('stock question executes get_stock from Supabase', async () => {
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Quel est mon stock ?',
+		user: USER,
+		sessionId: 'sess-stock-1',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].tool, 'get_stock');
+	assert.match(result.reply, /14/);
+	assert.equal(result.conversation.topic, 'stock');
+});
+
+test('stock product question filters result', async () => {
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Combien me reste-t-il de cahiers ?',
+		user: USER,
+		sessionId: 'sess-stock-product',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].tool, 'get_stock');
+	assert.match(result.reply, /12/);
+	assert.match(result.reply, /Cahiers/i);
+});
+
+test('follow-up stock after expenses reads Supabase again', async () => {
+	const agent = createAshyAgent();
+
+	await agent.run({
+		message: 'Combien ai-je dépensé ce mois-ci ?',
+		user: USER,
+		sessionId: 'sess-stock-follow',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	const stock = await agent.run({
+		message: 'Et mon stock ?',
+		user: USER,
+		sessionId: 'sess-stock-follow',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(stock.toolResults[0].tool, 'get_stock');
+	assert.match(stock.reply, /14/);
+});
+
+test('domain switch stock to sales', async () => {
+	const agent = createAshyAgent();
+
+	await agent.run({
+		message: 'Quel est mon stock ?',
+		user: USER,
+		sessionId: 'sess-stock-switch',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	const sales = await agent.run({
+		message: 'Combien ai-je vendu ?',
+		user: USER,
+		sessionId: 'sess-stock-switch',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(sales.toolResults[0].tool, 'get_sales');
+	assert.match(sales.reply, /30/);
+});
+
+test('low stock question uses low_stock response', async () => {
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Quels produits sont presque épuisés ?',
+		user: USER,
+		sessionId: 'sess-stock-low',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].tool, 'get_stock');
+	assert.match(result.reply, /Stylos/i);
+});
+
+test('stock supabase failure never returns success reply', async () => {
+	setStockQueryImplForTests(async () => {
+		const error = new Error('db down');
+		error.code = 'SUPABASE_QUERY_FAILED';
+		throw error;
+	});
+
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Quel est mon stock ?',
+		user: USER,
+		sessionId: 'sess-stock-err',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].success, false);
+	assert.match(result.reply, /stock/i);
+	assert.doesNotMatch(result.reply, /14/);
 });

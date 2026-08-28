@@ -4,7 +4,6 @@
  */
 
 export const PLANNED_READ_TOOLS = Object.freeze({
-	query_stock: 'get_stock',
 	query_products: 'get_products',
 	query_debts: 'get_debts',
 	generate_report: 'generate_report',
@@ -62,6 +61,17 @@ function buildPeriodReadInput(resolved, extra = {}) {
 	};
 }
 
+function stockReferenceUpdate() {
+	return { type: 'stock', entity: 'stock' };
+}
+
+function buildStockInput(resolved) {
+	return {
+		...(resolved.filters?.product ? { product: resolved.filters.product } : {}),
+		...(resolved.filters?.lowStockOnly ? { lowStockOnly: true } : {}),
+	};
+}
+
 export function planToolExecution(resolved) {
 	const intent = resolved?.intent;
 
@@ -82,6 +92,14 @@ export function planToolExecution(resolved) {
 			}))],
 			responseKind: 'query_expenses',
 			referenceUpdate: periodReferenceUpdate(resolved.topic || 'expenses'),
+		});
+	}
+
+	if (intent === 'query_stock') {
+		return createReadPlan({
+			steps: [createStep('get_stock', buildStockInput(resolved))],
+			responseKind: resolved.filters?.lowStockOnly ? 'low_stock' : 'query_stock',
+			referenceUpdate: stockReferenceUpdate(),
 		});
 	}
 
@@ -126,6 +144,9 @@ export function primaryToolForIntent(intent) {
 	}
 	if (intent === 'query_expenses' || intent === 'compare_expenses') {
 		return 'get_expenses';
+	}
+	if (intent === 'query_stock') {
+		return 'get_stock';
 	}
 	return PLANNED_READ_TOOLS[intent] || PLANNED_WRITE_TOOLS[intent] || null;
 }

@@ -20,6 +20,14 @@ export const ALLOWED_REFERENCE_KEYS = Object.freeze([
 	'lastEntity',
 ]);
 
+export const ALLOWED_FILTER_KEYS = Object.freeze([
+	'period',
+	'periods',
+	'product',
+	'lowStockOnly',
+]);
+
+
 const FORBIDDEN_FINANCIAL_KEYS = Object.freeze([
 	'totalRevenue',
 	'totalCollected',
@@ -116,6 +124,14 @@ export function updateReferencesAfterPeriodQuery(
 	return references;
 }
 
+export function updateReferencesAfterStockQuery(current, product = null) {
+	const references = { ...current.references, lastEntity: 'stock' };
+	if (product) {
+		references.lastProduct = product;
+	}
+	return references;
+}
+
 export function applyReferenceUpdateFromPlan(plan, currentState, toolResults) {
 	if (!plan?.referenceUpdate || toolResults.length !== 1 || !toolResults[0]?.success) {
 		return currentState.references;
@@ -130,8 +146,41 @@ export function applyReferenceUpdateFromPlan(plan, currentState, toolResults) {
 			entity || null,
 		);
 	}
+	if (type === 'stock') {
+		return updateReferencesAfterStockQuery(
+			currentState,
+			toolResults[0].meta?.product || null,
+		);
+	}
 
 	return currentState.references;
+}
+
+
+function assertFiltersAreContextOnly(filters, path = 'filters') {
+	if (!filters || typeof filters !== 'object') return;
+
+	for (const key of Object.keys(filters)) {
+		if (!ALLOWED_FILTER_KEYS.includes(key)) {
+			const normalized = key.toLowerCase();
+			if (FORBIDDEN_FINANCIAL_KEYS.some((forbidden) => normalized.includes(forbidden.toLowerCase()))) {
+				throw new Error(`Conversation state must not store financial truth at ${path}.${key}`);
+			}
+			throw new Error(`Unexpected conversation filter key: ${key}`);
+		}
+	}
+
+	for (const [key, value] of Object.entries(filters)) {
+		if (value == null) continue;
+		if (key === 'periods') {
+			if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
+				throw new Error(`Conversation filter ${path}.${key} must be a string array`);
+			}
+			continue;
+		}
+		if (typeof value === 'boolean' || typeof value === 'string') continue;
+		throw new Error(`Conversation filter ${path}.${key} must be a primitive context value`);
+	}
 }
 
 function assertNoFinancialKeys(value, path) {
@@ -165,7 +214,7 @@ export function assertConversationStateIsContextOnly(state) {
 		}
 	}
 
-	assertNoFinancialKeys(state.filters, 'filters');
+	assertFiltersAreContextOnly(state.filters);
 	assertNoFinancialKeys(state.references, 'references');
 }
 
