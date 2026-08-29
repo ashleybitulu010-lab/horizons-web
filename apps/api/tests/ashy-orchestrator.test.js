@@ -20,6 +20,10 @@ import {
 	setDebtsQueryImplForTests,
 	resetDebtsQueryImplForTests,
 } from '../src/services/debts-service.js';
+import {
+	setProductsQueryImplForTests,
+	resetProductsQueryImplForTests,
+} from '../src/services/products-service.js';
 
 const USER = {
 	id: 'pb_user',
@@ -116,12 +120,44 @@ function debtsRows() {
 	}];
 }
 
+function productRows() {
+	return [{
+		id: 'prod-1',
+		client_id: 'client_1',
+		nom_produit: 'Savon',
+		categorie: 'Hygiène',
+		prix_achat_unitaire: 500,
+		prix_vente_unitaire: 800,
+		created_at: '2026-08-01T10:00:00.000Z',
+	}, {
+		id: 'prod-2',
+		client_id: 'client_1',
+		nom_produit: 'Cahiers',
+		categorie: 'Fournitures',
+		prix_achat_unitaire: 200,
+		prix_vente_unitaire: 350,
+		created_at: '2026-08-02T10:00:00.000Z',
+	}];
+}
+
 test.beforeEach(() => {
 	clearConversationSessionsForTests();
 	setSalesQueryImplForTests(async (_clientId, _range, input) => salesForPeriod(input.period));
 	setExpensesQueryImplForTests(async (_clientId, _range, input) => expensesForPeriod(input.period));
 	setStockQueryImplForTests(async () => ({ stocks: stockRows(), products: [] }));
 	setDebtsQueryImplForTests(async () => debtsRows());
+	setProductsQueryImplForTests(async (_clientId, input) => {
+		let rows = productRows();
+		if (input.product) {
+			const needle = input.product.toLowerCase();
+			rows = rows.filter((row) => String(row.nom_produit).toLowerCase().includes(needle));
+		}
+		if (input.category) {
+			const needle = input.category.toLowerCase();
+			rows = rows.filter((row) => String(row.categorie || '').toLowerCase().includes(needle));
+		}
+		return rows;
+	});
 });
 
 test.afterEach(() => {
@@ -130,6 +166,7 @@ test.afterEach(() => {
 	resetExpensesQueryImplForTests();
 	resetStockQueryImplForTests();
 	resetDebtsQueryImplForTests();
+	resetProductsQueryImplForTests();
 });
 
 test('full flow: current month sales question', async () => {
@@ -631,4 +668,105 @@ test('debts supabase failure never returns success reply', async () => {
 	assert.equal(result.toolResults[0].success, false);
 	assert.match(result.reply, /debts|dette|récupérer/i);
 	assert.doesNotMatch(result.reply, /40/);
+});
+
+test('products question executes get_products from Supabase', async () => {
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Quels sont mes produits ?',
+		user: USER,
+		sessionId: 'sess-products-1',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].tool, 'get_products');
+	assert.match(result.reply, /Savon/i);
+	assert.match(result.reply, /800/);
+	assert.equal(result.conversation.topic, 'products');
+});
+
+test('products search filters catalogue result', async () => {
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Mes produits savon',
+		user: USER,
+		sessionId: 'sess-products-search',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].tool, 'get_products');
+	assert.match(result.reply, /Savon/i);
+	assert.doesNotMatch(result.reply, /Cahiers/i);
+});
+
+test('products category filters catalogue result', async () => {
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Quels sont mes produits de la catégorie Fournitures ?',
+		user: USER,
+		sessionId: 'sess-products-category',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].tool, 'get_products');
+	assert.match(result.reply, /Cahiers/i);
+	assert.doesNotMatch(result.reply, /Savon/i);
+});
+
+test('domain switch products to stock', async () => {
+	const agent = createAshyAgent();
+	const sessionId = 'sess-products-switch';
+
+	await agent.run({
+		message: 'Quels sont mes produits ?',
+		user: USER,
+		sessionId,
+		referenceDate: REFERENCE_DATE,
+	});
+
+	const stock = await agent.run({
+		message: 'Quel est mon stock ?',
+		user: USER,
+		sessionId,
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(stock.toolResults[0].tool, 'get_stock');
+	assert.match(stock.reply, /14/);
+});
+
+test('products supabase failure never returns success reply', async () => {
+	setProductsQueryImplForTests(async () => {
+		const error = new Error('db down');
+		error.code = 'SUPABASE_QUERY_FAILED';
+		throw error;
+	});
+
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Liste mes produits',
+		user: USER,
+		sessionId: 'sess-products-err',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].success, false);
+	assert.match(result.reply, /products|catalogue|produits|récupérer/i);
+	assert.doesNotMatch(result.reply, /Savon/i);
+});
+
+test('empty products catalogue returns explicit reply', async () => {
+	setProductsQueryImplForTests(async () => []);
+
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Quels sont mes produits ?',
+		user: USER,
+		sessionId: 'sess-products-empty',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].success, true);
+	assert.equal(result.toolResults[0].summary.count, 0);
+	assert.match(result.reply, /Aucun produit/i);
 });

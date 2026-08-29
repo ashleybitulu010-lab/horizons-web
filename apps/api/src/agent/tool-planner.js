@@ -4,7 +4,6 @@
  */
 
 export const PLANNED_READ_TOOLS = Object.freeze({
-	query_products: 'get_products',
 	generate_report: 'generate_report',
 });
 
@@ -83,6 +82,17 @@ function debtsReferenceUpdate() {
 	return { type: 'debts', entity: 'debts' };
 }
 
+function productsReferenceUpdate() {
+	return { type: 'products', entity: 'products' };
+}
+
+function buildProductsInput(resolved) {
+	return {
+		...(resolved.filters?.product ? { product: resolved.filters.product } : {}),
+		...(resolved.filters?.category ? { category: resolved.filters.category } : {}),
+	};
+}
+
 export function planToolExecution(resolved) {
 	const intent = resolved?.intent;
 
@@ -119,6 +129,14 @@ export function planToolExecution(resolved) {
 			steps: [createStep('get_debts', buildDebtsInput(resolved))],
 			responseKind: 'query_debts',
 			referenceUpdate: debtsReferenceUpdate(),
+		});
+	}
+
+	if (intent === 'query_products') {
+		return createReadPlan({
+			steps: [createStep('get_products', buildProductsInput(resolved))],
+			responseKind: 'query_products',
+			referenceUpdate: productsReferenceUpdate(),
 		});
 	}
 
@@ -181,6 +199,9 @@ export function primaryToolForIntent(intent) {
 	}
 	if (intent === 'query_debts') {
 		return 'get_debts';
+	}
+	if (intent === 'query_products') {
+		return 'get_products';
 	}
 	if (intent === 'compare_sales_expenses') {
 		return null;

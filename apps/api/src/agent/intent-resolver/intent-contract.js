@@ -6,6 +6,7 @@ export const ALLOWED_INTENTS = Object.freeze([
 	'query_expenses',
 	'query_stock',
 	'query_debts',
+	'query_products',
 	'compare_sales',
 	'compare_expenses',
 	'compare_sales_expenses',
@@ -18,6 +19,7 @@ export const ALLOWED_TOPICS = Object.freeze([
 	'expenses',
 	'stock',
 	'debts',
+	'products',
 	'mixed',
 	null,
 ]);

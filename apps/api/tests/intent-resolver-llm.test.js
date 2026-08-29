@@ -45,6 +45,18 @@ test('validateAndNormalizeResolvedIntent rejects unauthorized intent', () => {
 	}), null);
 });
 
+test('validateAndNormalizeResolvedIntent accepts query_products', () => {
+	const normalized = validateAndNormalizeResolvedIntent({
+		intent: 'query_products',
+		topic: 'products',
+		filters: { product: 'Savon' },
+		needsTool: true,
+	});
+	assert.equal(normalized.intent, 'query_products');
+	assert.equal(normalized.topic, 'products');
+	assert.equal(normalized.filters.product, 'Savon');
+});
+
 test('validateAndNormalizeResolvedIntent inherits period from context', () => {
 	const normalized = validateAndNormalizeResolvedIntent({
 		intent: 'query_sales',

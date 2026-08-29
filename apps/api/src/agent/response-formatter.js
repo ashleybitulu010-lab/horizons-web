@@ -142,6 +142,36 @@ export function formatDebtsQueryReply(toolResult) {
 	return `Tu as ${summary.unpaidCount || summary.count} dette${(summary.unpaidCount || summary.count) > 1 ? 's' : ''} impayée${(summary.unpaidCount || summary.count) > 1 ? 's' : ''}${periodSuffix}, pour un total de ${formatMoney(summary.totalRemaining)}.`;
 }
 
+export function formatProductsQueryReply(toolResult) {
+	if (!toolResult.success) {
+		return toolResult.error?.message || 'Je n’ai pas pu récupérer ton catalogue produits.';
+	}
+
+	const summary = toolResult.data.summary;
+	const productFilter = toolResult.meta?.product;
+	const categoryFilter = toolResult.meta?.category;
+
+	if (!summary.count) {
+		if (productFilter) {
+			return `Je n’ai trouvé aucun produit correspondant à « ${productFilter} » dans ton catalogue.`;
+		}
+		if (categoryFilter) {
+			return `Je n’ai trouvé aucun produit dans la catégorie « ${categoryFilter} ».`;
+		}
+		return 'Aucun produit trouvé dans ton catalogue.';
+	}
+
+	const items = toolResult.data.products.slice(0, 8);
+	const lines = items.map((item, index) => {
+		const category = item.category ? ` (${item.category})` : '';
+		return `${index + 1}. ${item.name}${category} — achat ${formatMoney(item.purchasePrice)}, vente ${formatMoney(item.salePrice)}`;
+	});
+
+	const header = `Voici ${summary.count} produit${summary.count > 1 ? 's' : ''} dans ton catalogue`;
+	const suffix = summary.count > items.length ? ` (affichage des ${items.length} premiers)` : '';
+	return `${header}${suffix} :\n${lines.join('\n')}`;
+}
+
 export function formatClarificationReply(resolved) {
 	return resolved?.clarificationQuestion || 'Peux-tu préciser ce que tu veux consulter ?';
 }
@@ -195,10 +225,10 @@ export function formatToolErrorReply(toolResult) {
 
 export function formatUnimplementedTopicReply(toolName) {
 	const labels = {
-		get_products: 'ton catalogue produits',
+		generate_report: 'tes rapports',
 	};
 	const subject = labels[toolName] || 'cette information';
-	return `Je peux bientôt consulter ${subject} depuis Supabase. Pour l’instant, les ventes, les dépenses, le stock et les dettes sont disponibles.`;
+	return `Je peux bientôt consulter ${subject} depuis Supabase. Pour l’instant, les ventes, les dépenses, le stock, les dettes et les produits sont disponibles.`;
 }
 
 export function formatUnimplementedWriteReply(toolName) {
@@ -217,6 +247,7 @@ const REPLY_FORMATTERS = {
 	query_expenses: formatExpensesQueryReply,
 	query_stock: formatStockQueryReply,
 	query_debts: formatDebtsQueryReply,
+	query_products: formatProductsQueryReply,
 	low_stock: formatLowStockReply,
 	best_product: formatBestProductReply,
 	compare_sales: formatCompareReply,

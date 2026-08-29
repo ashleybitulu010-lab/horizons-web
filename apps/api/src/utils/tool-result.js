@@ -55,6 +55,7 @@ const TOOL_RESOURCE_LABELS = Object.freeze({
 	get_expenses: 'expenses',
 	get_stock: 'stock',
 	get_debts: 'debts',
+	get_products: 'products',
 });
 
 function resourceLabel(tool) {

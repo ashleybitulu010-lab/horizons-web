@@ -142,6 +142,17 @@ export function updateReferencesAfterDebtsQuery(current) {
 	};
 }
 
+export function updateReferencesAfterProductsQuery(current, product = null) {
+	const references = {
+		...current.references,
+		lastEntity: 'products',
+	};
+	if (product) {
+		references.lastProduct = product;
+	}
+	return references;
+}
+
 export function applyReferenceUpdateFromPlan(plan, currentState, toolResults) {
 	if (!plan?.referenceUpdate || toolResults.length !== 1 || !toolResults[0]?.success) {
 		return currentState.references;
@@ -164,6 +175,12 @@ export function applyReferenceUpdateFromPlan(plan, currentState, toolResults) {
 	}
 	if (type === 'debts') {
 		return updateReferencesAfterDebtsQuery(currentState);
+	}
+	if (type === 'products') {
+		return updateReferencesAfterProductsQuery(
+			currentState,
+			toolResults[0].meta?.product || null,
+		);
 	}
 
 	return currentState.references;

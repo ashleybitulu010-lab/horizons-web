@@ -78,13 +78,24 @@ export const TOOL_METADATA = {
 	},
 	get_products: {
 		name: 'get_products',
-		description: 'Read authenticated product catalogue from Supabase',
+		description: 'Read authenticated product catalogue from Supabase public.produits',
 		access: 'read',
-		implemented: false,
+		implemented: true,
 		requiresConfirmation: false,
 		mutatesData: false,
 		sourceOfTruth: 'supabase',
-		inputSchema: BASE_SCHEMA,
+		inputSchema: {
+			...BASE_SCHEMA,
+			properties: {
+				product: { type: 'string' },
+				category: { type: 'string' },
+				limit: { type: 'number' },
+				order: {
+					type: 'string',
+					enum: ['name_asc', 'name_desc', 'created_desc', 'created_asc'],
+				},
+			},
+		},
 	},
 	get_debts: {
 		name: 'get_debts',

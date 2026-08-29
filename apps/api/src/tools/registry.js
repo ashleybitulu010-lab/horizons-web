@@ -1,10 +1,11 @@
 import { TOOL_DEFINITIONS, TOOL_METADATA, TOOL_NAMES } from './definitions.js';
 import { runGetDebts } from './get-debts.js';
 import { runGetExpenses } from './get-expenses.js';
+import { runGetProducts } from './get-products.js';
 import { runGetSales } from './get-sales.js';
 import { runGetStock } from './get-stock.js';
 
-const IMPLEMENTED = new Set(['get_sales', 'get_expenses', 'get_stock', 'get_debts']);
+const IMPLEMENTED = new Set(['get_sales', 'get_expenses', 'get_stock', 'get_debts', 'get_products']);
 
 /** @type {Record<string, Function>} */
 const executors = {
@@ -12,6 +13,7 @@ const executors = {
 	get_expenses: runGetExpenses,
 	get_stock: runGetStock,
 	get_debts: runGetDebts,
+	get_products: runGetProducts,
 };
 
 const registry = new Map(

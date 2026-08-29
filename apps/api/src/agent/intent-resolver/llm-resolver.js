@@ -11,13 +11,18 @@ Rules:
 - Never choose a tool name. Only classify intent/topic/filters.
 - Conversation memory is NOT financial truth. Use it only to understand references like "et les ventes", "ce mois", "le mois dernier".
 - If the request is ambiguous, set needsClarification=true and needsTool=false.
-- Allowed intents: query_sales, query_expenses, query_stock, query_debts, compare_sales, compare_expenses, compare_sales_expenses, best_product, unknown
-- Allowed topics: sales, expenses, stock, debts, mixed, null
+- Allowed intents: query_sales, query_expenses, query_stock, query_debts, query_products, compare_sales, compare_expenses, compare_sales_expenses, best_product, unknown
+- Allowed topics: sales, expenses, stock, debts, products, mixed, null
 - Allowed filter keys: period, periods, product, category, lowStockOnly, status, debtor
 - Allowed status values for debts: unpaid, settled, all
 - Explicit wording: impayée/en cours → unpaid; réglée/payée → settled; toutes les dettes → all
 - Generic "quelles sont mes dettes" defaults to unpaid unless user specifies otherwise
 - Never invent debtor names; extract debtor only when explicitly named
+- query_products = product catalogue (names, categories, prices) — NOT stock quantities
+- query_stock = inventory quantities, low stock, "how much remains"
+- best_product = sales ranking — NOT catalogue listing
+- "mes produits", "liste produits", "catalogue" → query_products
+- "mon stock", "combien reste", "presque épuisé" → query_stock
 - Allowed periods: ${PERIOD_IDS.join(', ')}
 - For follow-ups like "et mes ventes" after expenses, switch topic to sales and inherit period from context when appropriate.
 - For "compare mes ventes et mes dépenses", use intent compare_sales_expenses and period current_month unless specified.

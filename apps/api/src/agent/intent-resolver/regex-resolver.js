@@ -69,6 +69,23 @@ const GENERIC_STOCK_PATTERNS = [
 	/^(?:quel est|donne[- ]?moi).*(?:mon )?stock/i,
 ];
 
+const GENERIC_PRODUCTS_PATTERNS = [
+	/^(?:quels?|liste|montre|donne[- ]?moi|affiche).*(?:mes\s+)?produits/i,
+	/^mes produits/i,
+	/(?:quels?|liste).*(?:mes\s+)?produits\s*\??$/i,
+	/mon catalogue/i,
+	/mes articles/i,
+	/quels produits (?:ai-je|je vends)/i,
+	/\bcombien de produits\b/i,
+];
+
+const PRODUCT_CATALOG_EXCLUSION = /\b(vendu|vente|d[eé]pens|b[eé]n[eé]f|stock|reste|[eé]puis|mieux|plus vendu|presque)\b/i;
+
+const PRODUCT_SEARCH_PATTERNS = [
+	/(?:mes produits|produits correspondant à|produits contenant)\s+(?!de la cat[eé]gorie)(.+?)\??$/i,
+	/produits\s+comme\s+(.+?)\??$/i,
+];
+
 const STOCK_PRODUCT_PATTERNS = [
 	/combien me reste[- ]?t[- ]?il de (.+?)\??$/i,
 	/reste[- ]?t[- ]?il de (.+?)\??$/i,
@@ -79,6 +96,7 @@ const TOPIC_FOLLOWUP_PATTERNS = [
 	{ pattern: /^(et\s+)?(mes\s+|les\s+)?ventes\s*\??$/i, intent: 'query_sales', topic: 'sales' },
 	{ pattern: /^(et\s+)?(mes\s+|les\s+)?d[eé]penses\s*\??$/i, intent: 'query_expenses', topic: 'expenses' },
 	{ pattern: /^(et\s+)?(mes\s+|les\s+)?dettes\s*\??$/i, intent: 'query_debts', topic: 'debts', isDebtFollowUp: true },
+	{ pattern: /^(et\s+)?(mes\s+|les\s+)?produits\s*\??$/i, intent: 'query_products', topic: 'products' },
 	{ pattern: /^(et\s+)?mon stock\s*\??$/i, intent: 'query_stock', topic: 'stock' },
 ];
 
@@ -114,6 +132,61 @@ function extractStockProduct(text) {
 		}
 	}
 	return null;
+}
+
+function extractCategoryFromText(text) {
+	const match = text.match(/(?:produits\s+(?:de la\s+)?|(?:de la\s+)?)cat[eé]gorie\s+(.+?)(?:\?|$)/i);
+	if (!match?.[1]) {
+		return null;
+	}
+	return match[1].trim().replace(/\?+$/, '').trim();
+}
+
+function extractProductCatalogSearch(text) {
+	for (const pattern of PRODUCT_SEARCH_PATTERNS) {
+		const match = text.match(pattern);
+		if (match?.[1]) {
+			const value = match[1].trim().replace(/\?+$/, '').trim();
+			if (
+				value
+				&& !/^(cat[eé]gorie|de la)$/i.test(value)
+				&& !/^de la cat[eé]gorie/i.test(value)
+			) {
+				return value;
+			}
+		}
+	}
+	return null;
+}
+
+function isProductCatalogQuery(text) {
+	if (PRODUCT_CATALOG_EXCLUSION.test(text)) {
+		return false;
+	}
+	return GENERIC_PRODUCTS_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function buildProductsFilters(text, conversationState = {}) {
+	const category = extractCategoryFromText(text);
+	const product = category ? null : extractProductCatalogSearch(text);
+	const filters = {};
+
+	if (category) {
+		filters.category = category;
+	}
+	if (product) {
+		filters.product = product;
+	}
+	if (!category && !product && conversationState.topic === 'products') {
+		if (conversationState.filters?.category) {
+			filters.category = conversationState.filters.category;
+		}
+		if (conversationState.filters?.product) {
+			filters.product = conversationState.filters.product;
+		}
+	}
+
+	return filters;
 }
 
 function resolveDebtIntent(text, conversationState) {
@@ -290,6 +363,16 @@ export function resolveIntentRegex(message, conversationState = createFallbackSt
 		});
 	}
 
+	if (isProductCatalogQuery(text)) {
+		return withRegexMeta({
+			intent: 'query_products',
+			topic: 'products',
+			filters: buildProductsFilters(text, conversationState),
+			references: {},
+			needsTool: true,
+		});
+	}
+
 	if (GENERIC_SALES_PATTERNS.some((pattern) => pattern.test(text))) {
 		return withRegexMeta({
 			intent: 'query_sales',
@@ -332,6 +415,28 @@ export function resolveIntentRegex(message, conversationState = createFallbackSt
 			references: {},
 			needsTool: true,
 		});
+	}
+
+	if (conversationState.topic === 'products') {
+		const filters = buildProductsFilters(text, conversationState);
+		const categoryFollowUp = text.match(/^et en (.+?)\??$/i);
+		if (categoryFollowUp?.[1]) {
+			filters.category = categoryFollowUp[1].trim();
+		}
+
+		if (
+			/produits?|catalogue|articles?|cat[eé]gorie/i.test(lower)
+			|| categoryFollowUp
+			|| Object.keys(filters).length > 0
+		) {
+			return withRegexMeta({
+				intent: 'query_products',
+				topic: 'products',
+				filters,
+				references: {},
+				needsTool: true,
+			});
+		}
 	}
 
 	if (conversationState.topic === 'stock' && /stock|reste|inventaire|produits/i.test(lower)) {
