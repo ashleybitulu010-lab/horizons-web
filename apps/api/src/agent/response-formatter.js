@@ -106,6 +106,42 @@ export function formatCompareSalesExpensesReply(results) {
 	return `Sur ${label}, tu as ${formatMoney(salesTotal)} de ventes et ${formatMoney(expensesTotal)} de dépenses.`;
 }
 
+export function formatGenerateReportReply(toolResult) {
+	if (!toolResult.success) {
+		return toolResult.error?.message || 'Je n’ai pas pu générer ton résumé d’activité.';
+	}
+
+	const summary = toolResult.data.summary;
+	const label = periodLabel(toolResult.meta);
+
+	const parts = [
+		`Sur ${label} : ${summary.salesCount} vente${summary.salesCount > 1 ? 's' : ''} pour ${formatMoney(summary.totalRevenue)} de CA (${formatMoney(summary.totalCollected)} encaissés)`,
+		`${formatMoney(summary.totalExpenses)} de dépenses`,
+		`soit un bénéfice estimé de ${formatMoney(summary.estimatedProfit)}`,
+	];
+
+	let reply = parts.join(', ') + '.';
+
+	if (summary.unpaidDebtCount > 0) {
+		reply += ` Tu as ${formatMoney(summary.unpaidDebtTotal)} de dettes impayées (${summary.unpaidDebtCount} vente${summary.unpaidDebtCount > 1 ? 's' : ''}).`;
+	} else {
+		reply += ' Tu n’as pas de dettes impayées.';
+	}
+
+	if (summary.lowStockCount > 0 || summary.outOfStockCount > 0) {
+		const stockParts = [];
+		if (summary.lowStockCount > 0) {
+			stockParts.push(`${summary.lowStockCount} produit${summary.lowStockCount > 1 ? 's' : ''} en stock faible`);
+		}
+		if (summary.outOfStockCount > 0) {
+			stockParts.push(`${summary.outOfStockCount} en rupture`);
+		}
+		reply += ` Côté stock : ${stockParts.join(' et ')}.`;
+	}
+
+	return reply;
+}
+
 export function formatDebtsQueryReply(toolResult) {
 	if (!toolResult.success) {
 		return toolResult.error?.message || 'Je n’ai pas pu récupérer tes dettes.';
@@ -224,11 +260,9 @@ export function formatToolErrorReply(toolResult) {
 }
 
 export function formatUnimplementedTopicReply(toolName) {
-	const labels = {
-		generate_report: 'tes rapports',
-	};
+	const labels = {};
 	const subject = labels[toolName] || 'cette information';
-	return `Je peux bientôt consulter ${subject} depuis Supabase. Pour l’instant, les ventes, les dépenses, le stock, les dettes et les produits sont disponibles.`;
+	return `Je peux bientôt consulter ${subject} depuis Supabase. Pour l’instant, les ventes, les dépenses, le stock, les dettes, les produits et les rapports d’activité sont disponibles.`;
 }
 
 export function formatUnimplementedWriteReply(toolName) {
@@ -238,7 +272,10 @@ export function formatUnimplementedWriteReply(toolName) {
 export function formatCapabilitiesReply() {
 	const readable = listToolDefinitions()
 		.filter((tool) => tool.access === 'read' && tool.implemented)
-		.map((tool) => tool.name.replace(/^get_/, ''));
+		.map((tool) => {
+			if (tool.name === 'generate_report') return 'rapports d’activité';
+			return tool.name.replace(/^get_/, '');
+		});
 	return `Je peux consulter tes ${readable.join(', ')} depuis Supabase. Que veux-tu vérifier ?`;
 }
 
@@ -253,6 +290,7 @@ const REPLY_FORMATTERS = {
 	compare_sales: formatCompareReply,
 	compare_expenses: formatCompareExpensesReply,
 	compare_sales_expenses: formatCompareSalesExpensesReply,
+	generate_report: formatGenerateReportReply,
 	clarification: formatClarificationReply,
 	tool_error: formatToolErrorReply,
 	unimplemented_topic: (_payload, toolName) => formatUnimplementedTopicReply(toolName),

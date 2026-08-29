@@ -3,9 +3,7 @@
  * The agent executes plans — it is not hard-coded around get_sales only.
  */
 
-export const PLANNED_READ_TOOLS = Object.freeze({
-	generate_report: 'generate_report',
-});
+export const PLANNED_READ_TOOLS = Object.freeze({});
 
 export const PLANNED_WRITE_TOOLS = Object.freeze({
 	create_sale: 'create_sale',
@@ -93,6 +91,24 @@ function buildProductsInput(resolved) {
 	};
 }
 
+function reportReferenceUpdate() {
+	return { type: 'report', entity: 'report' };
+}
+
+function buildReportInput(resolved) {
+	const filters = resolved.filters || {};
+	if (filters.period) {
+		return { period: filters.period };
+	}
+	if (filters.startDate && filters.endDate) {
+		return {
+			startDate: filters.startDate,
+			endDate: filters.endDate,
+		};
+	}
+	return { period: 'current_month' };
+}
+
 export function planToolExecution(resolved) {
 	const intent = resolved?.intent;
 
@@ -137,6 +153,14 @@ export function planToolExecution(resolved) {
 			steps: [createStep('get_products', buildProductsInput(resolved))],
 			responseKind: 'query_products',
 			referenceUpdate: productsReferenceUpdate(),
+		});
+	}
+
+	if (intent === 'generate_report') {
+		return createReadPlan({
+			steps: [createStep('generate_report', buildReportInput(resolved))],
+			responseKind: 'generate_report',
+			referenceUpdate: reportReferenceUpdate(),
 		});
 	}
 
@@ -202,6 +226,9 @@ export function primaryToolForIntent(intent) {
 	}
 	if (intent === 'query_products') {
 		return 'get_products';
+	}
+	if (intent === 'generate_report') {
+		return 'generate_report';
 	}
 	if (intent === 'compare_sales_expenses') {
 		return null;

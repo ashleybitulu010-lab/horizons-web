@@ -170,13 +170,20 @@ export const TOOL_METADATA = {
 	},
 	generate_report: {
 		name: 'generate_report',
-		description: 'Generate a report from Supabase-backed data',
+		description: 'Generate a read-only activity summary from Supabase-backed data',
 		access: 'read',
-		implemented: false,
+		implemented: true,
 		requiresConfirmation: false,
 		mutatesData: false,
 		sourceOfTruth: 'supabase',
-		inputSchema: BASE_SCHEMA,
+		inputSchema: {
+			...BASE_SCHEMA,
+			properties: {
+				period: { type: 'string' },
+				startDate: { type: 'string' },
+				endDate: { type: 'string' },
+			},
+		},
 	},
 };
 

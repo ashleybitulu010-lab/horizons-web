@@ -770,3 +770,67 @@ test('empty products catalogue returns explicit reply', async () => {
 	assert.equal(result.toolResults[0].summary.count, 0);
 	assert.match(result.reply, /Aucun produit/i);
 });
+
+test('report question executes generate_report from Supabase', async () => {
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Quel est mon bénéfice ce mois-ci ?',
+		user: USER,
+		sessionId: 'sess-report-1',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].tool, 'generate_report');
+	assert.equal(result.toolResults[0].success, true);
+	assert.equal(result.toolResults[0].summary.estimatedProfit, 5);
+	assert.match(result.reply, /bénéfice estimé de 5/i);
+	assert.match(result.reply, /40/);
+	assert.match(result.reply, /stock faible/i);
+	assert.equal(result.conversation.topic, 'report');
+});
+
+test('bilan text request stays read-only and avoids PDF', async () => {
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Je peux avoir mon bilan',
+		user: USER,
+		sessionId: 'sess-report-2',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].tool, 'generate_report');
+	assert.doesNotMatch(result.reply, /PDF/i);
+});
+
+test('pdf report request returns clarification without tool execution', async () => {
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Envoie-moi mon bilan du mois en PDF',
+		user: USER,
+		sessionId: 'sess-report-pdf',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults.length, 0);
+	assert.match(result.reply, /PDF/i);
+});
+
+test('report supabase failure never returns success reply', async () => {
+	setSalesQueryImplForTests(async () => {
+		const error = new Error('db down');
+		error.code = 'SUPABASE_QUERY_FAILED';
+		throw error;
+	});
+
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Fais-moi un bilan',
+		user: USER,
+		sessionId: 'sess-report-err',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].success, false);
+	assert.match(result.reply, /report|résumé|activité|récupérer/i);
+	assert.doesNotMatch(result.reply, /bénéfice estimé de 5/i);
+});

@@ -153,6 +153,20 @@ export function updateReferencesAfterProductsQuery(current, product = null) {
 	return references;
 }
 
+export function updateReferencesAfterReportQuery(current, period = null) {
+	const references = {
+		...current.references,
+		lastEntity: 'report',
+	};
+	if (period && references.lastPeriod && references.lastPeriod !== period) {
+		references.previousPeriod = references.lastPeriod;
+	}
+	if (period) {
+		references.lastPeriod = period;
+	}
+	return references;
+}
+
 export function applyReferenceUpdateFromPlan(plan, currentState, toolResults) {
 	if (!plan?.referenceUpdate || toolResults.length !== 1 || !toolResults[0]?.success) {
 		return currentState.references;
@@ -180,6 +194,12 @@ export function applyReferenceUpdateFromPlan(plan, currentState, toolResults) {
 		return updateReferencesAfterProductsQuery(
 			currentState,
 			toolResults[0].meta?.product || null,
+		);
+	}
+	if (type === 'report') {
+		return updateReferencesAfterReportQuery(
+			currentState,
+			toolResults[0].meta?.period || null,
 		);
 	}
 

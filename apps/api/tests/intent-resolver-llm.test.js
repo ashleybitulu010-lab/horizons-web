@@ -57,6 +57,20 @@ test('validateAndNormalizeResolvedIntent accepts query_products', () => {
 	assert.equal(normalized.filters.product, 'Savon');
 });
 
+test('validateAndNormalizeResolvedIntent accepts generate_report', () => {
+	const normalized = validateAndNormalizeResolvedIntent({
+		intent: 'generate_report',
+		topic: 'report',
+		filters: { period: 'current_month' },
+		needsTool: true,
+	}, {
+		references: { lastPeriod: 'previous_month' },
+	});
+	assert.equal(normalized.intent, 'generate_report');
+	assert.equal(normalized.topic, 'report');
+	assert.equal(normalized.filters.period, 'current_month');
+});
+
 test('validateAndNormalizeResolvedIntent inherits period from context', () => {
 	const normalized = validateAndNormalizeResolvedIntent({
 		intent: 'query_sales',

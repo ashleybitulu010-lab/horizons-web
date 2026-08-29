@@ -124,6 +124,120 @@ const MULTI_COMPARE_PATTERNS = [
 	/ventes.*et.*d[eé]penses.*(ce|cette)\s+mois/i,
 ];
 
+const PDF_REQUEST_PATTERN = /\b(pdf|document|fichier|export(?:e)?|t[eé]l[eé]charg(?:e|er)|g[eé]n[eè]re|envoie[- ]?moi)\b/i;
+const PDF_REPORT_CONTEXT_PATTERN = /\b(bilan|rapport|synth[eè]se|r[eé]sum[eé]|r[eé]cap(?:itulatif)?)\b/i;
+
+const AMBIGUOUS_PERIOD_PATTERN = /\b(r[eé]cemment|derni[eè]rement|depuis\s+peu)\b/i;
+
+const REPORT_PATTERNS = [
+	/\bbilan\b/i,
+	/\br[eé]cap(?:itulatif)?\b/i,
+	/\br[eé]sum[eé]/i,
+	/\br[eé]sumer\b/i,
+	/\bsynth[eè]se\b/i,
+	/\bo[uù]\s+en\s+suis[- ]?je\b/i,
+	/\bo[uù]\s+est\s+mon\s+r[eé]sum[eé]/i,
+	/\bcombien\s+j['’]?ai\s+gagn[eé]/i,
+	/\bcombien\s+j['’]?ai\s+dans\s+mon\s+activit[eé]/i,
+	/\bquel\s+est\s+mon\s+b[eé]n[eé]fice/i,
+	/^(?:donne[- ]?moi|fais[- ]?(?:moi)?)\s+(?:le\s+)?(?:total|r[eé]cap)/i,
+	/\br[eé]sum[eé]\s+(?:de\s+)?(?:mon\s+)?activit[eé]/i,
+];
+
+const REPORT_HOW_TO_PATTERN = /comment\s+(?:g[eé]n[eé]rer|faire|obtenir).*(?:bilan|rapport|pdf)/i;
+
+const REPORT_PERIOD_PATTERNS = [
+	{ pattern: /\b(ce|cette)\s+mois\b/i, period: 'current_month' },
+	{ pattern: /\bmois\s+(dernier|pass[eé])\b/i, period: 'previous_month' },
+	{ pattern: /\bcette\s+semaine\b/i, period: 'current_week' },
+	{ pattern: /\bsemaine\s+(derni[eè]re|pass[eé]e)\b/i, period: 'previous_week' },
+	{ pattern: /\baujourd['’]?hui\b/i, period: 'today' },
+	{ pattern: /\bhier\b/i, period: 'yesterday' },
+	{ pattern: /\bcette\s+ann[eé]e\b/i, period: 'current_year' },
+];
+
+function extractReportPeriod(text, conversationState = {}) {
+	for (const entry of REPORT_PERIOD_PATTERNS) {
+		if (entry.pattern.test(text)) {
+			return entry.period;
+		}
+	}
+	return inheritPeriodFromContext(conversationState);
+}
+
+function isPdfReportRequest(text) {
+	return PDF_REQUEST_PATTERN.test(text) && PDF_REPORT_CONTEXT_PATTERN.test(text);
+}
+
+function isAmbiguousReportPeriod(text) {
+	return AMBIGUOUS_PERIOD_PATTERN.test(text)
+		&& !REPORT_PERIOD_PATTERNS.some((entry) => entry.pattern.test(text));
+}
+
+function isSingleDomainDataQuery(text) {
+	if (CURRENT_MONTH_SALES_PATTERNS.some((pattern) => pattern.test(text))) return true;
+	if (CURRENT_MONTH_EXPENSE_PATTERNS.some((pattern) => pattern.test(text))) return true;
+	if (/combien.*(vendu|ventes)/i.test(text)) return true;
+	if (/combien.*(d[eé]pens[eé]|d[eé]pens)/i.test(text)) return true;
+	if (GENERIC_DEBT_PATTERNS.some((pattern) => pattern.test(text))) return true;
+	if (isDebtRelatedText(text)) return true;
+	if (GENERIC_STOCK_PATTERNS.some((pattern) => pattern.test(text))) return true;
+	if (LOW_STOCK_PATTERNS.some((pattern) => pattern.test(text))) return true;
+	if (isProductCatalogQuery(text)) return true;
+	if (BEST_PRODUCT_PATTERNS.some((pattern) => pattern.test(text))) return true;
+	if (MULTI_COMPARE_PATTERNS.some((pattern) => pattern.test(text))) return true;
+	return false;
+}
+
+function looksLikeReportQuery(text, conversationState = {}) {
+	if (REPORT_HOW_TO_PATTERN.test(text)) {
+		return false;
+	}
+	if (isSingleDomainDataQuery(text)) {
+		return false;
+	}
+	if (conversationState.topic === 'report' && /(?:\bbilan\b|r[eé]sum[eé]|synth[eè]se|\brecap\b)/i.test(text)) {
+		return true;
+	}
+	return REPORT_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function resolveReportIntent(text, conversationState = {}) {
+	if (REPORT_HOW_TO_PATTERN.test(text)) {
+		return withRegexMeta({
+			intent: 'unknown',
+			topic: 'report',
+			filters: {},
+			references: {},
+			needsTool: false,
+			needsClarification: true,
+			clarificationQuestion: 'Tu peux me demander directement un résumé, par exemple « Quel est mon bénéfice ce mois-ci ? » ou « Fais-moi un bilan ».',
+		});
+	}
+
+	if (isAmbiguousReportPeriod(text)) {
+		return withRegexMeta({
+			intent: 'unknown',
+			topic: 'report',
+			filters: {},
+			references: {},
+			needsTool: false,
+			needsClarification: true,
+			clarificationQuestion: 'Sur quelle période veux-tu ce résumé ? Par exemple ce mois-ci, la semaine dernière ou cette année.',
+		});
+	}
+
+	return withRegexMeta({
+		intent: 'generate_report',
+		topic: 'report',
+		filters: {
+			period: extractReportPeriod(text, conversationState),
+		},
+		references: {},
+		needsTool: true,
+	});
+}
+
 function extractStockProduct(text) {
 	for (const pattern of STOCK_PRODUCT_PATTERNS) {
 		const match = text.match(pattern);
@@ -233,6 +347,18 @@ export function resolveIntentRegex(message, conversationState = createFallbackSt
 		});
 	}
 
+	if (isPdfReportRequest(text)) {
+		return withRegexMeta({
+			intent: 'unknown',
+			topic: 'report',
+			filters: {},
+			references: {},
+			needsTool: false,
+			needsClarification: true,
+			clarificationQuestion: 'Je peux te faire un résumé texte de ton activité sur une période. Pour recevoir un document PDF, demande « Génère mon bilan PDF » dans le chat principal.',
+		});
+	}
+
 	if (MULTI_COMPARE_PATTERNS.some((pattern) => pattern.test(text))) {
 		return withRegexMeta({
 			intent: 'compare_sales_expenses',
@@ -290,6 +416,10 @@ export function resolveIntentRegex(message, conversationState = createFallbackSt
 
 	if (GENERIC_DEBT_PATTERNS.some((pattern) => pattern.test(text)) || isDebtRelatedText(text)) {
 		return resolveDebtIntent(text, conversationState);
+	}
+
+	if (looksLikeReportQuery(text, conversationState)) {
+		return resolveReportIntent(text, conversationState);
 	}
 
 	if (PREVIOUS_MONTH_PATTERNS.some((pattern) => pattern.test(text))) {
@@ -371,6 +501,10 @@ export function resolveIntentRegex(message, conversationState = createFallbackSt
 			references: {},
 			needsTool: true,
 		});
+	}
+
+	if (looksLikeReportQuery(text, conversationState)) {
+		return resolveReportIntent(text, conversationState);
 	}
 
 	if (GENERIC_SALES_PATTERNS.some((pattern) => pattern.test(text))) {

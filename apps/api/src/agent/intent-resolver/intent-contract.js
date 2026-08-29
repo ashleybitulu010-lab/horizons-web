@@ -11,6 +11,7 @@ export const ALLOWED_INTENTS = Object.freeze([
 	'compare_expenses',
 	'compare_sales_expenses',
 	'best_product',
+	'generate_report',
 	'unknown',
 ]);
 
@@ -20,6 +21,7 @@ export const ALLOWED_TOPICS = Object.freeze([
 	'stock',
 	'debts',
 	'products',
+	'report',
 	'mixed',
 	null,
 ]);
@@ -90,6 +92,10 @@ export function applyContextInheritance(resolved, conversationState = {}) {
 	}
 
 	if (resolved.intent === 'compare_sales_expenses' && !filters.period) {
+		filters.period = inheritPeriodFromContext(conversationState);
+	}
+
+	if (resolved.intent === 'generate_report' && !filters.period && !filters.startDate && !filters.endDate) {
 		filters.period = inheritPeriodFromContext(conversationState);
 	}
 

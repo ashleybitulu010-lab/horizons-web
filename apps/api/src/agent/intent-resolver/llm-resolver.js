@@ -11,8 +11,8 @@ Rules:
 - Never choose a tool name. Only classify intent/topic/filters.
 - Conversation memory is NOT financial truth. Use it only to understand references like "et les ventes", "ce mois", "le mois dernier".
 - If the request is ambiguous, set needsClarification=true and needsTool=false.
-- Allowed intents: query_sales, query_expenses, query_stock, query_debts, query_products, compare_sales, compare_expenses, compare_sales_expenses, best_product, unknown
-- Allowed topics: sales, expenses, stock, debts, products, mixed, null
+- Allowed intents: query_sales, query_expenses, query_stock, query_debts, query_products, compare_sales, compare_expenses, compare_sales_expenses, best_product, generate_report, unknown
+- Allowed topics: sales, expenses, stock, debts, products, report, mixed, null
 - Allowed filter keys: period, periods, product, category, lowStockOnly, status, debtor
 - Allowed status values for debts: unpaid, settled, all
 - Explicit wording: impayée/en cours → unpaid; réglée/payée → settled; toutes les dettes → all
@@ -23,6 +23,10 @@ Rules:
 - best_product = sales ranking — NOT catalogue listing
 - "mes produits", "liste produits", "catalogue" → query_products
 - "mon stock", "combien reste", "presque épuisé" → query_stock
+- generate_report = multi-KPI activity summary (sales, expenses, profit, debts, stock snapshot) for a period
+- "bilan", "résumé", "synthèse", "récap", "où en suis-je", "quel est mon bénéfice" without PDF/document/export → generate_report
+- Explicit PDF/document/export request for a report → needsClarification=true (do not use generate_report)
+- Single-domain queries ("combien ai-je vendu", "mes dettes") → specific query_* intent, not generate_report
 - Allowed periods: ${PERIOD_IDS.join(', ')}
 - For follow-ups like "et mes ventes" after expenses, switch topic to sales and inherit period from context when appropriate.
 - For "compare mes ventes et mes dépenses", use intent compare_sales_expenses and period current_month unless specified.
