@@ -14,6 +14,11 @@ export function getEnv() {
 		ashInternalHealthKey: process.env.ASH_INTERNAL_HEALTH_KEY || '',
 		n8nChatWebhook: process.env.N8N_CHAT_WEBHOOK || process.env.N8N_WEBHOOK_URL || '',
 		ledgerTimezone: process.env.ASH_LEDGER_TIMEZONE || 'Africa/Kinshasa',
+		ashyLlmEnabled: process.env.ASHY_LLM_ENABLED === 'true',
+		openAiApiKey: process.env.OPENAI_API_KEY || '',
+		ashyLlmModel: process.env.ASHY_LLM_MODEL || 'gpt-4o-mini',
+		ashyLlmBaseUrl: process.env.ASHY_LLM_BASE_URL || 'https://api.openai.com/v1',
+		ashyLlmTimeoutMs: Number(process.env.ASHY_LLM_TIMEOUT_MS || 8000),
 	};
 }
 
@@ -32,5 +37,6 @@ export function publicConfigSnapshot(env = getEnv()) {
 		supabaseConfigured: isSupabaseConfigured(env),
 		n8nChatConfigured: Boolean(env.n8nChatWebhook),
 		internalHealthKeyConfigured: Boolean(env.ashInternalHealthKey),
+		ashyLlmConfigured: Boolean(env.ashyLlmEnabled && env.openAiApiKey),
 	};
 }

@@ -24,6 +24,7 @@ export const ALLOWED_FILTER_KEYS = Object.freeze([
 	'period',
 	'periods',
 	'product',
+	'category',
 	'lowStockOnly',
 ]);
 

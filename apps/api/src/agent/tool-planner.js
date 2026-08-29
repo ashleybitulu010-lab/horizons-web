@@ -119,6 +119,18 @@ export function planToolExecution(resolved) {
 		});
 	}
 
+	if (intent === 'compare_sales_expenses') {
+		const period = resolved.filters?.period || 'current_month';
+		return createReadPlan({
+			steps: [
+				createStep('get_sales', { period }),
+				createStep('get_expenses', { period }),
+			],
+			responseKind: 'compare_sales_expenses',
+			referenceUpdate: periodReferenceUpdate('mixed'),
+		});
+	}
+
 	if (intent === 'best_product') {
 		return createReadPlan({
 			steps: [createStep('get_sales', buildPeriodReadInput(resolved), 'best_product')],
@@ -147,6 +159,9 @@ export function primaryToolForIntent(intent) {
 	}
 	if (intent === 'query_stock') {
 		return 'get_stock';
+	}
+	if (intent === 'compare_sales_expenses') {
+		return null;
 	}
 	return PLANNED_READ_TOOLS[intent] || PLANNED_WRITE_TOOLS[intent] || null;
 }

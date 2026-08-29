@@ -3,8 +3,8 @@ import test from 'node:test';
 
 import { resolveIntent } from '../src/agent/intent-resolver.js';
 
-test('resolves current month sales query', () => {
-	const resolved = resolveIntent('Combien ai-je vendu ce mois-ci ?');
+test('resolves current month sales query', async () => {
+	const resolved = await resolveIntent('Combien ai-je vendu ce mois-ci ?');
 	assert.equal(resolved.intent, 'query_sales');
 	assert.equal(resolved.topic, 'sales');
 	assert.equal(resolved.filters.period, 'current_month');
@@ -12,8 +12,8 @@ test('resolves current month sales query', () => {
 	assert.equal(resolved.resolver, 'regex');
 });
 
-test('resolves previous month follow-up from conversation topic', () => {
-	const resolved = resolveIntent('Et le mois dernier ?', {
+test('resolves previous month follow-up from conversation topic', async () => {
+	const resolved = await resolveIntent('Et le mois dernier ?', {
 		topic: 'sales',
 		filters: { period: 'current_month' },
 		references: { lastPeriod: 'current_month' },
@@ -22,8 +22,8 @@ test('resolves previous month follow-up from conversation topic', () => {
 	assert.equal(resolved.filters.period, 'previous_month');
 });
 
-test('resolves compare intent with conversation references', () => {
-	const resolved = resolveIntent('Compare les deux.', {
+test('resolves compare intent with conversation references', async () => {
+	const resolved = await resolveIntent('Compare les deux.', {
 		topic: 'sales',
 		references: {
 			lastPeriod: 'previous_month',
@@ -34,8 +34,8 @@ test('resolves compare intent with conversation references', () => {
 	assert.deepEqual(resolved.filters.periods, ['current_month', 'previous_month']);
 });
 
-test('resolves compare intent with defaults when references are missing', () => {
-	const resolved = resolveIntent('Compare les deux.', {
+test('resolves compare intent with defaults when references are missing', async () => {
+	const resolved = await resolveIntent('Compare les deux.', {
 		topic: 'sales',
 		filters: { period: 'previous_month' },
 	});
@@ -43,8 +43,8 @@ test('resolves compare intent with defaults when references are missing', () => 
 	assert.deepEqual(resolved.filters.periods, ['previous_month', 'current_month']);
 });
 
-test('resolves best product intent', () => {
-	const resolved = resolveIntent('Quel produit s\'est le mieux vendu ?', {
+test('resolves best product intent', async () => {
+	const resolved = await resolveIntent('Quel produit s\'est le mieux vendu ?', {
 		topic: 'sales',
 		filters: { period: 'current_month' },
 		references: { lastPeriod: 'current_month' },
@@ -53,15 +53,15 @@ test('resolves best product intent', () => {
 	assert.equal(resolved.filters.period, 'current_month');
 });
 
-test('resolves generic sales query without prior context', () => {
-	const resolved = resolveIntent('Combien ai-je vendu ?');
+test('resolves generic sales query without prior context', async () => {
+	const resolved = await resolveIntent('Combien ai-je vendu ?');
 	assert.equal(resolved.intent, 'query_sales');
 	assert.equal(resolved.filters.period, 'current_month');
 	assert.equal(resolved.needsTool, true);
 });
 
-test('switches topic to expenses without sales follow-up', () => {
-	const resolved = resolveIntent('Combien ai-je dépensé ?', {
+test('switches topic to expenses without sales follow-up', async () => {
+	const resolved = await resolveIntent('Combien ai-je dépensé ?', {
 		topic: 'sales',
 		filters: { period: 'current_month' },
 		references: { lastPeriod: 'current_month' },
@@ -72,15 +72,15 @@ test('switches topic to expenses without sales follow-up', () => {
 	assert.equal(resolved.filters.period, 'current_month');
 });
 
-test('resolves expense current month query', () => {
-	const resolved = resolveIntent('Combien ai-je dépensé ce mois-ci ?');
+test('resolves expense current month query', async () => {
+	const resolved = await resolveIntent('Combien ai-je dépensé ce mois-ci ?');
 	assert.equal(resolved.intent, 'query_expenses');
 	assert.equal(resolved.filters.period, 'current_month');
 	assert.equal(resolved.needsTool, true);
 });
 
-test('resolves expense previous month follow-up from topic', () => {
-	const resolved = resolveIntent('Et le mois dernier ?', {
+test('resolves expense previous month follow-up from topic', async () => {
+	const resolved = await resolveIntent('Et le mois dernier ?', {
 		topic: 'expenses',
 		references: { lastPeriod: 'current_month' },
 	});
@@ -88,8 +88,8 @@ test('resolves expense previous month follow-up from topic', () => {
 	assert.equal(resolved.filters.period, 'previous_month');
 });
 
-test('resolves compare expenses from topic', () => {
-	const resolved = resolveIntent('Compare les deux.', {
+test('resolves compare expenses from topic', async () => {
+	const resolved = await resolveIntent('Compare les deux.', {
 		topic: 'expenses',
 		references: {
 			lastPeriod: 'previous_month',
@@ -100,8 +100,8 @@ test('resolves compare expenses from topic', () => {
 	assert.deepEqual(resolved.filters.periods, ['current_month', 'previous_month']);
 });
 
-test('switches from expenses topic to sales query', () => {
-	const resolved = resolveIntent('Combien ai-je vendu ?', {
+test('switches from expenses topic to sales query', async () => {
+	const resolved = await resolveIntent('Combien ai-je vendu ?', {
 		topic: 'expenses',
 		references: { lastPeriod: 'current_month' },
 	});
@@ -109,27 +109,36 @@ test('switches from expenses topic to sales query', () => {
 	assert.equal(resolved.topic, 'sales');
 });
 
-test('resolves generic stock query', () => {
-	const resolved = resolveIntent('Quel est mon stock ?');
+test('follow-up sales after expenses inherits period', async () => {
+	const resolved = await resolveIntent('Et mes ventes ?', {
+		topic: 'expenses',
+		references: { lastPeriod: 'current_month' },
+	});
+	assert.equal(resolved.intent, 'query_sales');
+	assert.equal(resolved.filters.period, 'current_month');
+});
+
+test('resolves generic stock query', async () => {
+	const resolved = await resolveIntent('Quel est mon stock ?');
 	assert.equal(resolved.intent, 'query_stock');
 	assert.equal(resolved.topic, 'stock');
 	assert.equal(resolved.needsTool, true);
 });
 
-test('resolves stock product filter', () => {
-	const resolved = resolveIntent('Combien me reste-t-il de cahiers ?');
+test('resolves stock product filter', async () => {
+	const resolved = await resolveIntent('Combien me reste-t-il de cahiers ?');
 	assert.equal(resolved.intent, 'query_stock');
 	assert.equal(resolved.filters.product, 'cahiers');
 });
 
-test('resolves low stock query', () => {
-	const resolved = resolveIntent('Quels produits sont presque épuisés ?');
+test('resolves low stock query', async () => {
+	const resolved = await resolveIntent('Quels produits sont presque épuisés ?');
 	assert.equal(resolved.intent, 'query_stock');
 	assert.equal(resolved.filters.lowStockOnly, true);
 });
 
-test('switches from stock topic to sales query', () => {
-	const resolved = resolveIntent('Combien ai-je vendu ?', {
+test('switches from stock topic to sales query', async () => {
+	const resolved = await resolveIntent('Combien ai-je vendu ?', {
 		topic: 'stock',
 		references: { lastProduct: 'Cahiers' },
 	});
@@ -137,8 +146,8 @@ test('switches from stock topic to sales query', () => {
 	assert.equal(resolved.topic, 'sales');
 });
 
-test('follow-up stock after expenses uses stock tool intent', () => {
-	const resolved = resolveIntent('Et mon stock ?', {
+test('follow-up stock after expenses uses stock tool intent', async () => {
+	const resolved = await resolveIntent('Et mon stock ?', {
 		topic: 'expenses',
 		references: { lastPeriod: 'current_month' },
 	});

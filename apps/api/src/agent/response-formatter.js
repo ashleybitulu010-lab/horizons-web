@@ -93,6 +93,23 @@ export function formatCompareExpensesReply(results) {
 	return `Comparaison des dépenses : ${formatMoney(firstSummary.totalAmount)} ${periodLabel(first.meta)} contre ${formatMoney(secondSummary.totalAmount)} ${periodLabel(second.meta)}. C’est une ${direction} de ${formatMoney(Math.abs(delta))}.`;
 }
 
+export function formatCompareSalesExpensesReply(results) {
+	const [sales, expenses] = results;
+	if (!sales?.success || !expenses?.success) {
+		return 'Je n’ai pas pu comparer tes ventes et tes dépenses sur la période demandée.';
+	}
+
+	const salesTotal = sales.data.summary.totalRevenue;
+	const expensesTotal = expenses.data.summary.totalAmount;
+	const label = periodLabel(sales.meta);
+
+	return `Sur ${label}, tu as ${formatMoney(salesTotal)} de ventes et ${formatMoney(expensesTotal)} de dépenses.`;
+}
+
+export function formatClarificationReply(resolved) {
+	return resolved?.clarificationQuestion || 'Peux-tu préciser ce que tu veux consulter ?';
+}
+
 export function formatStockQueryReply(toolResult) {
 	if (!toolResult.success) {
 		return toolResult.error?.message || 'Je n’ai pas pu récupérer ton stock.';
@@ -169,6 +186,8 @@ const REPLY_FORMATTERS = {
 	best_product: formatBestProductReply,
 	compare_sales: formatCompareReply,
 	compare_expenses: formatCompareExpensesReply,
+	compare_sales_expenses: formatCompareSalesExpensesReply,
+	clarification: formatClarificationReply,
 	tool_error: formatToolErrorReply,
 	unimplemented_topic: (_payload, toolName) => formatUnimplementedTopicReply(toolName),
 	unimplemented_write: (_payload, toolName) => formatUnimplementedWriteReply(toolName),
@@ -179,6 +198,9 @@ export function formatAshyReply(responseKind, payload, meta = {}) {
 	const formatter = REPLY_FORMATTERS[responseKind] || REPLY_FORMATTERS.unknown;
 	if (responseKind === 'unimplemented_topic' || responseKind === 'unimplemented_write') {
 		return formatter(payload, meta.unimplementedTool);
+	}
+	if (responseKind === 'clarification') {
+		return formatter(payload);
 	}
 	return formatter(payload);
 }

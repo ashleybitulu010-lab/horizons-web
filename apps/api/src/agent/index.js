@@ -11,6 +11,22 @@ import { planToolExecution } from './tool-planner.js';
 import { createToolExecutionContext } from '../tools/context.js';
 import { executeTool } from '../tools/registry.js';
 
+const MULTI_RESULT_KINDS = new Set([
+	'compare_sales',
+	'compare_expenses',
+	'compare_sales_expenses',
+]);
+
+function buildIntentDiagnostics(resolved) {
+	return {
+		resolver: resolved.resolver,
+		intent: resolved.intent,
+		topic: resolved.topic,
+		fallback: Boolean(resolved.resolverMeta?.fallback),
+		durationMs: resolved.resolverMeta?.durationMs ?? null,
+	};
+}
+
 export function createAshyAgent() {
 	const contract = assertAshyContract();
 
@@ -22,16 +38,28 @@ export function createAshyAgent() {
 					reply: 'Tu dois être connecté pour que je consulte tes données.',
 					conversation: null,
 					toolResults: [],
+					intentDiagnostics: null,
 				};
 			}
 
 			const previousState = getConversationState(user.id, sessionId);
-			const resolved = resolveIntent(message, previousState);
+			const resolved = await resolveIntent(message, previousState);
 			const plan = planToolExecution(resolved);
 			const nextState = mergeConversationState(
 				previousState,
 				conversationPatchFromIntent(resolved),
 			);
+			const intentDiagnostics = buildIntentDiagnostics(resolved);
+
+			if (resolved.needsClarification) {
+				saveConversationState(user.id, sessionId, nextState);
+				return {
+					reply: formatAshyReply('clarification', resolved),
+					conversation: sanitizeConversationForClient(nextState),
+					toolResults: [],
+					intentDiagnostics,
+				};
+			}
 
 			if (plan.responseKind === 'unimplemented_topic' || plan.responseKind === 'unimplemented_write') {
 				saveConversationState(user.id, sessionId, nextState);
@@ -39,6 +67,7 @@ export function createAshyAgent() {
 					reply: formatAshyReply(plan.responseKind, null, { unimplementedTool: plan.unimplementedTool }),
 					conversation: sanitizeConversationForClient(nextState),
 					toolResults: [],
+					intentDiagnostics,
 				};
 			}
 
@@ -48,6 +77,7 @@ export function createAshyAgent() {
 					reply: formatAshyReply('unknown'),
 					conversation: sanitizeConversationForClient(nextState),
 					toolResults: [],
+					intentDiagnostics,
 				};
 			}
 
@@ -66,6 +96,7 @@ export function createAshyAgent() {
 						reply: formatAshyReply('tool_error', result),
 						conversation: sanitizeConversationForClient(getConversationState(user.id, sessionId)),
 						toolResults: toolResults.map(sanitizeToolResultForClient),
+						intentDiagnostics,
 					};
 				}
 			}
@@ -79,7 +110,7 @@ export function createAshyAgent() {
 
 			saveConversationState(user.id, sessionId, mergeConversationState(nextState, statePatch));
 
-			const payload = plan.responseKind === 'compare_sales' || plan.responseKind === 'compare_expenses'
+			const payload = MULTI_RESULT_KINDS.has(plan.responseKind)
 				? toolResults
 				: toolResults[0];
 
@@ -87,6 +118,7 @@ export function createAshyAgent() {
 				reply: formatAshyReply(plan.responseKind, payload),
 				conversation: sanitizeConversationForClient(getConversationState(user.id, sessionId)),
 				toolResults: toolResults.map(sanitizeToolResultForClient),
+				intentDiagnostics,
 			};
 		},
 	};

@@ -88,6 +88,17 @@ test('compare_expenses produces one step per period', () => {
 	assert.equal(plan.responseKind, 'compare_expenses');
 });
 
+test('compare_sales_expenses produces sales and expenses steps', () => {
+	const plan = planToolExecution({
+		intent: 'compare_sales_expenses',
+		topic: 'mixed',
+		filters: { period: 'current_month' },
+	});
+	assert.equal(plan.steps.length, 2);
+	assert.deepEqual(plan.steps.map((step) => step.tool), ['get_sales', 'get_expenses']);
+	assert.equal(plan.responseKind, 'compare_sales_expenses');
+});
+
 test('future read intents return unimplemented plans without steps', () => {
 	for (const intent of Object.keys(PLANNED_READ_TOOLS)) {
 		const plan = planToolExecution({ intent, topic: intent.replace('query_', ''), filters: {} });
