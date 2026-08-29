@@ -74,6 +74,26 @@ const STOCK_PRODUCT_PATTERNS = [
 const TOPIC_FOLLOWUP_PATTERNS = [
 	{ pattern: /^(et\s+)?(mes\s+|les\s+)?ventes\s*\??$/i, intent: 'query_sales', topic: 'sales' },
 	{ pattern: /^(et\s+)?(mes\s+|les\s+)?d[eé]penses\s*\??$/i, intent: 'query_expenses', topic: 'expenses' },
+	{ pattern: /^(et\s+)?(mes\s+|les\s+)?dettes\s*\??$/i, intent: 'query_debts', topic: 'debts' },
+	{ pattern: /^(et\s+)?mon stock\s*\??$/i, intent: 'query_stock', topic: 'stock' },
+];
+
+const UNPAID_DEBT_PATTERNS = [
+	/impay/i,
+	/encore.*(dette|due|doiv)/i,
+	/en cours/i,
+	/celles.*impay/i,
+];
+
+const GENERIC_DEBT_PATTERNS = [
+	/quelles.*(sont\s+)?mes dettes/i,
+	/combien.*me\s+doiv/i,
+	/montre.*mes dettes/i,
+	/^mes dettes/i,
+	/qui me doit/i,
+	/dettes.*(client|encore|impay|en cours)/i,
+	/ai-je des dettes/i,
+	/combien dois-je/i,
 ];
 
 const MULTI_COMPARE_PATTERNS = [
@@ -147,13 +167,34 @@ export function resolveIntentRegex(message, conversationState = createFallbackSt
 			return withRegexMeta({
 				intent: followUp.intent,
 				topic: followUp.topic,
-				filters: {
-					period: inheritPeriodFromContext(conversationState),
-				},
+				filters: followUp.intent === 'query_sales' || followUp.intent === 'query_expenses'
+					? { period: inheritPeriodFromContext(conversationState) }
+					: {},
 				references: {},
 				needsTool: true,
 			});
 		}
+	}
+
+	if (conversationState.topic === 'debts' && UNPAID_DEBT_PATTERNS.some((pattern) => pattern.test(text))) {
+		return withRegexMeta({
+			intent: 'query_debts',
+			topic: 'debts',
+			filters: { status: 'unpaid' },
+			references: {},
+			needsTool: true,
+		});
+	}
+
+	if (GENERIC_DEBT_PATTERNS.some((pattern) => pattern.test(text))) {
+		const unpaid = UNPAID_DEBT_PATTERNS.some((pattern) => pattern.test(text));
+		return withRegexMeta({
+			intent: 'query_debts',
+			topic: 'debts',
+			filters: { status: unpaid ? 'unpaid' : 'unpaid' },
+			references: {},
+			needsTool: true,
+		});
 	}
 
 	if (PREVIOUS_MONTH_PATTERNS.some((pattern) => pattern.test(text))) {
@@ -279,6 +320,18 @@ export function resolveIntentRegex(message, conversationState = createFallbackSt
 				...(conversationState.references?.lastProduct
 					? { product: conversationState.references.lastProduct }
 					: {}),
+			},
+			references: {},
+			needsTool: true,
+		});
+	}
+
+	if (conversationState.topic === 'debts' && /combien|total|dette|doiv|impay/i.test(lower)) {
+		return withRegexMeta({
+			intent: 'query_debts',
+			topic: 'debts',
+			filters: {
+				status: UNPAID_DEBT_PATTERNS.some((pattern) => pattern.test(text)) ? 'unpaid' : 'unpaid',
 			},
 			references: {},
 			needsTool: true,

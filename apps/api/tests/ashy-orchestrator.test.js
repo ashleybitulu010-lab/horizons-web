@@ -16,6 +16,10 @@ import {
 	setStockQueryImplForTests,
 	resetStockQueryImplForTests,
 } from '../src/services/stock-service.js';
+import {
+	setDebtsQueryImplForTests,
+	resetDebtsQueryImplForTests,
+} from '../src/services/debts-service.js';
 
 const USER = {
 	id: 'pb_user',
@@ -99,11 +103,25 @@ function stockRows() {
 	}];
 }
 
+function debtsRows() {
+	return [{
+		id: 'd1',
+		client_id: 'client_1',
+		libelle: 'Client Alpha',
+		montant_paye: 10,
+		total_brut: 50,
+		reste_a_payer: 40,
+		date: '2026-08-10T10:00:00.000Z',
+		statut: 'Partiel',
+	}];
+}
+
 test.beforeEach(() => {
 	clearConversationSessionsForTests();
 	setSalesQueryImplForTests(async (_clientId, _range, input) => salesForPeriod(input.period));
 	setExpensesQueryImplForTests(async (_clientId, _range, input) => expensesForPeriod(input.period));
 	setStockQueryImplForTests(async () => ({ stocks: stockRows(), products: [] }));
+	setDebtsQueryImplForTests(async () => debtsRows());
 });
 
 test.afterEach(() => {
@@ -111,6 +129,7 @@ test.afterEach(() => {
 	resetSalesQueryImplForTests();
 	resetExpensesQueryImplForTests();
 	resetStockQueryImplForTests();
+	resetDebtsQueryImplForTests();
 });
 
 test('full flow: current month sales question', async () => {
@@ -518,4 +537,98 @@ test('stock supabase failure never returns success reply', async () => {
 	assert.equal(result.toolResults[0].success, false);
 	assert.match(result.reply, /stock/i);
 	assert.doesNotMatch(result.reply, /14/);
+});
+
+test('debts question executes get_debts from Supabase', async () => {
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Quelles sont mes dettes ?',
+		user: USER,
+		sessionId: 'sess-debts-1',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].tool, 'get_debts');
+	assert.match(result.reply, /40/);
+	assert.equal(result.conversation.topic, 'debts');
+});
+
+test('domain switch debts to expenses to stock to sales', async () => {
+	const agent = createAshyAgent();
+	const sessionId = 'sess-debts-switch';
+
+	await agent.run({
+		message: 'Quelles sont mes dettes ?',
+		user: USER,
+		sessionId,
+		referenceDate: REFERENCE_DATE,
+	});
+
+	const expenses = await agent.run({
+		message: 'Et les dépenses ?',
+		user: USER,
+		sessionId,
+		referenceDate: REFERENCE_DATE,
+	});
+	assert.equal(expenses.toolResults[0].tool, 'get_expenses');
+	assert.match(expenses.reply, /25/);
+
+	const stock = await agent.run({
+		message: 'Et mon stock ?',
+		user: USER,
+		sessionId,
+		referenceDate: REFERENCE_DATE,
+	});
+	assert.equal(stock.toolResults[0].tool, 'get_stock');
+
+	const sales = await agent.run({
+		message: 'Et les ventes ?',
+		user: USER,
+		sessionId,
+		referenceDate: REFERENCE_DATE,
+	});
+	assert.equal(sales.toolResults[0].tool, 'get_sales');
+	assert.match(sales.reply, /30/);
+});
+
+test('unpaid debts follow-up after debts query', async () => {
+	const agent = createAshyAgent();
+	const sessionId = 'sess-debts-unpaid';
+
+	await agent.run({
+		message: 'Quelles sont mes dettes ?',
+		user: USER,
+		sessionId,
+		referenceDate: REFERENCE_DATE,
+	});
+
+	const followUp = await agent.run({
+		message: 'Et celles qui sont encore impayées ?',
+		user: USER,
+		sessionId,
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(followUp.toolResults[0].tool, 'get_debts');
+	assert.match(followUp.reply, /impay/i);
+});
+
+test('debts supabase failure never returns success reply', async () => {
+	setDebtsQueryImplForTests(async () => {
+		const error = new Error('db down');
+		error.code = 'SUPABASE_QUERY_FAILED';
+		throw error;
+	});
+
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: 'Quelles sont mes dettes ?',
+		user: USER,
+		sessionId: 'sess-debts-err',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].success, false);
+	assert.match(result.reply, /debts|dette|récupérer/i);
+	assert.doesNotMatch(result.reply, /40/);
 });

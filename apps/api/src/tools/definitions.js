@@ -88,13 +88,24 @@ export const TOOL_METADATA = {
 	},
 	get_debts: {
 		name: 'get_debts',
-		description: 'Read authenticated debt information from Supabase',
+		description: 'Read authenticated client debts from Supabase public.ventes (reste_a_payer)',
 		access: 'read',
-		implemented: false,
+		implemented: true,
 		requiresConfirmation: false,
 		mutatesData: false,
 		sourceOfTruth: 'supabase',
-		inputSchema: BASE_SCHEMA,
+		inputSchema: {
+			...BASE_SCHEMA,
+			properties: {
+				period: { type: 'string' },
+				startDate: { type: 'string' },
+				endDate: { type: 'string' },
+				status: { type: 'string', enum: ['unpaid', 'settled', 'all'] },
+				debtor: { type: 'string' },
+				limit: { type: 'number' },
+				order: { type: 'string', enum: ['date_desc', 'date_asc'] },
+			},
+		},
 	},
 	create_sale: {
 		name: 'create_sale',

@@ -26,6 +26,8 @@ export const ALLOWED_FILTER_KEYS = Object.freeze([
 	'product',
 	'category',
 	'lowStockOnly',
+	'status',
+	'debtor',
 ]);
 
 
@@ -133,6 +135,13 @@ export function updateReferencesAfterStockQuery(current, product = null) {
 	return references;
 }
 
+export function updateReferencesAfterDebtsQuery(current) {
+	return {
+		...current.references,
+		lastEntity: 'debts',
+	};
+}
+
 export function applyReferenceUpdateFromPlan(plan, currentState, toolResults) {
 	if (!plan?.referenceUpdate || toolResults.length !== 1 || !toolResults[0]?.success) {
 		return currentState.references;
@@ -152,6 +161,9 @@ export function applyReferenceUpdateFromPlan(plan, currentState, toolResults) {
 			currentState,
 			toolResults[0].meta?.product || null,
 		);
+	}
+	if (type === 'debts') {
+		return updateReferencesAfterDebtsQuery(currentState);
 	}
 
 	return currentState.references;

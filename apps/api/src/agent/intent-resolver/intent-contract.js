@@ -5,6 +5,7 @@ export const ALLOWED_INTENTS = Object.freeze([
 	'query_sales',
 	'query_expenses',
 	'query_stock',
+	'query_debts',
 	'compare_sales',
 	'compare_expenses',
 	'compare_sales_expenses',
@@ -16,6 +17,7 @@ export const ALLOWED_TOPICS = Object.freeze([
 	'sales',
 	'expenses',
 	'stock',
+	'debts',
 	'mixed',
 	null,
 ]);
@@ -26,6 +28,8 @@ export const ALLOWED_FILTER_KEYS = Object.freeze([
 	'product',
 	'category',
 	'lowStockOnly',
+	'status',
+	'debtor',
 ]);
 
 export const FORBIDDEN_LLM_KEYS = Object.freeze([
@@ -74,6 +78,13 @@ export function applyContextInheritance(resolved, conversationState = {}) {
 		&& !filters.periods
 	) {
 		filters.period = inheritPeriodFromContext(conversationState);
+	}
+
+	if (resolved.intent === 'query_debts' && !filters.period && !filters.periods) {
+		const inherited = inheritPeriodFromContext(conversationState);
+		if (conversationState.topic === 'debts' || conversationState.references?.lastEntity === 'debts') {
+			filters.period = inherited;
+		}
 	}
 
 	if (resolved.intent === 'compare_sales_expenses' && !filters.period) {
@@ -136,6 +147,10 @@ export function validateAndNormalizeResolvedIntent(raw, conversationState = {}) 
 	}
 	if (filters.product != null && typeof filters.product !== 'string') return null;
 	if (filters.category != null && typeof filters.category !== 'string') return null;
+	if (filters.debtor != null && typeof filters.debtor !== 'string') return null;
+	if (filters.status != null && !['unpaid', 'settled', 'all'].includes(filters.status)) {
+		return null;
+	}
 
 	const references = {};
 	if (raw.references && typeof raw.references === 'object') {

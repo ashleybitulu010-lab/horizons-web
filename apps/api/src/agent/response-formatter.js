@@ -106,6 +106,34 @@ export function formatCompareSalesExpensesReply(results) {
 	return `Sur ${label}, tu as ${formatMoney(salesTotal)} de ventes et ${formatMoney(expensesTotal)} de dépenses.`;
 }
 
+export function formatDebtsQueryReply(toolResult) {
+	if (!toolResult.success) {
+		return toolResult.error?.message || 'Je n’ai pas pu récupérer tes dettes.';
+	}
+
+	const summary = toolResult.data.summary;
+	const label = periodLabel(toolResult.meta);
+	const status = toolResult.meta?.status || 'unpaid';
+
+	if (!summary.count) {
+		if (status === 'settled') {
+			return label && toolResult.meta?.period
+				? `Je n’ai trouvé aucune dette réglée ${label}.`
+				: 'Je n’ai trouvé aucune dette réglée.';
+		}
+		return label && toolResult.meta?.period
+			? `Je n’ai trouvé aucune dette impayée ${label}.`
+			: 'Tu n’as aucune dette impayée enregistrée.';
+	}
+
+	if (status === 'settled') {
+		return `Tu as ${summary.count} dette${summary.count > 1 ? 's' : ''} réglée${summary.count > 1 ? 's' : ''}${toolResult.meta?.period ? ` ${label}` : ''}.`;
+	}
+
+	const periodSuffix = toolResult.meta?.period ? ` ${label}` : '';
+	return `Tu as ${summary.unpaidCount || summary.count} dette${(summary.unpaidCount || summary.count) > 1 ? 's' : ''} impayée${(summary.unpaidCount || summary.count) > 1 ? 's' : ''}${periodSuffix}, pour un total de ${formatMoney(summary.totalRemaining)}.`;
+}
+
 export function formatClarificationReply(resolved) {
 	return resolved?.clarificationQuestion || 'Peux-tu préciser ce que tu veux consulter ?';
 }
@@ -159,11 +187,10 @@ export function formatToolErrorReply(toolResult) {
 
 export function formatUnimplementedTopicReply(toolName) {
 	const labels = {
-		get_stock: 'ton stock',
-		get_debts: 'tes dettes',
+		get_products: 'ton catalogue produits',
 	};
 	const subject = labels[toolName] || 'cette information';
-	return `Je peux bientôt consulter ${subject} depuis Supabase. Pour l’instant, les ventes, les dépenses et le stock sont disponibles.`;
+	return `Je peux bientôt consulter ${subject} depuis Supabase. Pour l’instant, les ventes, les dépenses, le stock et les dettes sont disponibles.`;
 }
 
 export function formatUnimplementedWriteReply(toolName) {
@@ -174,14 +201,14 @@ export function formatCapabilitiesReply() {
 	const readable = listToolDefinitions()
 		.filter((tool) => tool.access === 'read' && tool.implemented)
 		.map((tool) => tool.name.replace(/^get_/, ''));
-	const upcoming = ['dettes'];
-	return `Je peux consulter tes ${readable.join(', ')} depuis Supabase. Bientôt aussi : ${upcoming.join(', ')}. Que veux-tu vérifier ?`;
+	return `Je peux consulter tes ${readable.join(', ')} depuis Supabase. Que veux-tu vérifier ?`;
 }
 
 const REPLY_FORMATTERS = {
 	query_sales: formatSalesQueryReply,
 	query_expenses: formatExpensesQueryReply,
 	query_stock: formatStockQueryReply,
+	query_debts: formatDebtsQueryReply,
 	low_stock: formatLowStockReply,
 	best_product: formatBestProductReply,
 	compare_sales: formatCompareReply,

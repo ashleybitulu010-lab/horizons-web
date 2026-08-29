@@ -172,3 +172,32 @@ test('regex fallback handles multi compare sales and expenses', async () => {
 	assert.equal(resolved.intent, 'compare_sales_expenses');
 	assert.equal(resolved.needsTool, true);
 });
+
+test('LLM resolver returns query_debts when mock succeeds', async () => {
+	setForceRegexResolverForTests(false);
+	setForceLlmResolverForTests(true);
+	setChatCompletionImplForTests(async () => JSON.stringify({
+		intent: 'query_debts',
+		topic: 'debts',
+		filters: { status: 'unpaid' },
+		references: {},
+		needsTool: true,
+		needsClarification: false,
+	}));
+
+	const resolved = await resolveIntent('Quelles sont mes dettes ?');
+	assert.equal(resolved.resolver, 'llm');
+	assert.equal(resolved.intent, 'query_debts');
+	assert.equal(resolved.topic, 'debts');
+});
+
+test('validateAndNormalizeResolvedIntent accepts debts topic and status filter', () => {
+	const normalized = validateAndNormalizeResolvedIntent({
+		intent: 'query_debts',
+		topic: 'debts',
+		filters: { status: 'unpaid' },
+		needsTool: true,
+	});
+	assert.equal(normalized.intent, 'query_debts');
+	assert.equal(normalized.filters.status, 'unpaid');
+});

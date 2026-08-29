@@ -77,6 +77,19 @@ test('query_stock lowStockOnly uses low_stock response kind', () => {
 	assert.equal(plan.responseKind, 'low_stock');
 });
 
+test('query_debts produces a generic read step', () => {
+	const plan = planToolExecution({
+		intent: 'query_debts',
+		topic: 'debts',
+		filters: { status: 'unpaid' },
+	});
+	assert.equal(plan.steps.length, 1);
+	assert.equal(plan.steps[0].tool, 'get_debts');
+	assert.deepEqual(plan.steps[0].input, { status: 'unpaid' });
+	assert.equal(plan.responseKind, 'query_debts');
+	assert.equal(plan.referenceUpdate.entity, 'debts');
+});
+
 test('compare_expenses produces one step per period', () => {
 	const plan = planToolExecution({
 		intent: 'compare_expenses',
@@ -120,6 +133,7 @@ test('primaryToolForIntent maps intents to tool names', () => {
 	assert.equal(primaryToolForIntent('query_sales'), 'get_sales');
 	assert.equal(primaryToolForIntent('query_expenses'), 'get_expenses');
 	assert.equal(primaryToolForIntent('query_stock'), 'get_stock');
+	assert.equal(primaryToolForIntent('query_debts'), 'get_debts');
 	assert.equal(primaryToolForIntent('compare_expenses'), 'get_expenses');
 	assert.equal(primaryToolForIntent('create_sale'), 'create_sale');
 });

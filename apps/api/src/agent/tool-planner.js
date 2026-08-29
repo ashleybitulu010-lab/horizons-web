@@ -5,7 +5,6 @@
 
 export const PLANNED_READ_TOOLS = Object.freeze({
 	query_products: 'get_products',
-	query_debts: 'get_debts',
 	generate_report: 'generate_report',
 });
 
@@ -72,6 +71,18 @@ function buildStockInput(resolved) {
 	};
 }
 
+function buildDebtsInput(resolved) {
+	return {
+		...(resolved.filters?.period ? { period: resolved.filters.period } : {}),
+		...(resolved.filters?.status ? { status: resolved.filters.status } : { status: 'unpaid' }),
+		...(resolved.filters?.debtor ? { debtor: resolved.filters.debtor } : {}),
+	};
+}
+
+function debtsReferenceUpdate() {
+	return { type: 'debts', entity: 'debts' };
+}
+
 export function planToolExecution(resolved) {
 	const intent = resolved?.intent;
 
@@ -100,6 +111,14 @@ export function planToolExecution(resolved) {
 			steps: [createStep('get_stock', buildStockInput(resolved))],
 			responseKind: resolved.filters?.lowStockOnly ? 'low_stock' : 'query_stock',
 			referenceUpdate: stockReferenceUpdate(),
+		});
+	}
+
+	if (intent === 'query_debts') {
+		return createReadPlan({
+			steps: [createStep('get_debts', buildDebtsInput(resolved))],
+			responseKind: 'query_debts',
+			referenceUpdate: debtsReferenceUpdate(),
 		});
 	}
 
@@ -159,6 +178,9 @@ export function primaryToolForIntent(intent) {
 	}
 	if (intent === 'query_stock') {
 		return 'get_stock';
+	}
+	if (intent === 'query_debts') {
+		return 'get_debts';
 	}
 	if (intent === 'compare_sales_expenses') {
 		return null;

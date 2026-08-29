@@ -65,7 +65,7 @@ After validation, a resolved intent looks like:
 
 ### Allowed intents (read phase)
 
-- `query_sales`, `query_expenses`, `query_stock`
+- `query_sales`, `query_expenses`, `query_stock`, `query_debts`
 - `compare_sales`, `compare_expenses`, `compare_sales_expenses`
 - `best_product`
 - `unknown`
@@ -74,15 +74,15 @@ Future write intents (e.g. `create_expense`) are reserved for later phases; the 
 
 ### Allowed topics
 
-`sales`, `expenses`, `stock`, `mixed`, or `null`.
+`sales`, `expenses`, `stock`, `debts`, `mixed`, or `null`.
 
-Prepared but not implemented: `debts`, `products`, `purchases`, `reports`, `dashboard`.
+Prepared but not implemented: `products`, `purchases`, `reports`, `dashboard`.
 
 ### Allowed filters
 
 - `period`: `current_month` | `previous_month`
 - `periods`: array of periods (compare intents)
-- `product`, `category`, `lowStockOnly`
+- `product`, `category`, `lowStockOnly`, `status`, `debtor`
 
 ## LLM configuration
 
@@ -116,7 +116,7 @@ Simple, well-known phrases continue to work without LLM.
 - Period inheritance from conversation context when filters omit period
 - `needsClarification` when intent is ambiguous
 
-The LLM never chooses tool names directly; the planner maps `topic` + `intent` → `get_sales` / `get_expenses` / `get_stock`.
+The LLM never chooses tool names directly; the planner maps `topic` + `intent` → `get_sales` / `get_expenses` / `get_stock` / `get_debts`.
 
 ## Conversation context and follow-ups
 

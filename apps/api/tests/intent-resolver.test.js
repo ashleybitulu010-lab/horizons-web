@@ -154,3 +154,38 @@ test('follow-up stock after expenses uses stock tool intent', async () => {
 	assert.equal(resolved.intent, 'query_stock');
 	assert.equal(resolved.topic, 'stock');
 });
+
+test('resolves generic debts query', async () => {
+	const resolved = await resolveIntent('Quelles sont mes dettes ?');
+	assert.equal(resolved.intent, 'query_debts');
+	assert.equal(resolved.topic, 'debts');
+	assert.equal(resolved.filters.status, 'unpaid');
+	assert.equal(resolved.needsTool, true);
+});
+
+test('resolves unpaid debts follow-up from debts topic', async () => {
+	const resolved = await resolveIntent('Et celles qui sont encore impayées ?', {
+		topic: 'debts',
+		references: { lastEntity: 'debts' },
+	});
+	assert.equal(resolved.intent, 'query_debts');
+	assert.equal(resolved.filters.status, 'unpaid');
+});
+
+test('follow-up expenses after debts switches topic', async () => {
+	const resolved = await resolveIntent('Et les dépenses ?', {
+		topic: 'debts',
+		references: { lastEntity: 'debts' },
+	});
+	assert.equal(resolved.intent, 'query_expenses');
+	assert.equal(resolved.topic, 'expenses');
+});
+
+test('follow-up sales after debts switches topic', async () => {
+	const resolved = await resolveIntent('Et les ventes ?', {
+		topic: 'debts',
+		references: { lastEntity: 'debts' },
+	});
+	assert.equal(resolved.intent, 'query_sales');
+	assert.equal(resolved.filters.period, 'current_month');
+});
