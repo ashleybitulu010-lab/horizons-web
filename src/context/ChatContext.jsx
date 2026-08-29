@@ -12,14 +12,12 @@ import {
   requiresUserGestureForPdfDownload,
 } from '@/lib/pdfDownload';
 import { saveGeneratedReport } from '@/lib/saveReport';
+import { buildWelcomeContent, makeWelcomeMessage } from '@/lib/ashyChat';
+import { parseChatReplyResponse } from '@/lib/chatReply';
+import { resolveChatRoute } from '@/lib/chatRouter';
+import { fetchChatResponse } from '@/lib/chatTransport';
 
-export const WELCOME_MESSAGE = {
-  id: 'welcome',
-  role: 'assistant',
-  content: 'Bonjour 👋 Moi c\'est Ashy. Je vais t\'aider à gérer ton activité.\n💰 Ventes · 💸 Dépenses · 📦 Stock · 📋 Produits\nDis-moi simplement ce dont tu as besoin — s\'il me manque une info, je te la demande.',
-  time: '09:00',
-  status: 'read',
-};
+export const WELCOME_MESSAGE = makeWelcomeMessage('');
 
 const ChatContext = createContext(null);
 
@@ -99,6 +97,18 @@ function mergeMessageLists(localMessages, remoteMessages) {
   return merged;
 }
 
+function looksLikeUpstreamReconnect(text) {
+  const t = String(text || '');
+  return /reconnect(er|e|ion)?[\s']*(openai|l['’]?api|api|la conversation|conversation)|clé\s*api|api\s*key|fournir.*(clé|key)|nouvelle conversation(\s+ia)?|connecte[rz]?\s*(openai|l['’]?api)|session\s+openai|openai\s+(session|key|api)/i.test(t);
+}
+
+function sanitizeAssistantReply(text) {
+  if (looksLikeUpstreamReconnect(text)) {
+    return "Je t'écoute 😊 Reformule simplement ta demande et on continue.";
+  }
+  return text;
+}
+
 function resolveStorageId(user) {
   if (!user) return null;
   return user.airtableId || user.id || user.email || null;
@@ -108,7 +118,7 @@ export function ChatProvider({ children }) {
   const { user, token } = useAuth();
   const stableId = resolveStorageId(user);
 
-  const [messages, setMessages] = useState([WELCOME_MESSAGE]);
+  const [messages, setMessages] = useState(() => [makeWelcomeMessage('')]);
   const [newIds, setNewIds] = useState(() => new Set());
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -116,8 +126,9 @@ export function ChatProvider({ children }) {
   const loadedForUser = useRef(null);
 
   useEffect(() => {
+    const welcome = makeWelcomeMessage(user?.firstName);
     if (!stableId) {
-      setMessages([WELCOME_MESSAGE]);
+      setMessages([welcome]);
       setHistoryLoading(false);
       loadedForUser.current = null;
       return;
@@ -125,9 +136,9 @@ export function ChatProvider({ children }) {
 
     const stored = readStoredMessages(stableId);
     if (stored?.length) {
-      setMessages([WELCOME_MESSAGE, ...stored]);
+      setMessages([welcome, ...stored.filter((m) => m.id !== 'welcome')]);
     } else {
-      setMessages([WELCOME_MESSAGE]);
+      setMessages([welcome]);
     }
 
     if (loadedForUser.current === stableId) {
@@ -167,7 +178,7 @@ export function ChatProvider({ children }) {
         const merged = mergeMessageLists(localOnly, remote);
 
         if (merged.length > 0) {
-          setMessages([WELCOME_MESSAGE, ...merged]);
+          setMessages([makeWelcomeMessage(user?.firstName), ...merged]);
           writeStoredMessages(stableId, merged);
         }
       } catch {
@@ -179,6 +190,15 @@ export function ChatProvider({ children }) {
 
     return () => { cancelled = true; };
   }, [stableId, token, user?.id]);
+
+  useEffect(() => {
+    const content = buildWelcomeContent(user?.firstName);
+    setMessages((prev) => {
+      const welcome = prev.find((m) => m.id === 'welcome');
+      if (!welcome || welcome.content === content) return prev;
+      return prev.map((m) => (m.id === 'welcome' ? { ...m, content } : m));
+    });
+  }, [user?.firstName]);
 
   useEffect(() => {
     if (!stableId || messages.length <= 1) return;
@@ -242,55 +262,52 @@ export function ChatProvider({ children }) {
 
     try {
       const currency = readStoredCurrencyPreference(user?.id);
-      const headers = {
-        'Content-Type': 'application/json; charset=UTF-8',
-        Accept: 'application/json; charset=UTF-8',
-      };
-      if (token) headers.Authorization = `Bearer ${token}`;
-      const res = await apiServerClient.fetch('/chat', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          message: body,
-          sessionId: stableId || user?.email || 'default',
-          session_id: stableId || user?.email || 'default',
-          userId: stableId || '',
-          airtableId: user?.airtableId || null,
-          pbUserId: user?.id || '',
-          firstName: user?.firstName || user?.name?.split(' ')[0] || '',
-          lastName: user?.lastName || user?.name?.split(' ').slice(1).join(' ') || '',
-          email: user?.email || '',
-          currency: currency.currency || currency.displayCurrency,
-          ledgerCurrency: currency.currency || currency.ledgerCurrency,
-          usdCdfRate: currency.usdCdfRate,
-          encoding: 'UTF-8',
-          responseEncoding: 'UTF-8',
-          emojiFont: 'Noto Color Emoji',
-          pdfEncoding: 'UTF-8',
-          pdfEmojiFonts: [
-            'Noto Color Emoji',
-            'Apple Color Emoji',
-            'Segoe UI Emoji',
-          ],
-          reportCurrency: currency.currency || currency.displayCurrency,
-        }),
+      const recentMessages = [
+        ...(readStoredMessages(stableId) || [])
+          .filter((m) => m.id !== 'welcome' && m.content)
+          .map((m) => ({
+            role: m.role === 'user' ? 'user' : 'assistant',
+            content: String(m.content).slice(0, 800),
+          })),
+        { role: 'user', content: body },
+      ].slice(-12);
+
+      const sessionId = stableId || user?.email || 'default';
+      const chatRoute = resolveChatRoute(body);
+
+      const chatResponse = await fetchChatResponse({
+        message: body,
+        chatRoute,
+        sessionId,
+        user,
+        stableId,
+        currency,
+        recentMessages,
+        token,
       });
-      const data = await res.json();
-      const rawReplyText = res.ok
-        ? (data.reply || data.output || data.message || data.text || "Je n'ai pas reçu de réponse.")
-        : (typeof data.error === 'string' ? data.error : data.error?.message || data.message || 'Une erreur est survenue. Veuillez réessayer.');
-      let replyText = normalizeMessageText(rawReplyText, currency);
+
+      const {
+        rawReplyText,
+        toolResults,
+        hasPdf,
+        pdfPayload,
+        shouldRefreshDashboard,
+      } = parseChatReplyResponse(chatResponse);
+      let replyText = sanitizeAssistantReply(normalizeMessageText(rawReplyText, currency));
+      if (!String(replyText || '').trim()) {
+        replyText = "Je t'écoute 😊 Reformule simplement ta demande et on continue.";
+      }
       let pdfMeta = null;
 
-      if (res.ok && (data.type === 'pdf' || data.filename || data.pdf_base64)) {
-        const filename = data.filename || 'bilan-ash-ledger.pdf';
-        if (isUsablePdfBase64(data.pdf_base64)) {
+      if (hasPdf && pdfPayload) {
+        const filename = pdfPayload.filename || 'bilan-ash-ledger.pdf';
+        if (isUsablePdfBase64(pdfPayload.pdf_base64)) {
           try {
-            const mimeType = data.mime_type || 'application/pdf';
-            const url = createPdfBlobUrl(data.pdf_base64, mimeType);
-            pdfMeta = { filename, url, mimeType, base64: data.pdf_base64 };
+            const mimeType = pdfPayload.mime_type || 'application/pdf';
+            const url = createPdfBlobUrl(pdfPayload.pdf_base64, mimeType);
+            pdfMeta = { filename, url, mimeType, base64: pdfPayload.pdf_base64 };
             if (!requiresUserGestureForPdfDownload()) {
-              downloadPdfFromBase64(data.pdf_base64, filename);
+              downloadPdfFromBase64(pdfPayload.pdf_base64, filename);
             }
             if (!/📄|pdf|télécharg|telecharg/i.test(replyText)) {
               const hint = requiresUserGestureForPdfDownload()
@@ -303,7 +320,7 @@ export function ChatProvider({ children }) {
             if (user?.id) {
               void saveGeneratedReport({
                 userId: user.id,
-                base64: data.pdf_base64,
+                base64: pdfPayload.pdf_base64,
                 filename,
                 type: 'monthly',
               }).catch(() => {});
@@ -326,6 +343,7 @@ export function ChatProvider({ children }) {
           time: getTime(),
           status: 'read',
           ...(pdfMeta ? { pdf: pdfMeta } : {}),
+          ...(toolResults?.length ? { toolResults } : {}),
         }];
         if (stableId) writeStoredMessages(stableId, next);
         return next;
@@ -333,7 +351,7 @@ export function ChatProvider({ children }) {
       setNewIds((prev) => new Set(prev).add(replyId));
       persist('assistant', replyText);
       trackFromAssistantReply(replyText);
-      if (res.ok && typeof window !== 'undefined') {
+      if (shouldRefreshDashboard && typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent(DASHBOARD_REFRESH_EVENT));
       }
     } catch {
@@ -351,12 +369,12 @@ export function ChatProvider({ children }) {
   }, [loading, persist, token, user, stableId]);
 
   const reset = useCallback(() => {
-    setMessages([WELCOME_MESSAGE]);
+    setMessages([makeWelcomeMessage(user?.firstName)]);
     setHistoryLoading(true);
     setNewIds(new Set());
     setInput('');
     loadedForUser.current = null;
-  }, []);
+  }, [user?.firstName]);
 
   const deleteMessages = useCallback((ids) => {
     const idSet = new Set((ids || []).map(String));
@@ -364,14 +382,14 @@ export function ChatProvider({ children }) {
     setMessages((prev) => {
       const next = prev.filter((m) => !idSet.has(String(m.id)) || m.id === 'welcome');
       if (stableId) writeStoredMessages(stableId, next);
-      return next.length ? next : [WELCOME_MESSAGE];
+      return next.length ? next : [makeWelcomeMessage(user?.firstName)];
     });
     setNewIds((prev) => {
       const next = new Set(prev);
       idSet.forEach((id) => next.delete(id));
       return next;
     });
-  }, [stableId]);
+  }, [stableId, user?.firstName]);
 
   return (
     <ChatContext.Provider value={{
