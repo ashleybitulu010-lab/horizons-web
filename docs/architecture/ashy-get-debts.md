@@ -42,8 +42,20 @@ Colonnes `ventes` utilisées (alignées sur `sales-service.js`) :
 }
 ```
 
-- `status` : `unpaid` (défaut), `settled`, `all`
+- `status` : `unpaid` (défaut pour demandes génériques), `settled`, `all`
 - `period` / plage date : optionnels — sans période, toutes les dettes correspondant au statut sont retournées
+
+**Comportement resolver (Phase 3.4 hardening) :**
+
+| Formulation utilisateur | `status` résolu |
+|-------------------------|-----------------|
+| « dettes impayées », « en cours », « qui me doit » | `unpaid` |
+| « dettes réglées », « payées » | `settled` |
+| « toutes mes dettes » | `all` |
+| « Quelles sont mes dettes ? » (générique) | `unpaid` (choix produit documenté) |
+| Statut contradictoire | clarification Ashy, pas d’appel tool |
+
+Le resolver n’invente jamais de montants ; il ne déduit un débiteur (`debtor`) que si un nom est explicitement mentionné.
 - **Interdit :** `userId`, `clientId`, `businessUserId`, etc.
 
 ## Contexte utilisateur

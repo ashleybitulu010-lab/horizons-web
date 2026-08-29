@@ -3,6 +3,10 @@
  * A future LLM resolver must return the same ResolvedIntent shape.
  */
 
+import {
+	buildDebtQueryFilters,
+	isDebtRelatedText,
+} from './debt-resolver-helpers.js';
 import { inheritPeriodFromContext } from './intent-contract.js';
 
 const CURRENT_MONTH_SALES_PATTERNS = [
@@ -74,15 +78,14 @@ const STOCK_PRODUCT_PATTERNS = [
 const TOPIC_FOLLOWUP_PATTERNS = [
 	{ pattern: /^(et\s+)?(mes\s+|les\s+)?ventes\s*\??$/i, intent: 'query_sales', topic: 'sales' },
 	{ pattern: /^(et\s+)?(mes\s+|les\s+)?d[eé]penses\s*\??$/i, intent: 'query_expenses', topic: 'expenses' },
-	{ pattern: /^(et\s+)?(mes\s+|les\s+)?dettes\s*\??$/i, intent: 'query_debts', topic: 'debts' },
+	{ pattern: /^(et\s+)?(mes\s+|les\s+)?dettes\s*\??$/i, intent: 'query_debts', topic: 'debts', isDebtFollowUp: true },
 	{ pattern: /^(et\s+)?mon stock\s*\??$/i, intent: 'query_stock', topic: 'stock' },
 ];
 
-const UNPAID_DEBT_PATTERNS = [
-	/impay/i,
-	/encore.*(dette|due|doiv)/i,
-	/en cours/i,
-	/celles.*impay/i,
+const DEBT_STATUS_FOLLOWUP_PATTERNS = [
+	/^(?:et\s+)?(?:les\s+)?dettes?\s+(?:r[eé]gl[eé]e?s?|pay[eé]e?s?)/i,
+	/^(?:et\s+)?(?:celles?\s+)?(?:qui\s+sont\s+)?(?:encore\s+)?impay/i,
+	/^(?:et\s+)?toutes?\s+(?:les\s+)?dettes/i,
 ];
 
 const GENERIC_DEBT_PATTERNS = [
@@ -91,9 +94,10 @@ const GENERIC_DEBT_PATTERNS = [
 	/montre.*mes dettes/i,
 	/^mes dettes/i,
 	/qui me doit/i,
-	/dettes.*(client|encore|impay|en cours)/i,
+	/dettes.*client/i,
 	/ai-je des dettes/i,
-	/combien dois-je/i,
+	/montre.*dettes/i,
+	/combien me doit/i,
 ];
 
 const MULTI_COMPARE_PATTERNS = [
@@ -110,6 +114,30 @@ function extractStockProduct(text) {
 		}
 	}
 	return null;
+}
+
+function resolveDebtIntent(text, conversationState) {
+	const debtQuery = buildDebtQueryFilters(text, conversationState);
+
+	if (debtQuery.needsClarification) {
+		return withRegexMeta({
+			intent: 'unknown',
+			topic: 'debts',
+			filters: {},
+			references: {},
+			needsTool: false,
+			needsClarification: true,
+			clarificationQuestion: debtQuery.clarificationQuestion,
+		});
+	}
+
+	return withRegexMeta({
+		intent: 'query_debts',
+		topic: 'debts',
+		filters: debtQuery.filters,
+		references: {},
+		needsTool: true,
+	});
 }
 
 export function resolveIntentRegex(message, conversationState = createFallbackState()) {
@@ -162,8 +190,19 @@ export function resolveIntentRegex(message, conversationState = createFallbackSt
 		});
 	}
 
+	if (DEBT_STATUS_FOLLOWUP_PATTERNS.some((pattern) => pattern.test(text))) {
+		return resolveDebtIntent(text, conversationState);
+	}
+
+	if (conversationState.topic === 'debts' && isDebtRelatedText(text)) {
+		return resolveDebtIntent(text, conversationState);
+	}
+
 	for (const followUp of TOPIC_FOLLOWUP_PATTERNS) {
 		if (followUp.pattern.test(text)) {
+			if (followUp.isDebtFollowUp) {
+				return resolveDebtIntent(text, conversationState);
+			}
 			return withRegexMeta({
 				intent: followUp.intent,
 				topic: followUp.topic,
@@ -176,25 +215,8 @@ export function resolveIntentRegex(message, conversationState = createFallbackSt
 		}
 	}
 
-	if (conversationState.topic === 'debts' && UNPAID_DEBT_PATTERNS.some((pattern) => pattern.test(text))) {
-		return withRegexMeta({
-			intent: 'query_debts',
-			topic: 'debts',
-			filters: { status: 'unpaid' },
-			references: {},
-			needsTool: true,
-		});
-	}
-
-	if (GENERIC_DEBT_PATTERNS.some((pattern) => pattern.test(text))) {
-		const unpaid = UNPAID_DEBT_PATTERNS.some((pattern) => pattern.test(text));
-		return withRegexMeta({
-			intent: 'query_debts',
-			topic: 'debts',
-			filters: { status: unpaid ? 'unpaid' : 'unpaid' },
-			references: {},
-			needsTool: true,
-		});
+	if (GENERIC_DEBT_PATTERNS.some((pattern) => pattern.test(text)) || isDebtRelatedText(text)) {
+		return resolveDebtIntent(text, conversationState);
 	}
 
 	if (PREVIOUS_MONTH_PATTERNS.some((pattern) => pattern.test(text))) {
@@ -326,18 +348,6 @@ export function resolveIntentRegex(message, conversationState = createFallbackSt
 		});
 	}
 
-	if (conversationState.topic === 'debts' && /combien|total|dette|doiv|impay/i.test(lower)) {
-		return withRegexMeta({
-			intent: 'query_debts',
-			topic: 'debts',
-			filters: {
-				status: UNPAID_DEBT_PATTERNS.some((pattern) => pattern.test(text)) ? 'unpaid' : 'unpaid',
-			},
-			references: {},
-			needsTool: true,
-		});
-	}
-
 	return withRegexMeta({
 		intent: 'unknown',
 		topic: conversationState.topic || null,
@@ -350,8 +360,8 @@ export function resolveIntentRegex(message, conversationState = createFallbackSt
 function withRegexMeta(result) {
 	return {
 		...result,
-		needsClarification: false,
-		clarificationQuestion: null,
+		needsClarification: Boolean(result.needsClarification),
+		clarificationQuestion: result.clarificationQuestion || null,
 		resolver: 'regex',
 		resolverMeta: null,
 	};

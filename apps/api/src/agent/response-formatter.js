@@ -121,6 +121,9 @@ export function formatDebtsQueryReply(toolResult) {
 				? `Je n’ai trouvé aucune dette réglée ${label}.`
 				: 'Je n’ai trouvé aucune dette réglée.';
 		}
+		if (status === 'all') {
+			return 'Je n’ai trouvé aucune dette enregistrée.';
+		}
 		return label && toolResult.meta?.period
 			? `Je n’ai trouvé aucune dette impayée ${label}.`
 			: 'Tu n’as aucune dette impayée enregistrée.';
@@ -128,6 +131,11 @@ export function formatDebtsQueryReply(toolResult) {
 
 	if (status === 'settled') {
 		return `Tu as ${summary.count} dette${summary.count > 1 ? 's' : ''} réglée${summary.count > 1 ? 's' : ''}${toolResult.meta?.period ? ` ${label}` : ''}.`;
+	}
+
+	if (status === 'all') {
+		const periodSuffix = toolResult.meta?.period ? ` ${label}` : '';
+		return `Tu as ${summary.count} dette${summary.count > 1 ? 's' : ''} enregistrée${summary.count > 1 ? 's' : ''}${periodSuffix}, dont ${summary.unpaidCount || 0} impayée${(summary.unpaidCount || 0) > 1 ? 's' : ''} pour ${formatMoney(summary.totalRemaining)}.`;
 	}
 
 	const periodSuffix = toolResult.meta?.period ? ` ${label}` : '';
