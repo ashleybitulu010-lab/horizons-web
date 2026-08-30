@@ -24,6 +24,14 @@ import {
 	setProductsQueryImplForTests,
 	resetProductsQueryImplForTests,
 } from '../src/services/products-service.js';
+import {
+	setCreateSaleImplForTests,
+	resetCreateSaleImplForTests,
+} from '../src/services/sales-write-service.js';
+import {
+	setCreateExpenseImplForTests,
+	resetCreateExpenseImplForTests,
+} from '../src/services/expenses-write-service.js';
 
 const USER = {
 	id: 'pb_user',
@@ -167,6 +175,8 @@ test.afterEach(() => {
 	resetStockQueryImplForTests();
 	resetDebtsQueryImplForTests();
 	resetProductsQueryImplForTests();
+	resetCreateSaleImplForTests();
+	resetCreateExpenseImplForTests();
 });
 
 test('full flow: current month sales question', async () => {
@@ -833,4 +843,197 @@ test('report supabase failure never returns success reply', async () => {
 	assert.equal(result.toolResults[0].success, false);
 	assert.match(result.reply, /report|résumé|activité|récupérer/i);
 	assert.doesNotMatch(result.reply, /bénéfice estimé de 5/i);
+});
+
+test('create sale message asks for confirmation before write', async () => {
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: "J'ai vendu 2 poulets à 10 $, payé 20 $",
+		user: USER,
+		sessionId: 'sess-sale-confirm',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults.length, 1);
+	assert.equal(result.toolResults[0].tool, 'create_sale');
+	assert.equal(result.toolResults[0].success, false);
+	assert.equal(result.toolResults[0].error.code, 'NEEDS_CONFIRMATION');
+	assert.match(result.reply, /Je vais enregistrer 2 poulets/i);
+	assert.match(result.reply, /Je confirme/i);
+
+	const stored = getConversationState(USER.id, 'sess-sale-confirm');
+	assert.equal(stored.pendingWrite?.tool, 'create_sale');
+	assert.equal(stored.pendingWrite?.quantity, 2);
+	assert.equal(stored.pendingWrite?.product, 'poulets');
+});
+
+test('create sale confirmation executes atomic write', async () => {
+	setCreateSaleImplForTests(async (clientId, input) => {
+		assert.equal(clientId, 'client_1');
+		assert.equal(input.confirmed, true);
+		return {
+			saleId: 'sale-1',
+			product: input.product,
+			quantity: input.quantity,
+			unitPrice: input.unitPrice || 10,
+			amountPaid: input.amountPaid,
+			total: input.quantity * (input.unitPrice || 10),
+			stockRemaining: 3,
+			stockThreshold: 5,
+			stockAlert: '⚠️ Ton stock est très faible (3 poulets restants), pense à te réapprovisionner.',
+		};
+	});
+
+	const agent = createAshyAgent();
+	const sessionId = 'sess-sale-flow';
+
+	await agent.run({
+		message: "J'ai vendu 2 poulets à 10 $, payé 20 $",
+		user: USER,
+		sessionId,
+		referenceDate: REFERENCE_DATE,
+	});
+
+	const confirmed = await agent.run({
+		message: 'oui',
+		user: USER,
+		sessionId,
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(confirmed.toolResults[0].success, true);
+	assert.equal(confirmed.toolResults[0].tool, 'create_sale');
+	assert.match(confirmed.reply, /Vente enregistrée/i);
+	assert.match(confirmed.reply, /stock est très faible/i);
+
+	const stored = getConversationState(USER.id, sessionId);
+	assert.equal(stored.pendingWrite, null);
+});
+
+test('create sale insufficient stock never returns success reply', async () => {
+	setCreateSaleImplForTests(async () => {
+		const error = new Error('stock insuffisant pour vente poulets (0 < 2)');
+		error.code = 'INSUFFICIENT_STOCK';
+		error.available = 0;
+		error.requested = 2;
+		throw error;
+	});
+
+	const agent = createAshyAgent();
+	const sessionId = 'sess-sale-stock-err';
+
+	await agent.run({
+		message: "J'ai vendu 2 poulets à 10 $, payé 20 $",
+		user: USER,
+		sessionId,
+		referenceDate: REFERENCE_DATE,
+	});
+
+	const result = await agent.run({
+		message: 'oui',
+		user: USER,
+		sessionId,
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults[0].success, false);
+	assert.equal(result.toolResults[0].error.code, 'INSUFFICIENT_STOCK');
+	assert.match(result.reply, /plus de poulets en stock/i);
+	assert.doesNotMatch(result.reply, /Vente enregistrée/i);
+});
+
+test('create sale clarification when amount paid is missing', async () => {
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: "J'ai vendu 2 poulets à 10 $",
+		user: USER,
+		sessionId: 'sess-sale-clarify',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults.length, 0);
+	assert.match(result.reply, /Combien as-tu encaissé/i);
+});
+
+test('create expense message asks for confirmation before write', async () => {
+	const agent = createAshyAgent();
+	const result = await agent.run({
+		message: "J'ai dépensé 20 $ pour le transport",
+		user: USER,
+		sessionId: 'sess-expense-confirm',
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(result.toolResults.length, 1);
+	assert.equal(result.toolResults[0].tool, 'create_expense');
+	assert.equal(result.toolResults[0].success, false);
+	assert.equal(result.toolResults[0].error.code, 'NEEDS_CONFIRMATION');
+	assert.match(result.reply, /dépense de .*20.*transport/i);
+	assert.match(result.reply, /Je confirme/i);
+
+	const stored = getConversationState(USER.id, 'sess-expense-confirm');
+	assert.equal(stored.pendingWrite?.tool, 'create_expense');
+	assert.equal(stored.pendingWrite?.amount, 20);
+	assert.equal(stored.pendingWrite?.label, 'transport');
+});
+
+test('create expense confirmation executes atomic write', async () => {
+	setCreateExpenseImplForTests(async (clientId, input) => {
+		assert.equal(clientId, 'client_1');
+		assert.equal(input.confirmed, true);
+		return {
+			expenseId: 'expense-1',
+			label: input.label,
+			amount: input.amount,
+		};
+	});
+
+	const agent = createAshyAgent();
+	const sessionId = 'sess-expense-flow';
+
+	await agent.run({
+		message: "J'ai dépensé 20 $ pour le transport",
+		user: USER,
+		sessionId,
+		referenceDate: REFERENCE_DATE,
+	});
+
+	const confirmed = await agent.run({
+		message: 'oui',
+		user: USER,
+		sessionId,
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(confirmed.toolResults[0].success, true);
+	assert.equal(confirmed.toolResults[0].tool, 'create_expense');
+	assert.match(confirmed.reply, /Dépense enregistrée/i);
+
+	const stored = getConversationState(USER.id, sessionId);
+	assert.equal(stored.pendingWrite, null);
+});
+
+test('create expense slot-fill after missing label', async () => {
+	const agent = createAshyAgent();
+	const sessionId = 'sess-expense-slot';
+
+	const first = await agent.run({
+		message: "J'ai dépensé 20 $",
+		user: USER,
+		sessionId,
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.match(first.reply, /C'était pour quoi/i);
+
+	const second = await agent.run({
+		message: 'transport',
+		user: USER,
+		sessionId,
+		referenceDate: REFERENCE_DATE,
+	});
+
+	assert.equal(second.toolResults[0].tool, 'create_expense');
+	assert.equal(second.toolResults[0].error.code, 'NEEDS_CONFIRMATION');
+	assert.match(second.reply, /transport/i);
 });

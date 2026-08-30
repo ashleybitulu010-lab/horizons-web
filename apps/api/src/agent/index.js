@@ -11,6 +11,33 @@ import { planToolExecution } from './tool-planner.js';
 import { createToolExecutionContext } from '../tools/context.js';
 import { executeTool } from '../tools/registry.js';
 
+function buildPendingWriteFromStep(step) {
+	if (!step) return null;
+	if (step.tool === 'create_sale') {
+		return {
+			tool: 'create_sale',
+			product: step.input.product,
+			quantity: step.input.quantity,
+			unitPrice: step.input.unitPrice ?? null,
+			amountPaid: step.input.amountPaid ?? null,
+		};
+	}
+	if (step.tool === 'create_expense') {
+		return {
+			tool: 'create_expense',
+			label: step.input.label,
+			amount: step.input.amount ?? null,
+		};
+	}
+	return null;
+}
+
+function writeConfirmationResponseKind(toolName) {
+	if (toolName === 'create_expense') return 'create_expense_confirmation';
+	if (toolName === 'create_sale') return 'create_sale_confirmation';
+	return 'tool_error';
+}
+
 const MULTI_RESULT_KINDS = new Set([
 	'compare_sales',
 	'compare_expenses',
@@ -87,6 +114,21 @@ export function createAshyAgent() {
 			for (const step of plan.steps) {
 				const result = await executeTool(step.tool, context, step.input, referenceDate);
 				toolResults.push(result);
+
+				if (!result.success && result.error?.code === 'NEEDS_CONFIRMATION') {
+					const pendingWrite = buildPendingWriteFromStep(step);
+					saveConversationState(user.id, sessionId, mergeConversationState(nextState, {
+						pendingWrite,
+						lastAction: resolved.intent,
+					}));
+					return {
+						reply: formatAshyReply(writeConfirmationResponseKind(step.tool), result),
+						conversation: sanitizeConversationForClient(getConversationState(user.id, sessionId)),
+						toolResults: toolResults.map(sanitizeToolResultForClient),
+						intentDiagnostics,
+					};
+				}
+
 				if (!result.success) {
 					saveConversationState(user.id, sessionId, mergeConversationState(nextState, {
 						lastTool: step.tool,
@@ -106,6 +148,7 @@ export function createAshyAgent() {
 				lastAction: resolved.intent,
 				filters: resolved.filters || {},
 				references: applyReferenceUpdateFromPlan(plan, nextState, toolResults),
+				pendingWrite: null,
 			};
 
 			saveConversationState(user.id, sessionId, mergeConversationState(nextState, statePatch));

@@ -255,8 +255,58 @@ export function formatLowStockReply(toolResult) {
 }
 
 export function formatToolErrorReply(toolResult) {
+	if (toolResult?.error?.code === 'INSUFFICIENT_STOCK') {
+		return toolResult.error.message;
+	}
+	if (toolResult?.error?.code === 'PRODUCT_NOT_FOUND') {
+		return toolResult.error.message || 'Je ne trouve pas ce produit dans ton catalogue.';
+	}
 	return toolResult?.error?.message
 		|| 'Je n’ai pas pu récupérer tes données depuis Supabase. Réessaie dans un instant.';
+}
+
+export function formatCreateExpenseConfirmationReply(toolResult) {
+	const preview = toolResult?.meta?.preview;
+	if (!preview) {
+		return 'Je peux enregistrer cette dépense. Confirme avec « oui » pour valider.';
+	}
+	return `Je vais enregistrer une dépense de ${formatMoney(preview.amount)} pour « ${preview.label} ». Je confirme ?`;
+}
+
+export function formatCreateExpenseReply(toolResult) {
+	if (!toolResult?.success) {
+		return formatToolErrorReply(toolResult);
+	}
+	const summary = toolResult.data?.summary || {};
+	return `✅ Dépense enregistrée : ${formatMoney(summary.amount)} pour « ${summary.label} ».`;
+}
+
+export function formatCreateSaleConfirmationReply(toolResult) {
+	const preview = toolResult?.meta?.preview;
+	if (!preview) {
+		return 'Je peux enregistrer cette vente. Confirme avec « oui » pour valider.';
+	}
+	const total = preview.total != null
+		? preview.total
+		: (preview.unitPrice != null ? preview.quantity * preview.unitPrice : null);
+	const totalText = total != null ? formatMoney(total) : '—';
+	const unitText = preview.unitPrice != null ? formatMoney(preview.unitPrice) : '—';
+	const paidText = preview.amountPaid != null ? formatMoney(preview.amountPaid) : '—';
+	return `Je vais enregistrer ${preview.quantity} ${preview.product} à ${unitText} (total ${totalText}, encaissé ${paidText}). Je confirme ?`;
+}
+
+export function formatCreateSaleReply(toolResult) {
+	if (!toolResult?.success) {
+		return formatToolErrorReply(toolResult);
+	}
+	const summary = toolResult.data?.summary || {};
+	const lines = [
+		`✅ Vente enregistrée : ${summary.quantity} ${summary.product} pour ${formatMoney(summary.total)} (encaissé ${formatMoney(summary.amountPaid)}).`,
+	];
+	if (summary.stockAlert) {
+		lines.push(summary.stockAlert);
+	}
+	return lines.join('\n\n');
 }
 
 export function formatUnimplementedTopicReply(toolName) {
@@ -291,6 +341,10 @@ const REPLY_FORMATTERS = {
 	compare_expenses: formatCompareExpensesReply,
 	compare_sales_expenses: formatCompareSalesExpensesReply,
 	generate_report: formatGenerateReportReply,
+	create_sale: formatCreateSaleReply,
+	create_sale_confirmation: formatCreateSaleConfirmationReply,
+	create_expense: formatCreateExpenseReply,
+	create_expense_confirmation: formatCreateExpenseConfirmationReply,
 	clarification: formatClarificationReply,
 	tool_error: formatToolErrorReply,
 	unimplemented_topic: (_payload, toolName) => formatUnimplementedTopicReply(toolName),

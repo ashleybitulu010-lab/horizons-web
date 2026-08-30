@@ -146,6 +146,310 @@ const REPORT_PATTERNS = [
 
 const REPORT_HOW_TO_PATTERN = /comment\s+(?:g[eé]n[eé]rer|faire|obtenir).*(?:bilan|rapport|pdf)/i;
 
+const CREATE_SALE_PREFIX = /^j['']?ai vendu\b/i;
+const CONFIRMATION_PATTERN = /^(?:oui|yes|ok|confirme(?:r|z)?|je confirme|c['']est bon|vas[- ]?y)\b[!?.]*$/i;
+
+function isConfirmationMessage(text) {
+	return CONFIRMATION_PATTERN.test(String(text || '').trim());
+}
+
+function toNumber(value) {
+	if (value == null || value === '') return null;
+	const num = Number(String(value).replace(',', '.'));
+	return Number.isFinite(num) ? num : null;
+}
+
+export function parseCreateSaleFromText(text) {
+	const raw = String(text || '').trim();
+	if (!CREATE_SALE_PREFIX.test(raw) || /^combien/i.test(raw)) {
+		return null;
+	}
+
+	const paidMatch = raw.match(/(?:pay[eé]|encaiss[eé])\s+(\d+(?:[.,]\d+)?)\s*\$?/i);
+	const amountPaid = paidMatch ? toNumber(paidMatch[1]) : null;
+
+	const withUnitPrice = raw.match(
+		/^j['']?ai vendu\s+(\d+(?:[.,]\d+)?)\s+(.+?)\s+[àa@]\s*(\d+(?:[.,]\d+)?)\s*\$?(?:.*)?$/i,
+	);
+	if (withUnitPrice) {
+		let product = String(withUnitPrice[2] || '').trim();
+		product = product.replace(/,\s*(?:pay[eé]|encaiss[eé]).*$/i, '').trim();
+		return {
+			product: product || null,
+			quantity: toNumber(withUnitPrice[1]),
+			unitPrice: toNumber(withUnitPrice[3]),
+			amountPaid,
+		};
+	}
+
+	const withQuantity = raw.match(
+		/^j['']?ai vendu\s+(\d+(?:[.,]\d+)?)\s+(.+?)(?:,\s*(?:pay[eé]|encaiss[eé])|$)/i,
+	);
+	if (withQuantity) {
+		let product = String(withQuantity[2] || '').trim();
+		product = product.replace(/,\s*(?:pay[eé]|encaiss[eé]).*$/i, '').trim();
+		return {
+			product: product || null,
+			quantity: toNumber(withQuantity[1]),
+			unitPrice: null,
+			amountPaid,
+		};
+	}
+
+	const tail = raw.replace(/^j['']?ai vendu\s+/i, '').trim();
+	return {
+		product: tail || null,
+		quantity: null,
+		unitPrice: null,
+		amountPaid,
+	};
+}
+
+function resolveCreateSaleIntent(text, conversationState = {}) {
+	if (isConfirmationMessage(text) && conversationState.pendingWrite?.tool === 'create_sale') {
+		const pending = conversationState.pendingWrite;
+		return withRegexMeta({
+			intent: 'create_sale',
+			topic: 'sales',
+			filters: {
+				product: pending.product,
+				quantity: pending.quantity,
+				unitPrice: pending.unitPrice ?? null,
+				amountPaid: pending.amountPaid ?? null,
+				confirmed: true,
+			},
+			references: {},
+			needsTool: true,
+		});
+	}
+
+	const draft = parseCreateSaleFromText(text);
+	if (!draft) {
+		return null;
+	}
+
+	if (!draft.product) {
+		return withRegexMeta({
+			intent: 'unknown',
+			topic: 'sales',
+			filters: {},
+			references: {},
+			needsTool: false,
+			needsClarification: true,
+			clarificationQuestion: 'Quel produit as-tu vendu ?',
+		});
+	}
+
+	if (!draft.quantity || draft.quantity <= 0) {
+		return withRegexMeta({
+			intent: 'unknown',
+			topic: 'sales',
+			filters: { product: draft.product },
+			references: {},
+			needsTool: false,
+			needsClarification: true,
+			clarificationQuestion: `D'accord 😊 Combien de ${draft.product} as-tu vendus ?`,
+		});
+	}
+
+	if (draft.amountPaid == null) {
+		return withRegexMeta({
+			intent: 'unknown',
+			topic: 'sales',
+			filters: {
+				product: draft.product,
+				quantity: draft.quantity,
+				unitPrice: draft.unitPrice ?? null,
+			},
+			references: {},
+			needsTool: false,
+			needsClarification: true,
+			clarificationQuestion: draft.unitPrice
+				? `Combien as-tu encaissé pour ${draft.quantity} ${draft.product} à ${draft.unitPrice} $ ?`
+				: `Combien as-tu encaissé pour cette vente de ${draft.product} ?`,
+		});
+	}
+
+	return withRegexMeta({
+		intent: 'create_sale',
+		topic: 'sales',
+		filters: {
+			product: draft.product,
+			quantity: draft.quantity,
+			unitPrice: draft.unitPrice ?? null,
+			amountPaid: draft.amountPaid,
+			confirmed: false,
+		},
+		references: {},
+		needsTool: true,
+	});
+}
+
+const CREATE_EXPENSE_PREFIX = /^j['']?ai d[eé]pens[eé]/i;
+
+function normalizeExpenseLabel(label) {
+	return String(label || '').trim().replace(/^(?:le|la|les|l[''])\s+/i, '');
+}
+
+export function parseCreateExpenseFromText(text) {
+	const raw = String(text || '').trim();
+	if (!CREATE_EXPENSE_PREFIX.test(raw) || /^combien/i.test(raw)) {
+		return null;
+	}
+
+	const amountPourLabel = raw.match(
+		/^j['']?ai d[eé]pens[eé]\s+(\d+(?:[.,]\d+)?)\s*\$?\s*(?:pour|en|de|dans)\s+(.+)$/i,
+	);
+	if (amountPourLabel) {
+		return {
+			amount: toNumber(amountPourLabel[1]),
+			label: normalizeExpenseLabel(amountPourLabel[2]),
+		};
+	}
+
+	const amountOnly = raw.match(/^j['']?ai d[eé]pens[eé]\s+(\d+(?:[.,]\d+)?)\s*\$?\s*$/i);
+	if (amountOnly) {
+		return {
+			amount: toNumber(amountOnly[1]),
+			label: null,
+		};
+	}
+
+	const labelOnly = raw.match(/^j['']?ai d[eé]pens[eé]\s+(?:pour|en|de|dans)\s+(.+)$/i);
+	if (labelOnly) {
+		return {
+			amount: null,
+			label: normalizeExpenseLabel(labelOnly[1]),
+		};
+	}
+
+	return {
+		amount: null,
+		label: normalizeExpenseLabel(raw.replace(/^j['']?ai d[eé]pens[eé]\s+/i, '').trim()) || null,
+	};
+}
+
+function parseExpenseFollowUp(text, conversationState = {}) {
+	const trimmed = String(text || '').trim();
+	if (!trimmed || CREATE_EXPENSE_PREFIX.test(trimmed) || isConfirmationMessage(trimmed)) {
+		return null;
+	}
+
+	const filters = conversationState.filters || {};
+	const hasPartialDraft = Boolean(filters.label) || filters.amount != null;
+	if (!hasPartialDraft) {
+		return null;
+	}
+
+	let label = filters.label || null;
+	let amount = filters.amount ?? null;
+
+	if (/^\d+([.,]\d+)?\s*[$€]?$/i.test(trimmed)) {
+		amount = toNumber(trimmed);
+	} else {
+		label = normalizeExpenseLabel(trimmed.replace(/^pour\s+/i, '')) || label;
+	}
+
+	return { label, amount };
+}
+
+function resolveCreateExpenseIntent(text, conversationState = {}) {
+	if (isConfirmationMessage(text) && conversationState.pendingWrite?.tool === 'create_expense') {
+		const pending = conversationState.pendingWrite;
+		return withRegexMeta({
+			intent: 'create_expense',
+			topic: 'expenses',
+			filters: {
+				label: pending.label,
+				amount: pending.amount,
+				confirmed: true,
+			},
+			references: {},
+			needsTool: true,
+		});
+	}
+
+	const followUp = parseExpenseFollowUp(text, conversationState);
+	if (followUp) {
+		if (!followUp.label) {
+			return withRegexMeta({
+				intent: 'unknown',
+				topic: 'expenses',
+				filters: { amount: followUp.amount ?? null },
+				references: {},
+				needsTool: false,
+				needsClarification: true,
+				clarificationQuestion: 'D\'accord. C\'était pour quoi ?',
+			});
+		}
+		if (followUp.amount == null || followUp.amount <= 0) {
+			return withRegexMeta({
+				intent: 'unknown',
+				topic: 'expenses',
+				filters: { label: followUp.label },
+				references: {},
+				needsTool: false,
+				needsClarification: true,
+				clarificationQuestion: 'Quel montant as-tu dépensé ?',
+			});
+		}
+		return withRegexMeta({
+			intent: 'create_expense',
+			topic: 'expenses',
+			filters: {
+				label: followUp.label,
+				amount: followUp.amount,
+				confirmed: false,
+			},
+			references: {},
+			needsTool: true,
+		});
+	}
+
+	const draft = parseCreateExpenseFromText(text);
+	if (!draft) {
+		return null;
+	}
+
+	if (!draft.label) {
+		return withRegexMeta({
+			intent: 'unknown',
+			topic: 'expenses',
+			filters: { amount: draft.amount ?? null },
+			references: {},
+			needsTool: false,
+			needsClarification: true,
+			clarificationQuestion: draft.amount != null
+				? 'D\'accord. C\'était pour quoi ?'
+				: 'D\'accord. Combien as-tu dépensé, et c\'était pour quoi ?',
+		});
+	}
+
+	if (draft.amount == null || draft.amount <= 0) {
+		return withRegexMeta({
+			intent: 'unknown',
+			topic: 'expenses',
+			filters: { label: draft.label },
+			references: {},
+			needsTool: false,
+			needsClarification: true,
+			clarificationQuestion: 'Quel montant as-tu dépensé ?',
+		});
+	}
+
+	return withRegexMeta({
+		intent: 'create_expense',
+		topic: 'expenses',
+		filters: {
+			label: draft.label,
+			amount: draft.amount,
+			confirmed: false,
+		},
+		references: {},
+		needsTool: true,
+	});
+}
+
 const REPORT_PERIOD_PATTERNS = [
 	{ pattern: /\b(ce|cette)\s+mois\b/i, period: 'current_month' },
 	{ pattern: /\bmois\s+(dernier|pass[eé])\b/i, period: 'previous_month' },
@@ -333,6 +637,16 @@ export function resolveIntentRegex(message, conversationState = createFallbackSt
 
 	if (!text) {
 		return emptyResolved(conversationState);
+	}
+
+	const createSaleIntent = resolveCreateSaleIntent(text, conversationState);
+	if (createSaleIntent) {
+		return createSaleIntent;
+	}
+
+	const createExpenseIntent = resolveCreateExpenseIntent(text, conversationState);
+	if (createExpenseIntent) {
+		return createExpenseIntent;
 	}
 
 	if (BEST_PRODUCT_PATTERNS.some((pattern) => pattern.test(text))) {

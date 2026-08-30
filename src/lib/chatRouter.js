@@ -1,18 +1,22 @@
 /**
- * Phase 3.7 — conservative read/write classifier for chat routing.
- * Write-first: when uncertain, route to n8n.
+ * Phase 3.7 + 3.9 + 4.1 — conservative read/write classifier for chat routing.
+ * Write-first when uncertain; create_sale/create_expense route to Ashy when write flag is ON.
  */
 
 import { isAshyReadChatEnabled } from './ashyReadChatFlag.js';
+import { isAshyWriteChatEnabled } from './ashyWriteChatFlag.js';
 
 export const CHAT_ROUTE = Object.freeze({
   ASHY: 'ashy',
   N8N: 'n8n',
 });
 
+const CREATE_SALE_PREFIX = /^j['']?ai vendu\b/i;
+const CREATE_EXPENSE_PREFIX = /^j['']?ai d[eé]pens[eé]/i;
+
 const WRITE_PREFIX_PATTERNS = [
-  /^j['']?ai vendu\b/i,
-  /^j['']?ai d[eé]pens[eé]/i,
+  CREATE_SALE_PREFIX,
+  CREATE_EXPENSE_PREFIX,
   /^j['']?ai re[cç]u du stock/i,
   /^j['']?ai re[cç]u un paiement/i,
   /^je veux ajouter un nouveau produit/i,
@@ -27,6 +31,10 @@ const WRITE_ACTION_PATTERNS = [
   /\b(enregistr(?:e|er|é)|ajoute(?:r|z)?|cr[eé][eé](?:r|z)?|modifier|modifie(?:r|z)?|annule(?:r|z)?|supprime(?:r|z)?|retire(?:r|z)?)\b/i,
   /\b(annule|modifier|modifie|supprime|corrige)\b.*\b(vente|d[eé]pense|stock|produit|dette)/i,
 ];
+
+const ASHY_WRITE_CONFIRMATION_PATTERN = /^(?:oui|yes|ok|confirme(?:r|z)?|je confirme|c['']est bon|vas[- ]?y)\b[!?.]*$/i;
+
+const ASHY_WRITE_CANCEL_PATTERN = /^(?:non|no|annule(?:r|z)?)\b[!?.]*$/i;
 
 const PDF_REQUEST_PATTERN = /\b(pdf|document|fichier|export(?:e)?|t[eé]l[eé]charg(?:e|er)|envoie[- ]?moi)\b/i;
 const PDF_REPORT_CONTEXT_PATTERN = /\b(bilan|rapport|synth[eè]se|r[eé]sum[eé]|r[eé]cap(?:itulatif)?)\b/i;
@@ -70,6 +78,47 @@ export function isPdfReportRequest(text) {
   return PDF_REQUEST_PATTERN.test(t) && PDF_REPORT_CONTEXT_PATTERN.test(t);
 }
 
+export function isCreateSaleIntent(text) {
+  const t = String(text || '').trim();
+  if (!t || /^combien/i.test(t)) return false;
+  return CREATE_SALE_PREFIX.test(t);
+}
+
+export function isCreateExpenseIntent(text) {
+  const t = String(text || '').trim();
+  if (!t || /^combien/i.test(t)) return false;
+  return CREATE_EXPENSE_PREFIX.test(t);
+}
+
+export function isAshyWriteConfirmationMessage(text) {
+  return ASHY_WRITE_CONFIRMATION_PATTERN.test(String(text || '').trim());
+}
+
+export function isAshyWriteCancellationMessage(text) {
+  return ASHY_WRITE_CANCEL_PATTERN.test(String(text || '').trim());
+}
+
+export function isCreateSaleSlotFillContinuation(text) {
+  const t = String(text || '').trim();
+  if (!t || t.length > 120) return false;
+  if (isAshyWriteConfirmationMessage(t) || isAshyWriteCancellationMessage(t)) return false;
+  if (/^(?:pay[eé]|encaiss[eé])\s+\d/i.test(t)) return true;
+  if (/^\d+([.,]\d+)?\s*[$€]?$/i.test(t)) return true;
+  return false;
+}
+
+export function isCreateExpenseSlotFillContinuation(text) {
+  const t = String(text || '').trim();
+  if (!t || t.length > 120) return false;
+  if (isAshyWriteConfirmationMessage(t) || isAshyWriteCancellationMessage(t)) return false;
+  if (isCreateSaleIntent(t) || isCreateExpenseIntent(t)) return false;
+  if (/^\d+([.,]\d+)?\s*[$€]?$/i.test(t)) return true;
+  if (/^(?:pour\s+)?[a-zàâäéèêëïîôùûüç0-9\s\-'«»]+$/i.test(t) && !/^(j['']?ai|je veux|un client)/i.test(t)) {
+    return true;
+  }
+  return false;
+}
+
 export function isWriteIntent(text) {
   const t = String(text || '').trim();
   if (!t) return false;
@@ -104,19 +153,44 @@ export function isReadIntent(text) {
  * @returns {'ashy' | 'n8n'}
  */
 export function resolveChatRoute(message, options = {}) {
-  const flagEnabled = options.flagEnabled ?? isAshyReadChatEnabled(options.env);
+  const readFlag = options.readFlagEnabled ?? isAshyReadChatEnabled(options.env);
+  const writeFlag = options.writeFlagEnabled ?? isAshyWriteChatEnabled(options.env);
+  const pendingAshyWrite = Boolean(options.pendingAshyWriteConfirmation);
 
-  if (!flagEnabled) {
+  if (!readFlag && !writeFlag) {
     return CHAT_ROUTE.N8N;
   }
 
   const text = extractClassificationText(message);
 
-  if (isWriteIntent(text) || isPdfReportRequest(text)) {
+  if (isPdfReportRequest(text)) {
     return CHAT_ROUTE.N8N;
   }
 
-  if (isReadIntent(text)) {
+  if (writeFlag) {
+    if (pendingAshyWrite) {
+      if (
+        isAshyWriteConfirmationMessage(text)
+        || isAshyWriteCancellationMessage(text)
+        || isCreateSaleSlotFillContinuation(text)
+        || isCreateExpenseSlotFillContinuation(text)
+      ) {
+        return CHAT_ROUTE.ASHY;
+      }
+    }
+
+    if (isCreateSaleIntent(text) || isCreateExpenseIntent(text)) {
+      return CHAT_ROUTE.ASHY;
+    }
+
+    if (isWriteIntent(text)) {
+      return CHAT_ROUTE.N8N;
+    }
+  } else if (isWriteIntent(text)) {
+    return CHAT_ROUTE.N8N;
+  }
+
+  if (readFlag && isReadIntent(text)) {
     return CHAT_ROUTE.ASHY;
   }
 

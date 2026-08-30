@@ -13,6 +13,7 @@ import {
 } from '@/lib/pdfDownload';
 import { saveGeneratedReport } from '@/lib/saveReport';
 import { buildWelcomeContent, makeWelcomeMessage } from '@/lib/ashyChat';
+import { computeNextPendingAshyWrite } from '@/lib/chatAshyWrite';
 import { parseChatReplyResponse } from '@/lib/chatReply';
 import { resolveChatRoute } from '@/lib/chatRouter';
 import { fetchChatResponse } from '@/lib/chatTransport';
@@ -124,6 +125,7 @@ export function ChatProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
   const loadedForUser = useRef(null);
+  const pendingAshyWriteRef = useRef(false);
 
   useEffect(() => {
     const welcome = makeWelcomeMessage(user?.firstName);
@@ -273,7 +275,9 @@ export function ChatProvider({ children }) {
       ].slice(-12);
 
       const sessionId = stableId || user?.email || 'default';
-      const chatRoute = resolveChatRoute(body);
+      const chatRoute = resolveChatRoute(body, {
+        pendingAshyWriteConfirmation: pendingAshyWriteRef.current,
+      });
 
       const chatResponse = await fetchChatResponse({
         message: body,
@@ -351,10 +355,18 @@ export function ChatProvider({ children }) {
       setNewIds((prev) => new Set(prev).add(replyId));
       persist('assistant', replyText);
       trackFromAssistantReply(replyText);
+      pendingAshyWriteRef.current = computeNextPendingAshyWrite({
+        previousPending: pendingAshyWriteRef.current,
+        chatRoute,
+        chatResponse,
+        userMessage: body,
+      });
+
       if (shouldRefreshDashboard && typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent(DASHBOARD_REFRESH_EVENT));
       }
     } catch {
+      pendingAshyWriteRef.current = false;
       const errId = Date.now() + 1;
       setMessages((prev) => {
         const withStatus = prev.map((m) => (m.id === id ? { ...m, status: 'read' } : m));
@@ -374,6 +386,7 @@ export function ChatProvider({ children }) {
     setNewIds(new Set());
     setInput('');
     loadedForUser.current = null;
+    pendingAshyWriteRef.current = false;
   }, [user?.firstName]);
 
   const deleteMessages = useCallback((ids) => {

@@ -12,6 +12,7 @@ export const ALLOWED_INTENTS = Object.freeze([
 	'compare_sales_expenses',
 	'best_product',
 	'generate_report',
+	'create_sale',
 	'unknown',
 ]);
 
@@ -34,6 +35,10 @@ export const ALLOWED_FILTER_KEYS = Object.freeze([
 	'lowStockOnly',
 	'status',
 	'debtor',
+	'quantity',
+	'unitPrice',
+	'amountPaid',
+	'confirmed',
 ]);
 
 export const FORBIDDEN_LLM_KEYS = Object.freeze([
@@ -157,6 +162,18 @@ export function validateAndNormalizeResolvedIntent(raw, conversationState = {}) 
 	if (filters.category != null && typeof filters.category !== 'string') return null;
 	if (filters.debtor != null && typeof filters.debtor !== 'string') return null;
 	if (filters.status != null && !['unpaid', 'settled', 'all'].includes(filters.status)) {
+		return null;
+	}
+	if (filters.quantity != null && (typeof filters.quantity !== 'number' || filters.quantity <= 0)) {
+		return null;
+	}
+	if (filters.unitPrice != null && (typeof filters.unitPrice !== 'number' || filters.unitPrice <= 0)) {
+		return null;
+	}
+	if (filters.amountPaid != null && (typeof filters.amountPaid !== 'number' || filters.amountPaid < 0)) {
+		return null;
+	}
+	if (filters.confirmed != null && typeof filters.confirmed !== 'boolean') {
 		return null;
 	}
 

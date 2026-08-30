@@ -1,6 +1,8 @@
 /**
- * Phase 3.7 — shared chat response parsing for n8n and Ashy routes.
+ * Phase 3.7 + 3.9 — shared chat response parsing for n8n and Ashy routes.
  */
+
+import { isAshyWriteSuccessResponse } from './chatAshyWrite.js';
 
 function looksLikeUpstreamReconnect(text) {
   const t = String(text || '');
@@ -53,7 +55,10 @@ export function parseChatReplyResponse(response) {
       pdf_base64: data.pdf_base64,
       mime_type: data.mime_type,
     } : null,
-    shouldRefreshDashboard: ok && route === 'n8n' && !ashyFallback,
+    shouldRefreshDashboard: (
+      (ok && route === 'n8n' && !ashyFallback)
+      || isAshyWriteSuccessResponse(response)
+    ),
   };
 }
 

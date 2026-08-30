@@ -11,6 +11,7 @@ export const ALLOWED_STATE_KEYS = Object.freeze([
 	'lastTool',
 	'lastAction',
 	'updatedAt',
+	'pendingWrite',
 ]);
 
 export const ALLOWED_REFERENCE_KEYS = Object.freeze([
@@ -28,6 +29,12 @@ export const ALLOWED_FILTER_KEYS = Object.freeze([
 	'lowStockOnly',
 	'status',
 	'debtor',
+	'quantity',
+	'unitPrice',
+	'amountPaid',
+	'confirmed',
+	'label',
+	'amount',
 ]);
 
 
@@ -61,6 +68,7 @@ export function createEmptyConversationState() {
 		lastTool: null,
 		lastAction: null,
 		updatedAt: null,
+		pendingWrite: null,
 	};
 }
 
@@ -229,7 +237,40 @@ function assertFiltersAreContextOnly(filters, path = 'filters') {
 			continue;
 		}
 		if (typeof value === 'boolean' || typeof value === 'string') continue;
+		if (key === 'quantity' || key === 'unitPrice' || key === 'amountPaid' || key === 'amount') {
+			if (typeof value !== 'number') {
+				throw new Error(`Conversation filter ${path}.${key} must be a number`);
+			}
+			continue;
+		}
+		if (key === 'label') {
+			if (typeof value !== 'string') {
+				throw new Error(`Conversation filter ${path}.${key} must be a string`);
+			}
+			continue;
+		}
 		throw new Error(`Conversation filter ${path}.${key} must be a primitive context value`);
+	}
+}
+
+const PENDING_WRITE_FIELDS = Object.freeze({
+	create_sale: ['tool', 'product', 'quantity', 'unitPrice', 'amountPaid'],
+	create_expense: ['tool', 'label', 'amount'],
+});
+
+function assertPendingWriteIsDraftOnly(pendingWrite) {
+	if (pendingWrite == null) return;
+	if (typeof pendingWrite !== 'object') {
+		throw new Error('pendingWrite must be an object or null');
+	}
+	const allowed = PENDING_WRITE_FIELDS[pendingWrite.tool];
+	if (!allowed) {
+		throw new Error(`Unsupported pendingWrite tool: ${pendingWrite.tool}`);
+	}
+	for (const key of Object.keys(pendingWrite)) {
+		if (!allowed.includes(key)) {
+			throw new Error(`Unexpected pendingWrite key: ${key}`);
+		}
 	}
 }
 
@@ -266,6 +307,7 @@ export function assertConversationStateIsContextOnly(state) {
 
 	assertFiltersAreContextOnly(state.filters);
 	assertNoFinancialKeys(state.references, 'references');
+	assertPendingWriteIsDraftOnly(state.pendingWrite);
 }
 
 /** @deprecated use updateReferencesAfterPeriodQuery */

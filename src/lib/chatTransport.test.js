@@ -170,11 +170,124 @@ test('FLAG OFF route uses n8n directly without Ashy', async () => {
   assert.equal(res.ashyFallback, undefined);
 });
 
-test('write with FLAG ON resolves to n8n route only', () => {
+test('write with read flag ON only resolves create_sale to n8n', () => {
   const route = resolveChatRoute("J'ai vendu 10 pains", {
-    env: { VITE_ASHY_READ_CHAT: 'true' },
+    env: { VITE_ASHY_READ_CHAT: 'true', VITE_ASHY_WRITE_CHAT: 'false' },
   });
   assert.equal(route, CHAT_ROUTE.N8N);
+});
+
+test('write flag ON routes create_sale to Ashy in fetchChatResponse', async () => {
+  let ashyCalls = 0;
+  let n8nCalls = 0;
+  const res = await fetchChatResponse({
+    ...baseCtx,
+    message: "J'ai vendu 2 poulets à 10 $, payé 20 $",
+    chatRoute: CHAT_ROUTE.ASHY,
+    sendAshy: async () => {
+      ashyCalls += 1;
+      return {
+        ok: true,
+        status: 200,
+        rawText: '{"reply":"Preview vente"}',
+        data: {
+          reply: 'Preview vente',
+          toolResults: [{ success: false, error: { code: 'NEEDS_CONFIRMATION' } }],
+        },
+        route: 'ashy',
+      };
+    },
+    sendN8n: async () => { n8nCalls += 1; return { ok: true, route: 'n8n' }; },
+  });
+
+  assert.equal(ashyCalls, 1);
+  assert.equal(n8nCalls, 0);
+  assert.equal(res.route, 'ashy');
+});
+
+test('Ashy create_expense success does not fallback to n8n', async () => {
+  let n8nCalls = 0;
+  const res = await fetchChatResponse({
+    ...baseCtx,
+    message: 'oui',
+    chatRoute: CHAT_ROUTE.ASHY,
+    sendAshy: mockAshy({
+      ok: true,
+      status: 200,
+      rawText: '{"reply":"Dépense enregistrée."}',
+      data: {
+        reply: 'Dépense enregistrée.',
+        toolResults: [{ success: true, tool: 'create_expense' }],
+      },
+      route: 'ashy',
+    }),
+    sendN8n: async () => { n8nCalls += 1; return { ok: true, route: 'n8n' }; },
+  });
+
+  assert.equal(n8nCalls, 0);
+  assert.equal(res.route, 'ashy');
+  const parsed = parseChatReplyResponse(res);
+  assert.equal(parsed.shouldRefreshDashboard, true);
+});
+
+test('Ashy create_sale success does not fallback to n8n', async () => {
+  let n8nCalls = 0;
+  const res = await fetchChatResponse({
+    ...baseCtx,
+    message: 'oui',
+    chatRoute: CHAT_ROUTE.ASHY,
+    sendAshy: mockAshy({
+      ok: true,
+      status: 200,
+      rawText: '{"reply":"Vente enregistrée."}',
+      data: {
+        reply: 'Vente enregistrée.',
+        toolResults: [{ success: true, tool: 'create_sale' }],
+      },
+      route: 'ashy',
+    }),
+    sendN8n: async () => { n8nCalls += 1; return { ok: true, route: 'n8n' }; },
+  });
+
+  assert.equal(n8nCalls, 0);
+  assert.equal(res.route, 'ashy');
+  const parsed = parseChatReplyResponse(res);
+  assert.equal(parsed.shouldRefreshDashboard, true);
+});
+
+test('Ashy write failure falls back to n8n without duplicate Ashy call', async () => {
+  let ashyCalls = 0;
+  let n8nCalls = 0;
+  const res = await fetchChatResponse({
+    ...baseCtx,
+    message: "J'ai vendu 2 poulets à 10 $",
+    chatRoute: CHAT_ROUTE.ASHY,
+    sendAshy: async () => {
+      ashyCalls += 1;
+      return {
+        ok: false,
+        status: 500,
+        rawText: '{"message":"fail"}',
+        data: { message: 'fail' },
+        route: 'ashy',
+      };
+    },
+    sendN8n: async () => {
+      n8nCalls += 1;
+      return {
+        ok: true,
+        status: 200,
+        rawText: '{"reply":"Vente via n8n"}',
+        data: { reply: 'Vente via n8n' },
+        route: 'n8n',
+      };
+    },
+  });
+
+  assert.equal(ashyCalls, 1);
+  assert.equal(n8nCalls, 1);
+  assert.equal(res.ashyFallback, true);
+  assert.equal(res.route, 'n8n');
 });
 
 test('shouldFallbackAshyToN8n detects failed Ashy HTTP', () => {

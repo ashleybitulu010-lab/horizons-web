@@ -6,8 +6,6 @@
 export const PLANNED_READ_TOOLS = Object.freeze({});
 
 export const PLANNED_WRITE_TOOLS = Object.freeze({
-	create_sale: 'create_sale',
-	create_expense: 'create_expense',
 	update_sale: 'update_sale',
 	update_expense: 'update_expense',
 	adjust_stock: 'adjust_stock',
@@ -109,6 +107,26 @@ function buildReportInput(resolved) {
 	return { period: 'current_month' };
 }
 
+function buildCreateSaleInput(resolved) {
+	const filters = resolved.filters || {};
+	return {
+		product: filters.product || null,
+		quantity: filters.quantity ?? null,
+		unitPrice: filters.unitPrice ?? null,
+		amountPaid: filters.amountPaid ?? null,
+		confirmed: Boolean(filters.confirmed),
+	};
+}
+
+function buildCreateExpenseInput(resolved) {
+	const filters = resolved.filters || {};
+	return {
+		label: filters.label || null,
+		amount: filters.amount ?? null,
+		confirmed: Boolean(filters.confirmed),
+	};
+}
+
 export function planToolExecution(resolved) {
 	const intent = resolved?.intent;
 
@@ -161,6 +179,22 @@ export function planToolExecution(resolved) {
 			steps: [createStep('generate_report', buildReportInput(resolved))],
 			responseKind: 'generate_report',
 			referenceUpdate: reportReferenceUpdate(),
+		});
+	}
+
+	if (intent === 'create_sale') {
+		return createReadPlan({
+			steps: [createStep('create_sale', buildCreateSaleInput(resolved))],
+			responseKind: 'create_sale',
+			referenceUpdate: null,
+		});
+	}
+
+	if (intent === 'create_expense') {
+		return createReadPlan({
+			steps: [createStep('create_expense', buildCreateExpenseInput(resolved))],
+			responseKind: 'create_expense',
+			referenceUpdate: null,
 		});
 	}
 
@@ -229,6 +263,12 @@ export function primaryToolForIntent(intent) {
 	}
 	if (intent === 'generate_report') {
 		return 'generate_report';
+	}
+	if (intent === 'create_sale') {
+		return 'create_sale';
+	}
+	if (intent === 'create_expense') {
+		return 'create_expense';
 	}
 	if (intent === 'compare_sales_expenses') {
 		return null;

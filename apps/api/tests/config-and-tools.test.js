@@ -26,6 +26,10 @@ test('tool registry lists all planned tools with get_sales implemented', () => {
 		if (name === 'get_sales' || name === 'get_expenses' || name === 'get_stock' || name === 'get_debts' || name === 'get_products' || name === 'generate_report') {
 			assert.equal(def.implemented, true);
 			assert.equal(def.mutatesData, false);
+		} else if (name === 'create_sale' || name === 'create_expense') {
+			assert.equal(def.implemented, true);
+			assert.equal(def.mutatesData, true);
+			assert.equal(def.requiresConfirmation, true);
 		} else if (name.startsWith('create_') || name.startsWith('update_') || name === 'adjust_stock') {
 			assert.equal(def.implemented, false);
 			assert.equal(def.mutatesData, true);

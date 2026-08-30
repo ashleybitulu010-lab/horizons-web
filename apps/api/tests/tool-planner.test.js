@@ -146,6 +146,50 @@ test('future read intents return unimplemented plans without steps', () => {
 	}
 });
 
+test('create_sale produces a write step with confirmation flag', () => {
+	const plan = planToolExecution({
+		intent: 'create_sale',
+		topic: 'sales',
+		filters: {
+			product: 'Poulet',
+			quantity: 2,
+			unitPrice: 10,
+			amountPaid: 20,
+			confirmed: false,
+		},
+	});
+	assert.equal(plan.steps.length, 1);
+	assert.equal(plan.steps[0].tool, 'create_sale');
+	assert.deepEqual(plan.steps[0].input, {
+		product: 'Poulet',
+		quantity: 2,
+		unitPrice: 10,
+		amountPaid: 20,
+		confirmed: false,
+	});
+	assert.equal(plan.responseKind, 'create_sale');
+});
+
+test('create_expense produces a write step with confirmation flag', () => {
+	const plan = planToolExecution({
+		intent: 'create_expense',
+		topic: 'expenses',
+		filters: {
+			label: 'transport',
+			amount: 20,
+			confirmed: false,
+		},
+	});
+	assert.equal(plan.steps.length, 1);
+	assert.equal(plan.steps[0].tool, 'create_expense');
+	assert.deepEqual(plan.steps[0].input, {
+		label: 'transport',
+		amount: 20,
+		confirmed: false,
+	});
+	assert.equal(plan.responseKind, 'create_expense');
+});
+
 test('future write intents return unimplemented write plans', () => {
 	for (const intent of Object.keys(PLANNED_WRITE_TOOLS)) {
 		const plan = planToolExecution({ intent, topic: 'sales', filters: {} });
@@ -164,4 +208,5 @@ test('primaryToolForIntent maps intents to tool names', () => {
 	assert.equal(primaryToolForIntent('generate_report'), 'generate_report');
 	assert.equal(primaryToolForIntent('compare_expenses'), 'get_expenses');
 	assert.equal(primaryToolForIntent('create_sale'), 'create_sale');
+	assert.equal(primaryToolForIntent('create_expense'), 'create_expense');
 });
