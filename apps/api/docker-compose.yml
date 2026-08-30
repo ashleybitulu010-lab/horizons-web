@@ -1,0 +1,15 @@
+# VPS deployment template — copy to /docker/ash-ledger-api/ on the server.
+# Secrets live in .env (never commit). See docker-compose.env.example for variable names.
+services:
+  ash-ledger-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    env_file:
+      - .env
+    environment:
+      PORT: "3000"
+      NODE_ENV: production

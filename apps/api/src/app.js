@@ -24,7 +24,10 @@ export function createApp() {
 	app.use(express.json({ limit: BodyLimit }));
 	app.use(express.urlencoded({ extended: true, limit: BodyLimit }));
 
-	app.use('/', routes());
+	// Production nginx forwards the full /hcgi/api/* path; also mount at / for local dev.
+	const apiRouter = routes();
+	app.use('/hcgi/api', apiRouter);
+	app.use('/', apiRouter);
 
 	app.use(errorMiddleware);
 

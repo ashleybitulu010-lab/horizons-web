@@ -59,3 +59,20 @@ npm run lint
 ```
 
 Les tests n'exigent pas PocketBase ni n8n pour les routes `/api/*`.
+
+## Déploiement Docker (production)
+
+Remplace le conteneur legacy `/docker/ash-ledger-api/api` par ce package.
+
+```bash
+cd apps/api
+cp docker-compose.env.example .env   # puis renseigner les secrets (jamais committer)
+docker compose build
+docker compose up -d
+```
+
+- **Port conteneur** : `3000` (nginx VPS proxy vers `127.0.0.1:3001`)
+- **Routes** : montées sous `/hcgi/api/*` (compatible frontend + nginx actuel)
+- **Rollback** : retaguer l'image legacy et `docker compose up -d --force-recreate`
+
+Voir `docker-compose.yml` et `docker-compose.env.example` pour la liste complète des variables.

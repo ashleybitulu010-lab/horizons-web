@@ -1,12 +1,17 @@
 import Pocketbase from 'pocketbase';
+import { getEnv } from '../config/env.js';
 import logger from './logger.js';
 
-const POCKETBASE_HOST = `http://localhost:8090`;
+function pocketBaseBaseUrl() {
+	return getEnv().pocketbaseUrl.replace(/\/$/, '');
+}
 
 async function waitForHealth({ retries = 10, delayMs = 1000 } = {}) {
+	const baseUrl = pocketBaseBaseUrl();
+
     for (let i = 1; i <= retries; i++) {
         try {
-            const response = await fetch(`${POCKETBASE_HOST}/api/health`, { method: 'HEAD' });
+            const response = await fetch(`${baseUrl}/api/health`, { method: 'HEAD' });
 
             if (response.ok) {
                 return;
@@ -23,7 +28,7 @@ async function waitForHealth({ retries = 10, delayMs = 1000 } = {}) {
     throw new Error(`PocketBase health check failed after ${retries} retries`);
 }
 
-const pocketbaseClient = new Pocketbase(POCKETBASE_HOST);
+const pocketbaseClient = new Pocketbase(pocketBaseBaseUrl());
 
 pocketbaseClient.autoCancellation(false);
 
