@@ -8,6 +8,7 @@ export default async function me(req, res) {
 			airtableId: req.user.airtableId,
 			businessUserId: req.user.businessUserId,
 			clientId: req.user.clientId,
+			activeActivityId: req.user.activeActivityId || null,
 		},
 	});
 }

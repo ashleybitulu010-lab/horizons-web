@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from '../supabase/client.js';
 import { isSupabaseConfigured } from '../config/env.js';
-import { requireClientScope } from './supabase-scoped.js';
+import { getBusinessScope } from './supabase-scoped.js';
 import { PRODUITS_TABLE, PRODUITS_SELECT } from './products-service.js';
 import { STOCKS_SELECT, DEFAULT_STOCK_THRESHOLD } from './stock-service.js';
 
@@ -116,7 +116,7 @@ function mapRpcError(err) {
 	return error;
 }
 
-async function resolveUnitPriceFromCatalog(clientId, product, unitPrice) {
+async function resolveUnitPriceFromCatalog(scope, product, unitPrice) {
 	if (unitPrice != null && unitPrice > 0) {
 		return unitPrice;
 	}
@@ -138,7 +138,8 @@ async function resolveUnitPriceFromCatalog(clientId, product, unitPrice) {
 	const { data, error } = await admin
 		.from(PRODUITS_TABLE)
 		.select(PRODUITS_SELECT)
-		.eq('client_id', clientId)
+		.eq('client_id', scope.clientId)
+		.eq('activity_id', scope.activityId)
 		.ilike('nom_produit', `%${needle}%`)
 		.order('created_at', { ascending: false })
 		.limit(5);
@@ -163,7 +164,7 @@ async function resolveUnitPriceFromCatalog(clientId, product, unitPrice) {
 	throw missing;
 }
 
-async function defaultCreateSale(clientId, input) {
+async function defaultCreateSale(scope, input) {
 	if (!isSupabaseConfigured()) {
 		const error = new Error('Supabase is not configured');
 		error.code = 'SUPABASE_NOT_CONFIGURED';
@@ -177,11 +178,12 @@ async function defaultCreateSale(clientId, input) {
 		throw error;
 	}
 
-	const unitPrice = await resolveUnitPriceFromCatalog(clientId, input.product, input.unitPrice);
+	const unitPrice = await resolveUnitPriceFromCatalog(scope, input.product, input.unitPrice);
 	const amountPaid = parseAmountPaid(input.amountPaid);
 
 	const { data, error } = await admin.rpc(CREATE_SALE_RPC, {
-		p_client_id: clientId,
+		p_client_id: scope.clientId,
+		p_activity_id: scope.activityId,
 		p_product: input.product,
 		p_quantity: input.quantity,
 		p_unit_price: unitPrice,
@@ -230,14 +232,14 @@ export function buildCreateSalePreview(input) {
 }
 
 export async function createSaleForUser(user, rawInput = {}) {
-	const clientId = requireClientScope(user);
+	const scope = getBusinessScope(user);
 	const input = normalizeCreateSaleInput(rawInput);
 
 	if (!input.confirmed) {
 		let unitPrice = input.unitPrice;
 		if (unitPrice == null) {
 			try {
-				unitPrice = await resolveUnitPriceFromCatalog(clientId, input.product, null);
+				unitPrice = await resolveUnitPriceFromCatalog(scope, input.product, null);
 			} catch {
 				unitPrice = null;
 			}
@@ -251,7 +253,7 @@ export async function createSaleForUser(user, rawInput = {}) {
 	}
 
 	if (input.unitPrice == null) {
-		input.unitPrice = await resolveUnitPriceFromCatalog(clientId, input.product, null);
+		input.unitPrice = await resolveUnitPriceFromCatalog(scope, input.product, null);
 	}
 
 	if (input.amountPaid == null) {
@@ -261,7 +263,7 @@ export async function createSaleForUser(user, rawInput = {}) {
 	}
 
 	const executor = createSaleImpl || defaultCreateSale;
-	const result = await executor(clientId, input);
+	const result = await executor(scope, input);
 
 	return {
 		status: 'created',

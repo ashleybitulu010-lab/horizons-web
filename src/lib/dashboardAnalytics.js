@@ -298,6 +298,202 @@ function percentChange(current, previous) {
   return ((current - previous) / Math.abs(previous)) * 100;
 }
 
+export const INSUFFICIENT_INSIGHT =
+  'Pas assez de données pour établir une analyse pour le moment. Continue à enregistrer tes opérations et je pourrai t’aider à y voir plus clair.';
+
+export const DASHBOARD_PERIODS = [
+  { id: 'today', label: 'Aujourd’hui', previousLabel: 'vs hier' },
+  { id: 'week', label: 'Cette semaine', previousLabel: 'vs semaine dernière' },
+  { id: 'month', label: 'Ce mois', previousLabel: 'vs mois dernier' },
+];
+
+function startOfDay(value) {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function localDateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function isCancelledSale(sale) {
+  return /annul/i.test(String(sale?.statut || ''));
+}
+
+function lookbackMs(period, now) {
+  if (period === 'today') return DAY_MS;
+  if (period === 'week') return 7 * DAY_MS;
+  const today = startOfDay(now);
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  return monthStart.getTime() - prevMonth.getTime();
+}
+
+export function getPeriodWindow(period, now = Date.now()) {
+  const today = startOfDay(now);
+  const end = now + 1;
+  if (period === 'today') {
+    return {
+      currentStart: today.getTime(),
+      currentEnd: end,
+      previousStart: today.getTime() - DAY_MS,
+      previousEnd: today.getTime(),
+      previousLabel: 'vs hier',
+    };
+  }
+  if (period === 'week') {
+    const weekday = today.getDay();
+    const mondayOffset = weekday === 0 ? 6 : weekday - 1;
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - mondayOffset);
+    const currentStart = weekStart.getTime();
+    return {
+      currentStart,
+      currentEnd: end,
+      previousStart: currentStart - (7 * DAY_MS),
+      previousEnd: currentStart,
+      previousLabel: 'vs semaine dernière',
+    };
+  }
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const prevMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  return {
+    currentStart: monthStart.getTime(),
+    currentEnd: end,
+    previousStart: prevMonth.getTime(),
+    previousEnd: monthStart.getTime(),
+    previousLabel: 'vs mois dernier',
+  };
+}
+
+function windowTotals(ventes, depenses, productById, products, start, end) {
+  const periodSales = ventes.filter((sale) => (
+    !isCancelledSale(sale) && inPeriod(parseDate(sale, 'ventes'), start, end)
+  ));
+  const periodExpenses = depenses.filter((expense) => inPeriod(parseDate(expense, 'depenses'), start, end));
+  const ca = sum(periodSales, (sale) => saleRevenueAmount(sale, resolveProduct(sale, productById, products)));
+  const collections = sum(periodSales, saleCollectedAmount);
+  const expenses = sum(periodExpenses, expenseAmount);
+  return {
+    ca,
+    collections,
+    expenses,
+    profit: ca - expenses,
+    cash: collections - expenses,
+    sales: periodSales,
+    expenseRows: periodExpenses,
+  };
+}
+
+function cashPositionAt(ventes, depenses, timestamp) {
+  const collections = sum(
+    ventes.filter((sale) => !isCancelledSale(sale) && (parseDate(sale, 'ventes')?.getTime() || 0) < timestamp),
+    saleCollectedAmount,
+  );
+  const expenses = sum(
+    depenses.filter((expense) => (parseDate(expense, 'depenses')?.getTime() || 0) < timestamp),
+    expenseAmount,
+  );
+  return collections - expenses;
+}
+
+function saleCustomerKey(sale) {
+  const name = String(firstValue(sale, [
+    'nom_client_debiteur',
+    'nom_debiteur',
+    'nom_client',
+    'client_name',
+    'debiteur',
+  ]) || '').trim();
+  if (name) return normalizeLabel(name);
+  const id = firstValue(sale, ['debiteur_id', 'client_debiteur_id']);
+  return id ? `id:${id}` : '';
+}
+
+function countNamedClients(sales) {
+  const keys = new Set();
+  sales.forEach((sale) => {
+    const key = saleCustomerKey(sale);
+    if (key) keys.add(key);
+  });
+  return keys.size;
+}
+
+function overdueDebtCount(ventes) {
+  const now = Date.now();
+  return ventes.filter((sale) => {
+    const remaining = Math.max(0, firstNumber(sale, ['reste_a_payer', 'montant_restant', 'remaining']) ?? 0);
+    if (remaining <= 0) return false;
+    const due = normalizeDateInput(firstValue(sale, ['date_echeance', 'due_date', 'date_limite']));
+    return Boolean(due && due.getTime() < now);
+  }).length;
+}
+
+function fillTimelineRange(points, start, end) {
+  const byKey = new Map((points || []).map((point) => [point.key, point]));
+  const out = [];
+  const cursor = startOfDay(start);
+  const last = startOfDay(end - 1);
+  while (cursor.getTime() <= last.getTime()) {
+    const key = localDateKey(cursor);
+    out.push(byKey.get(key) || {
+      key,
+      date: cursor.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }),
+      ventes: 0,
+      depenses: 0,
+      benefice: 0,
+    });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return out;
+}
+
+function expenseLabel(expense) {
+  return cleanUtf8Text(firstValue(expense, EXPENSE_NAME_FIELDS) || '');
+}
+
+function buildPeriodInsight(period, current, previous, topProduct) {
+  const periodWord = period === 'today'
+    ? 'aujourd’hui'
+    : period === 'week' ? 'cette semaine' : 'ce mois-ci';
+  const salesChange = percentChange(current.ca, previous.ca);
+  if (previous.ca > 0 && salesChange !== null) {
+    return `Tes ventes ont ${salesChange >= 0 ? 'augmenté' : 'diminué'} de ${Math.abs(salesChange).toFixed(0)} % ${periodWord}.`;
+  }
+
+  const groups = new Map();
+  const add = (rows, bucket) => {
+    rows.forEach((expense) => {
+      const label = normalizeLabel(expenseLabel(expense));
+      if (!label) return;
+      const currentGroup = groups.get(label) || { label: expenseLabel(expense), current: 0, previous: 0 };
+      currentGroup[bucket] += expenseAmount(expense);
+      groups.set(label, currentGroup);
+    });
+  };
+  add(current.expenseRows, 'current');
+  add(previous.expenseRows, 'previous');
+  const transport = Array.from(groups.values()).find((group) => (
+    /transport|essence|carburant|taxi|fuel/.test(normalizeLabel(group.label))
+  ));
+  if (transport && transport.current > 0 && transport.current !== transport.previous) {
+    const up = transport.current > transport.previous;
+    return `Tes dépenses de ${transport.label.toLowerCase()} ont ${up ? 'augmenté' : 'diminué'} ${periodWord}.`;
+  }
+
+  if (topProduct?.name && (topProduct.quantite > 0 || topProduct.ventes > 0)) {
+    return `${topProduct.name} est actuellement ton produit le plus vendu.`;
+  }
+
+  const profitChange = percentChange(current.profit, previous.profit);
+  if (previous.profit !== 0 && profitChange !== null) {
+    return `Ton bénéfice ${profitChange >= 0 ? 'progresse' : 'recule'} de ${Math.abs(profitChange).toFixed(0)} % ${periodWord}.`;
+  }
+
+  return null;
+}
+
 function sum(items, selector) {
   return items.reduce((total, item) => total + selector(item), 0);
 }
@@ -383,7 +579,7 @@ function buildTimeline(ventes, depenses, productById, products) {
   const days = new Map();
   const ensureDay = (date) => {
     if (!date) return null;
-    const key = date.toISOString().slice(0, 10);
+    const key = localDateKey(date);
     if (!days.has(key)) {
       days.set(key, {
         key,
@@ -449,17 +645,29 @@ function buildCategorySales(ventes, productById, products) {
     .sort((a, b) => b.value - a.value);
 }
 
-function buildActivities(ventes, depenses, products, stocks, payments, productById) {
+function buildActivities(ventes, depenses, products, stocks, payments, productById, options = {}) {
+  const limit = options.limit ?? 5;
+  const start = options.start;
+  const end = options.end;
+  const inRange = (date) => {
+    if (start == null || end == null) return true;
+    return inPeriod(date, start, end);
+  };
+  const excluded = new Set(options.excludeTypes || []);
+
   const saleById = new Map(ventes.map((sale) => [rowId(sale), sale]));
-  const salesActivities = ventes.map((sale) => {
+  const salesActivities = ventes.filter((sale) => !isCancelledSale(sale)).map((sale) => {
     const product = resolveProduct(sale, productById, products);
     const quantity = saleQuantity(sale);
+    const collected = saleCollectedAmount(sale);
+    const remaining = Math.max(0, firstNumber(sale, ['reste_a_payer', 'montant_restant', 'remaining']) ?? 0);
+    const isPayment = collected > 0 && remaining >= 0 && quantity === 0;
     return {
       id: `vente-${rowId(sale)}`,
-      type: 'vente',
-      title: 'Vente enregistrée',
+      type: remaining > 0 && collected <= 0 ? 'dette' : (isPayment ? 'paiement' : 'vente'),
+      title: remaining > 0 && collected <= 0 ? 'Dette client' : (isPayment ? 'Paiement reçu' : 'Vente'),
       detail: `${quantity ? `${quantity} × ` : ''}${saleProductName(sale, product)}`,
-      amount: saleAmount(sale, product),
+      amount: isPayment ? collected : saleAmount(sale, product),
       date: parseDate(sale, 'ventes'),
     };
   });
@@ -467,7 +675,7 @@ function buildActivities(ventes, depenses, products, stocks, payments, productBy
   const expenseActivities = depenses.map((expense) => ({
     id: `depense-${rowId(expense)}`,
     type: 'depense',
-    title: 'Dépense enregistrée',
+    title: 'Dépense',
     detail: cleanUtf8Text(firstValue(expense, EXPENSE_NAME_FIELDS) || 'Dépense'),
     amount: expenseAmount(expense),
     date: parseDate(expense, 'depenses'),
@@ -476,13 +684,15 @@ function buildActivities(ventes, depenses, products, stocks, payments, productBy
   const productActivities = products.map((product) => ({
     id: `produit-${rowId(product)}`,
     type: 'produit',
-    title: 'Produit créé',
+    title: 'Produit',
     detail: productName(product),
     amount: null,
     date: parseDate(product, 'produits'),
   }));
 
   const stockActivities = stocks.map((stock) => {
+    const qty = movementQuantity(stock);
+    if (qty <= 0) return null;
     const product = resolveProduct(stock, productById, products);
     const label = product
       ? productName(product)
@@ -490,29 +700,38 @@ function buildActivities(ventes, depenses, products, stocks, payments, productBy
     return {
       id: `stock-${rowId(stock)}`,
       type: 'stock',
-      title: 'Stock ajouté',
-      detail: `${Math.abs(movementQuantity(stock)) || 0} × ${label}`,
+      title: 'Entrée de stock',
+      detail: `${qty} × ${label}`,
       amount: null,
       date: parseDate(stock, 'stocks'),
     };
-  });
+  }).filter(Boolean);
 
   const paymentActivities = payments
     .map((payment) => {
       const sale = saleById.get(String(firstValue(payment, ['vente_id', 'sale_id']) || ''));
       const product = sale ? resolveProduct(sale, productById, products) : null;
       const outstanding = paymentAmount(payment);
-      const settled = outstanding <= 0;
+      if (outstanding <= 0) {
+        return {
+          id: `paiement-${rowId(payment)}`,
+          type: 'paiement',
+          title: 'Paiement reçu',
+          detail: sale ? saleProductName(sale, product) : 'Dette client',
+          amount: null,
+          date: parseDate(payment, 'paiements_dettes'),
+        };
+      }
       return {
-        id: `paiement-${rowId(payment)}`,
-        type: 'paiement',
-        title: settled ? 'Dette soldée' : 'Dette restante',
+        id: `dette-${rowId(payment)}`,
+        type: 'dette',
+        title: 'Dette client',
         detail: sale ? saleProductName(sale, product) : 'Dette client',
         amount: outstanding,
         date: parseDate(payment, 'paiements_dettes'),
       };
     })
-    .filter((activity) => activity.amount > 0 || activity.title === 'Dette soldée');
+    .filter((activity) => activity.date);
 
   return [
     ...salesActivities,
@@ -521,8 +740,9 @@ function buildActivities(ventes, depenses, products, stocks, payments, productBy
     ...stockActivities,
     ...paymentActivities,
   ]
+    .filter((activity) => inRange(activity.date) && !excluded.has(activity.type))
     .sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0))
-    .slice(0, 5);
+    .slice(0, limit);
 }
 
 function buildAlerts(inventory, trends, depenses, metrics, debts) {
@@ -688,7 +908,11 @@ export function buildDashboardAnalytics({
     ? (collectionsFallback - expensesFallback)
     : (fromSynthese?.profit ?? (collectionsFallback - expensesFallback));
   const clientDebt = useLiveRows ? debtMetrics.remaining : (fromSynthese?.clientDebt ?? debtMetrics.remaining);
-  const debts = { ...debtMetrics, remaining: clientDebt };
+  const debts = {
+    ...debtMetrics,
+    remaining: clientDebt,
+    overdueCount: overdueDebtCount(ventes),
+  };
 
   const metrics = {
     revenue,
@@ -700,10 +924,57 @@ export function buildDashboardAnalytics({
     clientDebt,
   };
 
+  const now = Date.now();
+  const fullTimeline = buildTimeline(ventes, depenses, productById, produits);
+  const comparableChange = (current, previous) => (
+    previous ? percentChange(current, previous) : null
+  );
+  const periodSnapshots = Object.fromEntries(
+    DASHBOARD_PERIODS.map(({ id, previousLabel }) => {
+      const window = getPeriodWindow(id, now);
+      const current = windowTotals(ventes, depenses, productById, produits, window.currentStart, window.currentEnd);
+      const previous = windowTotals(ventes, depenses, productById, produits, window.previousStart, window.previousEnd);
+      const periodTop = buildTopProducts(current.sales, productById, produits);
+      const insight = buildPeriodInsight(id, current, previous, periodTop[0]);
+      const solde = cashPositionAt(ventes, depenses, now + 1);
+      const soldeBefore = cashPositionAt(ventes, depenses, now + 1 - lookbackMs(id, now));
+      return [id, {
+        id,
+        previousLabel,
+        solde,
+        soldeChange: comparableChange(solde, soldeBefore),
+        revenue: current.ca,
+        revenueChange: comparableChange(current.ca, previous.ca),
+        expenses: current.expenses,
+        expenseChange: comparableChange(current.expenses, previous.expenses),
+        profit: current.profit,
+        profitChange: comparableChange(current.profit, previous.profit),
+        activeClients: countNamedClients(current.sales),
+        timeline: fillTimelineRange(fullTimeline, window.currentStart, window.currentEnd),
+        activities: buildActivities(
+          ventes,
+          depenses,
+          produits,
+          stocks,
+          paiements_dettes,
+          productById,
+          {
+            limit: 8,
+            start: window.currentStart,
+            end: window.currentEnd,
+            excludeTypes: ['produit'],
+          },
+        ),
+        insight: insight || INSUFFICIENT_INSIGHT,
+        hasInsight: Boolean(insight),
+      }];
+    }),
+  );
+
   return {
     metrics,
     trends,
-    timeline: buildTimeline(ventes, depenses, productById, produits),
+    timeline: fullTimeline,
     topProducts,
     categorySales: buildCategorySales(ventes, productById, produits),
     activities: buildActivities(
@@ -718,5 +989,6 @@ export function buildDashboardAnalytics({
     insights: buildInsights(inventory, trends, recentTopProducts, debts),
     debts,
     inventory,
+    periodSnapshots,
   };
 }

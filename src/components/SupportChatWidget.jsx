@@ -162,7 +162,7 @@ function ProgressBar({ progress, visible }) {
   );
 }
 
-export default function SupportChatWidget({ user, forceOpen: _forceOpen = false }) {
+export default function SupportChatWidget({ user, forceOpen: _forceOpen = false, hideLauncher = false }) {
   const { messages: mainMessages, loading: mainLoading } = useChat();
   const { t, language } = useLanguage();
   const isMobile = useIsMobile();
@@ -435,7 +435,7 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
   }, [displayMessages, agentTyping]);
 
   useEffect(() => {
-    if (open) { setShowTooltip(false); return undefined; }
+    if (open || hideLauncher) { setShowTooltip(false); return undefined; }
     const showNext = () => {
       setTooltipText(tooltips[Math.floor(Math.random() * tooltips.length)]);
       setShowTooltip(true);
@@ -444,7 +444,7 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
     const initial = setTimeout(showNext, 4000);
     tooltipInterval.current = setInterval(showNext, 22000);
     return () => { clearTimeout(initial); clearInterval(tooltipInterval.current); setShowTooltip(false); };
-  }, [open, tooltips]);
+  }, [open, hideLauncher, tooltips]);
 
   const initChat = useCallback(async () => {
     if (!user?.id || isGuideMode) return null;
@@ -772,27 +772,45 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
   const sendNormalMessage = async (text) => {
     const activeChat = chat?.id ? chat : await initChat();
     const decision = localAshyReply(text);
-    // Always route human support messages to Telegram (outside tutorial).
-    // FAQ tips stay local; escalate/human always notify support.
     const shouldNotifySupport = decision?.type !== 'faq';
+
+    const showBridgeFailure = (reason) => {
+      const warn = `⚠️ Le message n'a pas pu être transmis au service client (${reason}). Réessayez ou écrivez à support@ashledger.tech.`;
+      setMessages((prev) => [...prev, makeLocalMsg(warn, 'support')]);
+      setNewMsgIds((prev) => new Set([...prev, `err-${Date.now()}`]));
+    };
+
+    const relayToSupport = async (chatIdForBridge) => {
+      if (!shouldNotifySupport) return { sent: true, skipped: true };
+      const result = await escalateToTelegramSupport({
+        user,
+        message: text,
+        chatId: chatIdForBridge,
+        pocketBaseToken: pb.authStore?.token,
+      });
+      if (!result?.sent) {
+        const reason = result?.payload?.detail || result?.payload?.error || result?.reason || 'erreur réseau';
+        console.warn('Support Telegram relay failed', result);
+        showBridgeFailure(reason);
+      }
+      return result;
+    };
 
     if (!activeChat) {
       const localUser = makeLocalMsg(text, 'user');
       setMessages((prev) => [...prev, localUser]);
-      withTyping(() => {
-        const reply = makeLocalMsg(decision.reply, 'support');
-        setMessages((prev) => [...prev, reply]);
-        setNewMsgIds((prev) => new Set([...prev, reply.id]));
-        trackFromAssistantReply(decision.reply);
-        if (shouldNotifySupport) {
-          void escalateToTelegramSupport({
-            user,
-            message: text,
-            chatId: '',
-            pocketBaseToken: pb.authStore?.token,
-          });
+      setAgentTyping(true);
+      try {
+        const result = await relayToSupport('');
+        if (result?.sent) {
+          const reply = makeLocalMsg(decision.reply, 'support');
+          setMessages((prev) => [...prev, reply]);
+          setNewMsgIds((prev) => new Set([...prev, reply.id]));
+          trackFromAssistantReply(decision.reply);
         }
-      }, 900);
+      } finally {
+        setAgentTyping(false);
+      }
       return;
     }
 
@@ -804,37 +822,30 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
       setNewMsgIds((prev) => new Set([...prev, msg.id]));
       setCelebrateSignal((s) => s + 1);
 
-      // Forward to Telegram immediately (identity resolved server-side / via bridge).
-      if (shouldNotifySupport) {
-        void escalateToTelegramSupport({
-          user,
-          message: text,
-          chatId: activeChat.id,
-          pocketBaseToken: pb.authStore?.token,
-        }).then((result) => {
-          if (!result?.sent) {
-            console.warn('Support Telegram relay failed', result);
-          }
-        });
-      }
+      setAgentTyping(true);
+      const result = await relayToSupport(activeChat.id);
+      setAgentTyping(false);
 
-      withTyping(async () => {
-        try {
-          const reply = await pb.collection('support_messages').create({
-            chat: activeChat.id,
-            content: decision.reply,
-            sender_type: 'support',
-            is_read: true,
-          });
-          setMessages((prev) => [...prev, reply]);
-          setNewMsgIds((prev) => new Set([...prev, reply.id]));
-        } catch (_) {
-          const local = makeLocalMsg(decision.reply, 'support');
-          setMessages((prev) => [...prev, local]);
-        }
-        trackFromAssistantReply(decision.reply);
-      }, 700 + Math.random() * 400);
+      if (result?.sent) {
+        withTyping(async () => {
+          try {
+            const reply = await pb.collection('support_messages').create({
+              chat: activeChat.id,
+              content: decision.reply,
+              sender_type: 'support',
+              is_read: true,
+            });
+            setMessages((prev) => [...prev, reply]);
+            setNewMsgIds((prev) => new Set([...prev, reply.id]));
+          } catch (_) {
+            const local = makeLocalMsg(decision.reply, 'support');
+            setMessages((prev) => [...prev, local]);
+          }
+          trackFromAssistantReply(decision.reply);
+        }, 700 + Math.random() * 400);
+      }
     } catch (err) {
+      setAgentTyping(false);
       console.error('Failed to send support message', err);
     }
   };
@@ -1244,7 +1255,7 @@ export default function SupportChatWidget({ user, forceOpen: _forceOpen = false 
       </AnimatePresence>
 
       <AnimatePresence>
-        {!open && (
+        {!open && !hideLauncher && (
           <motion.div
             key="bubble-wrapper"
             data-support-bubble

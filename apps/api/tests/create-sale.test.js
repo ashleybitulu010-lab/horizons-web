@@ -12,6 +12,7 @@ import {
 const USER = {
 	id: 'pb_user',
 	clientId: 'client_1',
+	activeActivityId: 'activity_1',
 	businessUserId: 'rec_user',
 };
 
@@ -33,8 +34,9 @@ test.afterEach(() => {
 });
 
 test('valid confirmed sale returns success summary', async () => {
-	setCreateSaleImplForTests(async (clientId, input) => {
-		assert.equal(clientId, 'client_1');
+	setCreateSaleImplForTests(async (scope, input) => {
+		assert.equal(scope.clientId, 'client_1');
+		assert.equal(scope.activityId, 'activity_1');
 		assert.equal(input.product, 'Poulet');
 		assert.equal(input.quantity, 2);
 		assert.equal(input.unitPrice, 10);

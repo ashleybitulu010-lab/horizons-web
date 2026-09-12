@@ -1,7 +1,8 @@
 export const DEFAULT_CONVERSATION_TTL_MS = 2 * 60 * 60 * 1000;
 
-function sessionKey(userId, sessionId) {
-	return `${userId}:${sessionId || 'default'}`;
+function sessionKey(userId, sessionId, activityId = null) {
+	const activitySegment = activityId || '_legacy';
+	return `${userId}:${activitySegment}:${sessionId || 'default'}`;
 }
 
 function isExpired(savedAt, ttlMs, now = Date.now()) {
@@ -14,6 +15,7 @@ function isExpired(savedAt, ttlMs, now = Date.now()) {
  *
  * TTL semantics: each entry stores `savedAt` (last write time).
  * A session expires when `now - savedAt > ttlMs` (default 2 hours).
+ * P1-E: RAM key is userId:activityId:sessionId.
  */
 export function createInMemoryConversationStore({
 	ttlMs = DEFAULT_CONVERSATION_TTL_MS,
@@ -22,8 +24,8 @@ export function createInMemoryConversationStore({
 	const sessions = new Map();
 
 	return {
-		getConversationState(userId, sessionId) {
-			const key = sessionKey(userId, sessionId);
+		getConversationState(userId, sessionId, activityId = null) {
+			const key = sessionKey(userId, sessionId, activityId);
 			const existing = sessions.get(key);
 			if (!existing) return null;
 			if (isExpired(existing.savedAt, ttlMs, now())) {
@@ -33,16 +35,16 @@ export function createInMemoryConversationStore({
 			return structuredClone(existing.state);
 		},
 
-		saveConversationState(userId, sessionId, state) {
-			const key = sessionKey(userId, sessionId);
+		saveConversationState(userId, sessionId, state, activityId = null) {
+			const key = sessionKey(userId, sessionId, activityId);
 			sessions.set(key, {
 				state: structuredClone(state),
 				savedAt: now(),
 			});
 		},
 
-		clearConversationState(userId, sessionId) {
-			sessions.delete(sessionKey(userId, sessionId));
+		clearConversationState(userId, sessionId, activityId = null) {
+			sessions.delete(sessionKey(userId, sessionId, activityId));
 		},
 
 		clearAllForTests() {
@@ -65,4 +67,4 @@ export function resetConversationStoreForTests() {
 	activeStore = createInMemoryConversationStore();
 }
 
-export { isExpired };
+export { isExpired, sessionKey };

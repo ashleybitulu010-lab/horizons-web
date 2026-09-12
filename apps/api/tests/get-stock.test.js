@@ -12,12 +12,14 @@ import {
 const USER_A = {
 	id: 'pb_a',
 	clientId: 'client_a',
+	activeActivityId: 'activity_a',
 	businessUserId: 'rec_a',
 };
 
 const USER_B = {
 	id: 'pb_b',
 	clientId: 'client_b',
+	activeActivityId: 'activity_b',
 	businessUserId: 'rec_b',
 };
 
@@ -66,9 +68,9 @@ const PRODUCTS_A = [
 ];
 
 test.beforeEach(() => {
-	setStockQueryImplForTests(async (clientId) => {
-		if (clientId === 'client_a') return { stocks: STOCKS_A, products: PRODUCTS_A };
-		if (clientId === 'client_b') return { stocks: STOCKS_B, products: [] };
+	setStockQueryImplForTests(async (scope) => {
+		if (scope.clientId === 'client_a') return { stocks: STOCKS_A, products: PRODUCTS_A };
+		if (scope.clientId === 'client_b') return { stocks: STOCKS_B, products: [] };
 		return { stocks: [], products: [] };
 	});
 });

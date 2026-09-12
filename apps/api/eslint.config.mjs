@@ -32,4 +32,14 @@ export default [
 			'import/no-cycle': 'off',
 		},
 	},
+	{
+		files: ['tools/**/*.mjs'],
+		languageOptions: {
+			ecmaVersion: 'latest',
+			sourceType: 'module',
+			globals: {
+				...globals.node,
+			},
+		},
+	},
 ];

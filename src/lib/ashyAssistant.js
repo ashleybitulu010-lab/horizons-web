@@ -147,12 +147,23 @@ export async function escalateToTelegramSupport({
         }),
       });
       const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return {
+          sent: false,
+          status: res.status,
+          via: 'support-bridge',
+          identity,
+          payload,
+          reason: payload?.error || `HTTP ${res.status}`,
+        };
+      }
       return {
-        sent: res.ok && payload?.sent !== false,
+        sent: payload?.sent !== false,
         status: res.status,
         via: 'support-bridge',
         identity,
         payload,
+        reason: payload?.sent === false ? (payload?.error || 'telegram_not_sent') : undefined,
       };
     } catch (err) {
       return { sent: false, reason: err?.message || 'network', via: 'support-bridge' };
@@ -161,7 +172,7 @@ export async function escalateToTelegramSupport({
 
   // Legacy webhook path (n8n), if still configured.
   if (!TELEGRAM_WEBHOOK) {
-    return { sent: false, reason: 'no_webhook' };
+    return { sent: false, reason: 'no_webhook', identity };
   }
   try {
     const res = await fetch(TELEGRAM_WEBHOOK, {

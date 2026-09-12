@@ -12,6 +12,28 @@ function collectClientIdentityHints(req) {
 	].filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim());
 }
 
+function collectClientScopeHints(req) {
+	return [
+		req.body?.clientId,
+		req.body?.client_id,
+		req.query?.clientId,
+		req.query?.client_id,
+		req.params?.clientId,
+		req.params?.client_id,
+	].filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim());
+}
+
+function collectActivityScopeHints(req) {
+	return [
+		req.body?.activityId,
+		req.body?.activity_id,
+		req.query?.activityId,
+		req.query?.activity_id,
+		req.params?.activityId,
+		req.params?.activity_id,
+	].filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim());
+}
+
 export function rejectForeignIdentity(req, res, next) {
 	if (!req.user) return next();
 
@@ -24,6 +46,38 @@ export function rejectForeignIdentity(req, res, next) {
 				result: 'forbidden',
 			});
 			return sendForbidden(res, 'Cannot act on behalf of another user');
+		}
+	}
+
+	return next();
+}
+
+export function rejectForeignScope(req, res, next) {
+	if (!req.user) return next();
+
+	if (req.user.clientId) {
+		for (const candidate of collectClientScopeHints(req)) {
+			if (candidate !== req.user.clientId) {
+				logAuthEvent('client_scope_mismatch', {
+					route: req.path,
+					userId: req.user.id,
+					result: 'forbidden',
+				});
+				return sendForbidden(res, 'Access denied for this client scope');
+			}
+		}
+	}
+
+	if (req.user.activeActivityId) {
+		for (const candidate of collectActivityScopeHints(req)) {
+			if (candidate !== req.user.activeActivityId) {
+				logAuthEvent('activity_scope_mismatch', {
+					route: req.path,
+					userId: req.user.id,
+					result: 'forbidden',
+				});
+				return sendForbidden(res, 'Access denied for this activity scope');
+			}
 		}
 	}
 

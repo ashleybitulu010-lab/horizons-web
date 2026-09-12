@@ -5,30 +5,30 @@
   "description": "Gérez vos finances, ventes, dépenses, stocks et rapports grâce à l'intelligence artificielle.",
   "lang": "fr",
   "dir": "ltr",
-  "start_url": "/chat",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone"],
   "orientation": "any",
-  "background_color": "#F5F1EB",
-  "theme_color": "#FF6B00",
+  "background_color": "#FF7000",
+  "theme_color": "#FF7000",
   "categories": ["finance", "business", "productivity"],
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/icons/icon-192.png",
+      "src": "/icons/icon-192.png?v=20260818c",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "/icons/icon-512.png?v=20260818c",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "/icons/icon-512-maskable.png?v=20260818c",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

@@ -14,7 +14,7 @@ import {
 	fetchStockForUser,
 	summarizeStock,
 } from './stock-service.js';
-import { requireClientScope } from './supabase-scoped.js';
+import { getBusinessScope } from './supabase-scoped.js';
 import { resolveDateRange } from '../utils/periods.js';
 
 export const REPORT_TYPE = 'activity_summary';
@@ -89,7 +89,7 @@ export function buildActivitySummary(salesSummary, expensesSummary, debtsSummary
 }
 
 async function defaultComposeReport(user, rawInput = {}, referenceDate = new Date()) {
-	requireClientScope(user);
+	getBusinessScope(user);
 	const input = resolvePeriodInput(rawInput);
 	const range = resolveDateRange(input, referenceDate);
 

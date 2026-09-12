@@ -2,6 +2,23 @@ import {
 	getConversationStore,
 	resetConversationStoreForTests,
 } from './conversation-store.js';
+import { generateOperationId } from '../lib/agent-operation-idempotency.js';
+import { createPendingConsumeToken } from '../services/agent-session-service.js';
+import {
+	incrementWriteRamSuccessForTests,
+	mirrorAgentSessionState,
+	shouldAwaitAgentSessionMirror,
+	isPendingDbRequired,
+	isWriteDbFirst,
+	verifyPendingInDb,
+	recordPendingPersistenceOutcome,
+	recordWriterRamCacheSuccess,
+	recordWriterRamCacheFailure,
+	PENDING_PERSISTENCE_OUTCOMES,
+	MIRROR_OUTCOMES,
+	executeDbFirstConversationPersist,
+} from '../services/agent-session-writer.js';
+import logger from '../utils/logger.js';
 
 export const ALLOWED_STATE_KEYS = Object.freeze([
 	'topic',
@@ -12,6 +29,9 @@ export const ALLOWED_STATE_KEYS = Object.freeze([
 	'lastAction',
 	'updatedAt',
 	'pendingWrite',
+	'pendingSessionVersion',
+	'pendingConsumeToken',
+	'pendingOperationId',
 ]);
 
 export const ALLOWED_REFERENCE_KEYS = Object.freeze([
@@ -69,24 +89,175 @@ export function createEmptyConversationState() {
 		lastAction: null,
 		updatedAt: null,
 		pendingWrite: null,
+		pendingSessionVersion: null,
+		pendingConsumeToken: null,
+		pendingOperationId: null,
 	};
 }
 
-export function getConversationState(userId, sessionId) {
-	const stored = getConversationStore().getConversationState(userId, sessionId);
+export function getConversationState(userId, sessionId, activityId = null) {
+	const store = getConversationStore();
+	const stored = store.getConversationState(userId, sessionId, activityId)
+		|| (activityId ? store.getConversationState(userId, sessionId, null) : null);
 	return stored || createEmptyConversationState();
 }
 
-export function saveConversationState(userId, sessionId, state) {
+export function saveConversationState(userId, sessionId, state, activityId = null) {
 	assertConversationStateIsContextOnly(state);
 	getConversationStore().saveConversationState(userId, sessionId, {
 		...state,
 		updatedAt: new Date().toISOString(),
-	});
+	}, activityId);
 }
 
-export function clearConversationState(userId, sessionId) {
-	getConversationStore().clearConversationState(userId, sessionId);
+function cacheConversationStateToRam(userId, sessionId, state, activityId = null) {
+	try {
+		saveConversationState(userId, sessionId, state, activityId);
+		incrementWriteRamSuccessForTests();
+		recordWriterRamCacheSuccess();
+		return true;
+	} catch (error) {
+		recordWriterRamCacheFailure();
+		logger.warn('[agent-session-writer]', {
+			event: 'agent_session_write',
+			mode: 'db_first',
+			outcome: 'ram_cache_failure',
+			userId,
+			sessionId,
+			hasPendingWrite: state?.pendingWrite != null,
+			errorCode: error?.code || 'RAM_CACHE_FAILED',
+		});
+		return false;
+	}
+}
+
+async function persistConversationStateLegacy({ user, sessionId, state, requirePendingDb = false }) {
+	saveConversationState(user.id, sessionId, state, user.activeActivityId);
+	incrementWriteRamSuccessForTests();
+
+	const mustSecurePending = requirePendingDb
+		&& isPendingDbRequired()
+		&& state?.pendingWrite != null;
+
+	if (mustSecurePending) {
+		const mirrorResult = await mirrorAgentSessionState({ user, sessionId, state });
+		if (mirrorResult?.outcome !== MIRROR_OUTCOMES.SUCCESS) {
+			recordPendingPersistenceOutcome(PENDING_PERSISTENCE_OUTCOMES.BLOCKED_CONFIRMATION);
+			logger.warn('[agent-session-writer]', {
+				event: 'pending_persistence',
+				outcome: PENDING_PERSISTENCE_OUTCOMES.BLOCKED_CONFIRMATION,
+				userId: user?.id,
+				sessionId,
+				hasPendingWrite: true,
+				errorCode: mirrorResult?.errorCode || 'MIRROR_NOT_SUCCESS',
+			});
+			return {
+				ok: false,
+				reason: mirrorResult?.errorCode || 'MIRROR_NOT_SUCCESS',
+				blockedConfirmation: true,
+			};
+		}
+
+		const verification = await verifyPendingInDb({
+			user,
+			consumeToken: state.pendingConsumeToken,
+			pendingWrite: state.pendingWrite,
+		});
+
+		if (!verification.ok) {
+			recordPendingPersistenceOutcome(PENDING_PERSISTENCE_OUTCOMES.BLOCKED_CONFIRMATION);
+			logger.warn('[agent-session-writer]', {
+				event: 'pending_persistence',
+				outcome: PENDING_PERSISTENCE_OUTCOMES.BLOCKED_CONFIRMATION,
+				userId: user?.id,
+				sessionId,
+				hasPendingWrite: true,
+				errorCode: verification.reason,
+			});
+			return {
+				ok: false,
+				reason: verification.reason,
+				blockedConfirmation: true,
+			};
+		}
+
+		recordPendingPersistenceOutcome(PENDING_PERSISTENCE_OUTCOMES.SUCCESS);
+		const syncedState = {
+			...state,
+			pendingSessionVersion: verification.pendingVersion ?? state.pendingSessionVersion ?? null,
+			pendingConsumeToken: verification.consumeToken ?? state.pendingConsumeToken ?? null,
+			pendingOperationId: verification.operationId ?? state.pendingOperationId ?? null,
+		};
+		saveConversationState(user.id, sessionId, syncedState, user.activeActivityId);
+
+		return {
+			ok: true,
+			outcome: 'SUCCESS',
+			dbSuccess: true,
+			pendingVersion: verification.pendingVersion ?? null,
+			consumeToken: verification.consumeToken ?? null,
+		};
+	}
+
+	const mirrorTask = mirrorAgentSessionState({ user, sessionId, state }).catch((error) => {
+		logger.warn('[agent-session-writer]', {
+			event: 'agent_session_mirror',
+			outcome: 'unhandled_failure',
+			userId: user?.id,
+			sessionId,
+			hasPendingWrite: state?.pendingWrite != null,
+			errorCode: error?.code || 'UNHANDLED',
+		});
+	});
+
+	if (shouldAwaitAgentSessionMirror()) {
+		await mirrorTask;
+	}
+
+	return { ok: true, outcome: 'SUCCESS', dbSuccess: false };
+}
+
+async function persistConversationStateDbFirst({ user, sessionId, state, requirePendingDb = false }) {
+	const dbResult = await executeDbFirstConversationPersist({
+		user,
+		sessionId,
+		state,
+		requirePendingDb,
+	});
+
+	if (dbResult.blockedConfirmation || dbResult.outcome === 'DB_DIVERGENCE') {
+		return dbResult;
+	}
+
+	if (dbResult.dbSuccess && dbResult.syncedState) {
+		cacheConversationStateToRam(user.id, sessionId, dbResult.syncedState, user.activeActivityId);
+		return dbResult;
+	}
+
+	if (dbResult.ramFallback && dbResult.syncedState) {
+		cacheConversationStateToRam(user.id, sessionId, dbResult.syncedState, user.activeActivityId);
+		return dbResult;
+	}
+
+	return dbResult;
+}
+
+/**
+ * Persist ConversationState to RAM (sync) then mirror to agent_sessions (async, FAIL_OPEN).
+ * sessionId is used for RAM key and logs only — DB rows are scoped by client_id + activity_id.
+ *
+ * When AGENT_SESSION_WRITE_DB_FIRST=true: DB write first, then RAM cache.
+ * When requirePendingDb + PENDING_DB_REQUIRED (or WRITE_DB_FIRST): verify pending before confirmation.
+ */
+export async function persistConversationState({ user, sessionId, state, requirePendingDb = false }) {
+	if (isWriteDbFirst()) {
+		return persistConversationStateDbFirst({ user, sessionId, state, requirePendingDb });
+	}
+	return persistConversationStateLegacy({ user, sessionId, state, requirePendingDb });
+}
+
+export function clearConversationState(userId, sessionId, activityId = null) {
+	getConversationStore().clearConversationState(userId, sessionId, activityId);
 }
 
 export function clearConversationSessionsForTests() {
@@ -108,6 +279,21 @@ export function mergeConversationState(current, patch) {
 		updatedAt: new Date().toISOString(),
 	};
 	assertConversationStateIsContextOnly(merged);
+	if (merged.pendingWrite != null && patch.pendingWrite !== undefined) {
+		if (merged.pendingConsumeToken == null) {
+			merged.pendingConsumeToken = patch.pendingConsumeToken ?? createPendingConsumeToken();
+		}
+		if (merged.pendingOperationId == null && patch.pendingOperationId == null) {
+			merged.pendingOperationId = generateOperationId();
+		}
+	}
+	if (patch.pendingWrite === null) {
+		merged.pendingConsumeToken = null;
+		merged.pendingOperationId = null;
+	}
+	if (patch.pendingSessionVersion !== undefined) {
+		merged.pendingSessionVersion = patch.pendingSessionVersion;
+	}
 	return merged;
 }
 
@@ -308,6 +494,15 @@ export function assertConversationStateIsContextOnly(state) {
 	assertFiltersAreContextOnly(state.filters);
 	assertNoFinancialKeys(state.references, 'references');
 	assertPendingWriteIsDraftOnly(state.pendingWrite);
+	if (state.pendingSessionVersion != null && typeof state.pendingSessionVersion !== 'number') {
+		throw new Error('pendingSessionVersion must be a number or null');
+	}
+	if (state.pendingConsumeToken != null && typeof state.pendingConsumeToken !== 'string') {
+		throw new Error('pendingConsumeToken must be a string or null');
+	}
+	if (state.pendingOperationId != null && typeof state.pendingOperationId !== 'string') {
+		throw new Error('pendingOperationId must be a string or null');
+	}
 }
 
 /** @deprecated use updateReferencesAfterPeriodQuery */

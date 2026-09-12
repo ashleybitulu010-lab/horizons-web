@@ -41,10 +41,20 @@ export const ALLOWED_FILTER_KEYS = Object.freeze([
 	'confirmed',
 ]);
 
+export const ALLOWED_REFERENCE_KEYS = Object.freeze([
+	'lastPeriod',
+	'previousPeriod',
+	'lastProduct',
+	'lastEntity',
+	'activityReference',
+]);
+
 export const FORBIDDEN_LLM_KEYS = Object.freeze([
 	'userId',
 	'clientId',
 	'client_id',
+	'activityId',
+	'activity_id',
 	'user_id',
 	'businessUserId',
 	'tenantId',
@@ -180,6 +190,7 @@ export function validateAndNormalizeResolvedIntent(raw, conversationState = {}) 
 	const references = {};
 	if (raw.references && typeof raw.references === 'object') {
 		for (const [key, value] of Object.entries(raw.references)) {
+			if (!ALLOWED_REFERENCE_KEYS.includes(key)) return null;
 			if (typeof value !== 'string' && value != null) return null;
 			references[key] = value;
 		}

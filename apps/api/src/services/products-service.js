@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from '../supabase/client.js';
 import { isSupabaseConfigured } from '../config/env.js';
-import { requireClientScope } from './supabase-scoped.js';
+import { getBusinessScope } from './supabase-scoped.js';
 
 export const PRODUITS_TABLE = 'produits';
 
@@ -75,7 +75,7 @@ function applyOrder(query, order) {
 	}
 }
 
-async function defaultQueryProducts(clientId, input) {
+async function defaultQueryProducts(scope, input) {
 	if (!isSupabaseConfigured()) {
 		const error = new Error('Supabase is not configured');
 		error.code = 'SUPABASE_NOT_CONFIGURED';
@@ -92,7 +92,8 @@ async function defaultQueryProducts(clientId, input) {
 	let query = admin
 		.from(PRODUITS_TABLE)
 		.select(PRODUITS_SELECT)
-		.eq('client_id', clientId);
+		.eq('client_id', scope.clientId)
+		.eq('activity_id', scope.activityId);
 
 	if (input.product) {
 		query = query.ilike('nom_produit', `%${input.product}%`);
@@ -115,10 +116,10 @@ async function defaultQueryProducts(clientId, input) {
 }
 
 export async function fetchProductsForUser(user, rawInput = {}) {
-	const clientId = requireClientScope(user);
+	const scope = getBusinessScope(user);
 	const input = normalizeInput(rawInput);
 	const query = queryProductsImpl || defaultQueryProducts;
-	const rows = await query(clientId, input);
+	const rows = await query(scope, input);
 
 	return {
 		rows,

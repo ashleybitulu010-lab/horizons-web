@@ -36,7 +36,21 @@ export async function resolveSupabaseClientRow(record) {
 	return data;
 }
 
+let buildRequestUserImpl = null;
+
+export function setBuildRequestUserImplForTests(impl) {
+	buildRequestUserImpl = impl;
+}
+
+export function resetBuildRequestUserImplForTests() {
+	buildRequestUserImpl = null;
+}
+
 export async function buildRequestUser(record) {
+	if (buildRequestUserImpl) {
+		return buildRequestUserImpl(record);
+	}
+
 	const businessUserId = resolveBusinessUserId(record);
 	const clientRow = await resolveSupabaseClientRow(record);
 

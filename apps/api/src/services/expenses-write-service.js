@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from '../supabase/client.js';
 import { isSupabaseConfigured } from '../config/env.js';
-import { requireClientScope } from './supabase-scoped.js';
+import { getBusinessScope } from './supabase-scoped.js';
 
 export const CREATE_EXPENSE_RPC = 'create_expense_atomic';
 
@@ -60,7 +60,7 @@ function mapRpcError(err) {
 	return error;
 }
 
-async function defaultCreateExpense(clientId, input) {
+async function defaultCreateExpense(scope, input) {
 	if (!isSupabaseConfigured()) {
 		const error = new Error('Supabase is not configured');
 		error.code = 'SUPABASE_NOT_CONFIGURED';
@@ -75,7 +75,8 @@ async function defaultCreateExpense(clientId, input) {
 	}
 
 	const { data, error } = await admin.rpc(CREATE_EXPENSE_RPC, {
-		p_client_id: clientId,
+		p_client_id: scope.clientId,
+		p_activity_id: scope.activityId,
 		p_label: input.label,
 		p_amount: input.amount,
 	});
@@ -105,7 +106,7 @@ export function buildCreateExpensePreview(input) {
 }
 
 export async function createExpenseForUser(user, rawInput = {}) {
-	const clientId = requireClientScope(user);
+	const scope = getBusinessScope(user);
 	const input = normalizeCreateExpenseInput(rawInput);
 
 	if (!input.confirmed) {
@@ -128,7 +129,7 @@ export async function createExpenseForUser(user, rawInput = {}) {
 	}
 
 	const executor = createExpenseImpl || defaultCreateExpense;
-	const result = await executor(clientId, input);
+	const result = await executor(scope, input);
 
 	return {
 		status: 'created',

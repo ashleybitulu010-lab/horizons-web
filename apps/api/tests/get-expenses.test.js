@@ -11,12 +11,14 @@ import {
 const USER_A = {
 	id: 'pb_a',
 	clientId: 'client_a',
+	activeActivityId: 'activity_a',
 	businessUserId: 'rec_a',
 };
 
 const USER_B = {
 	id: 'pb_b',
 	clientId: 'client_b',
+	activeActivityId: 'activity_b',
 	businessUserId: 'rec_b',
 };
 
@@ -43,9 +45,9 @@ const EXPENSES_B = [
 ];
 
 test.beforeEach(() => {
-	setExpensesQueryImplForTests(async (clientId) => {
-		if (clientId === 'client_a') return EXPENSES_A;
-		if (clientId === 'client_b') return EXPENSES_B;
+	setExpensesQueryImplForTests(async (scope) => {
+		if (scope.clientId === 'client_a') return EXPENSES_A;
+		if (scope.clientId === 'client_b') return EXPENSES_B;
 		return [];
 	});
 });

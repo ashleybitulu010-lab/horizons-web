@@ -11,6 +11,37 @@ import {
 import { resolveIntentLlm } from './llm-resolver.js';
 import { resolveIntentRegex } from './regex-resolver.js';
 
+const READ_QUERY_INTENTS = new Set([
+	'query_sales',
+	'query_expenses',
+	'query_stock',
+	'query_debts',
+	'query_products',
+	'compare_sales',
+	'compare_expenses',
+	'compare_sales_expenses',
+	'best_product',
+	'generate_report',
+]);
+
+function reconcileMisclassifiedReadIntent(message, resolved, conversationState) {
+	if (resolved?.intent !== 'create_expense') {
+		return resolved;
+	}
+	const regexResolved = resolveIntentRegex(message, conversationState);
+	if (READ_QUERY_INTENTS.has(regexResolved.intent) && regexResolved.needsTool) {
+		return {
+			...regexResolved,
+			resolver: resolved.resolver || 'llm',
+			resolverMeta: {
+				...(resolved.resolverMeta || {}),
+				reconciledFrom: 'create_expense',
+			},
+		};
+	}
+	return resolved;
+}
+
 let forceRegexForTests = true;
 let forceLlmForTests = false;
 
@@ -44,7 +75,8 @@ export async function resolveIntent(message, conversationState = {}, options = {
 
 	const startedAt = Date.now();
 	try {
-		return await resolveIntentLlm(message, conversationState, config);
+		const llmResolved = await resolveIntentLlm(message, conversationState, config);
+		return reconcileMisclassifiedReadIntent(message, llmResolved, conversationState);
 	} catch (err) {
 		const fallback = resolveIntentRegex(message, conversationState);
 		return {
@@ -57,6 +89,8 @@ export async function resolveIntent(message, conversationState = {}, options = {
 		};
 	}
 }
+
+export { reconcileMisclassifiedReadIntent };
 
 export {
 	conversationPatchFromIntent,

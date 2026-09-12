@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from '../supabase/client.js';
 import { isSupabaseConfigured } from '../config/env.js';
-import { requireClientScope } from './supabase-scoped.js';
+import { getBusinessScope } from './supabase-scoped.js';
 
 export const STOCKS_TABLE = 'stocks';
 export const PRODUITS_TABLE = 'produits';
@@ -64,7 +64,7 @@ function effectiveThreshold(row) {
 	return DEFAULT_STOCK_THRESHOLD;
 }
 
-async function defaultQueryStock(clientId, input) {
+async function defaultQueryStock(scope, input) {
 	if (!isSupabaseConfigured()) {
 		const error = new Error('Supabase is not configured');
 		error.code = 'SUPABASE_NOT_CONFIGURED';
@@ -81,7 +81,8 @@ async function defaultQueryStock(clientId, input) {
 	let stockQuery = admin
 		.from(STOCKS_TABLE)
 		.select(STOCKS_SELECT)
-		.eq('client_id', clientId);
+		.eq('client_id', scope.clientId)
+		.eq('activity_id', scope.activityId);
 
 	if (input.product) {
 		stockQuery = stockQuery.ilike('nom_article', `%${input.product}%`);
@@ -91,7 +92,10 @@ async function defaultQueryStock(clientId, input) {
 
 	const [{ data: stockRows, error: stockError }, { data: productRows, error: productError }] = await Promise.all([
 		stockQuery,
-		admin.from(PRODUITS_TABLE).select(PRODUITS_SELECT).eq('client_id', clientId).limit(input.limit),
+		admin.from(PRODUITS_TABLE).select(PRODUITS_SELECT)
+			.eq('client_id', scope.clientId)
+			.eq('activity_id', scope.activityId)
+			.limit(input.limit),
 	]);
 
 	if (stockError) {
@@ -168,10 +172,10 @@ export function summarizeStock(stockRows, productRows = [], input = {}) {
 }
 
 export async function fetchStockForUser(user, rawInput = {}) {
-	const clientId = requireClientScope(user);
+	const scope = getBusinessScope(user);
 	const input = normalizeInput(rawInput);
 	const query = queryStockImpl || defaultQueryStock;
-	const { stocks, products } = await query(clientId, input);
+	const { stocks, products } = await query(scope, input);
 
 	return {
 		rows: stocks,

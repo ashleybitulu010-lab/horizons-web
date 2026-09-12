@@ -183,10 +183,30 @@ export function normalizeChatIcons(value) {
   return text.normalize('NFC');
 }
 
+/**
+ * Chat UI renders plain text (no Markdown). Strip common Markdown markers
+ * so users never see literal **, ##, etc.
+ */
+export function stripVisibleMarkdown(value) {
+  let text = String(value || '');
+  if (!text) return '';
+  text = text.replace(/\r\n/g, '\n');
+  text = text.replace(/\*\*/g, '');
+  text = text.replace(/__/g, '');
+  text = text.replace(/^#{1,6}\s+/gm, '');
+  text = text.replace(/```[\s\S]*?```/g, (block) =>
+    block.replace(/```[a-zA-Z0-9]*\n?/g, '').replace(/```/g, ''),
+  );
+  text = text.replace(/`([^`]+)`/g, '$1');
+  // Keep list bullets as plain dashes (avoid leftover *)
+  text = text.replace(/^\s*\*\s+/gm, '- ');
+  return text;
+}
+
 export function normalizeMessageText(value, currencySettings = {}) {
   const currency = currencySettings.displayCurrency === 'CDF' ? 'CDF' : 'USD';
   const amountPattern = '[+-]?\\d+(?:[\\s\\u00A0.,]\\d+)*';
-  let text = normalizeChatIcons(value);
+  let text = stripVisibleMarkdown(normalizeChatIcons(value));
 
   text = text.replace(
     new RegExp(`€\\s*(${amountPattern})`, 'gu'),

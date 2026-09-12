@@ -1,12 +1,14 @@
 /* Ash Ledger PWA service worker — required for Android install + standalone launch */
-const CACHE = 'ash-ledger-shell-v4';
+const CACHE = 'ash-ledger-shell-v7';
 const PRECACHE = [
   '/',
-  '/chat',
   '/manifest.json',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
+  '/icons/icon-512-maskable.png',
   '/icons/apple-touch-icon.png',
+  '/assets/logo/logo-symbol-white-transparent.png',
+  '/assets/logo/logo-symbol-transparent.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -45,7 +47,7 @@ self.addEventListener('fetch', (event) => {
         return response;
       })
       .catch(() =>
-        caches.match(request).then((cached) => cached || caches.match('/chat') || caches.match('/')),
+        caches.match(request).then((cached) => cached || caches.match('/') || caches.match('/chat')),
       ),
   );
 });

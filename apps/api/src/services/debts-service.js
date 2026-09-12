@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from '../supabase/client.js';
 import { isSupabaseConfigured } from '../config/env.js';
-import { requireClientScope } from './supabase-scoped.js';
+import { getBusinessScope } from './supabase-scoped.js';
 import { resolveDateRange } from '../utils/periods.js';
 
 export const VENTES_TABLE = 'ventes';
@@ -72,7 +72,7 @@ function resolveOptionalRange(input, referenceDate) {
 	return null;
 }
 
-async function defaultQueryDebts(clientId, range, input) {
+async function defaultQueryDebts(scope, range, input) {
 	if (!isSupabaseConfigured()) {
 		const error = new Error('Supabase is not configured');
 		error.code = 'SUPABASE_NOT_CONFIGURED';
@@ -89,7 +89,8 @@ async function defaultQueryDebts(clientId, range, input) {
 	let query = admin
 		.from(VENTES_TABLE)
 		.select(DEBTS_VENTES_SELECT)
-		.eq('client_id', clientId);
+		.eq('client_id', scope.clientId)
+		.eq('activity_id', scope.activityId);
 
 	if (range) {
 		query = query.gte('date', range.startIso).lte('date', range.endIso);
@@ -122,12 +123,12 @@ function matchesDebtor(row, debtor) {
 }
 
 export async function fetchDebtsForUser(user, rawInput = {}, referenceDate = new Date()) {
-	const clientId = requireClientScope(user);
+	const scope = getBusinessScope(user);
 	const input = normalizeInput(rawInput);
 	const range = resolveOptionalRange(input, referenceDate);
 
 	const query = queryDebtsImpl || defaultQueryDebts;
-	const rows = await query(clientId, range, input);
+	const rows = await query(scope, range, input);
 
 	const filtered = rows
 		.filter((row) => !isCancelledSale(row))

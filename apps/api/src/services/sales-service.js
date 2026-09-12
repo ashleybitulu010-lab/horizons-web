@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from '../supabase/client.js';
 import { isSupabaseConfigured } from '../config/env.js';
-import { requireClientScope } from './supabase-scoped.js';
+import { getBusinessScope } from './supabase-scoped.js';
 import { resolveDateRange } from '../utils/periods.js';
 
 export const VENTES_TABLE = 'ventes';
@@ -65,7 +65,7 @@ function normalizeInput(input = {}) {
 	};
 }
 
-async function defaultQuerySales(clientId, range, input) {
+async function defaultQuerySales(scope, range, input) {
 	if (!isSupabaseConfigured()) {
 		const error = new Error('Supabase is not configured');
 		error.code = 'SUPABASE_NOT_CONFIGURED';
@@ -82,7 +82,8 @@ async function defaultQuerySales(clientId, range, input) {
 	let query = admin
 		.from(VENTES_TABLE)
 		.select(VENTES_SELECT)
-		.eq('client_id', clientId)
+		.eq('client_id', scope.clientId)
+		.eq('activity_id', scope.activityId)
 		.gte('date', range.startIso)
 		.lte('date', range.endIso);
 
@@ -103,12 +104,12 @@ async function defaultQuerySales(clientId, range, input) {
 }
 
 export async function fetchSalesForUser(user, rawInput = {}, referenceDate = new Date()) {
-	const clientId = requireClientScope(user);
+	const scope = getBusinessScope(user);
 	const input = normalizeInput(rawInput);
 	const range = resolveDateRange(input, referenceDate);
 
 	const query = querySalesImpl || defaultQuerySales;
-	const rows = await query(clientId, range, input);
+	const rows = await query(scope, range, input);
 
 	const filtered = rows.filter((row) => {
 		if (!input.includeCancelled && isCancelledSale(row)) return false;

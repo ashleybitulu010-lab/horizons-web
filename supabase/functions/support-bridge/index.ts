@@ -209,10 +209,13 @@ async function handleClientMessage(request: Request) {
   const message = String(body?.message || '').trim();
   const supportChatId = String(body?.chatId || body?.supportChatId || '').trim();
   if (!message) return json(request, 400, { error: 'message is required' });
-  if (!supportChatId) return json(request, 400, { error: 'chatId is required' });
 
   const identity = await resolveClientIdentity(pbUser);
-  const text = buildTelegramText(identity, supportChatId, message);
+  const markerId = supportChatId || identity.clientPublicId || String(pbUser.id || '');
+  if (!markerId) {
+    return json(request, 400, { error: 'chatId or resolvable client identity is required' });
+  }
+  const text = buildTelegramText(identity, markerId, message);
   const tg = await sendTelegram(text);
 
   return json(request, 200, {

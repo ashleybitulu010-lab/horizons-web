@@ -9,6 +9,7 @@ import { motion } from 'framer-motion';
 import { cleanUtf8Text } from '@/lib/textEncoding';
 import { trackReportGenerated } from '@/lib/analytics';
 import { downloadLocalReport, listLocalReports } from '@/lib/saveReport';
+import AppBottomNav from '@/components/AppBottomNav';
 
 const TYPE_LABELS = {
   monthly: 'Rapport mensuel',
@@ -145,7 +146,7 @@ export default function ReportsPage() {
           )}
         </header>
 
-        <div className="flex-1 overflow-y-auto px-4 py-6 max-w-lg mx-auto w-full">
+        <div className="flex-1 overflow-y-auto px-4 py-6 max-w-lg mx-auto w-full pb-28 lg:pb-6">
           {loading ? (
             <div className="flex justify-center py-16">
               <div className="w-8 h-8 rounded-full border-2 border-orange-400 border-t-transparent animate-spin" />
@@ -227,6 +228,7 @@ export default function ReportsPage() {
             </div>
           )}
         </div>
+        <AppBottomNav />
       </div>
     </>
   );

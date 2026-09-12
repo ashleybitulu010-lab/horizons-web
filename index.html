@@ -3,10 +3,42 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-		<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
-		<link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png" />
-		<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-		<link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png" />
+		<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png?v=20260818c" />
+		<link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png?v=20260818c" />
+		<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=20260818c" />
+		<link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png?v=20260818c" />
+		<style>
+			html, body { margin: 0; background: #FF7000; }
+			#ash-boot {
+				position: fixed;
+				inset: 0;
+				z-index: 2147483646;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				background: #FF7000;
+				padding: max(16px, env(safe-area-inset-top, 0px)) 24px max(16px, env(safe-area-inset-bottom, 0px));
+			}
+			#ash-boot img {
+				width: clamp(88px, 22vw, 128px);
+				height: clamp(88px, 22vw, 128px);
+				object-fit: contain;
+			}
+			#ash-boot p {
+				margin: 20px 0 0;
+				color: #fff;
+				font: 600 clamp(20px, 5vw, 24px)/1.2 Inter, system-ui, sans-serif;
+				text-align: center;
+			}
+			#ash-boot small {
+				display: block;
+				margin-top: 8px;
+				color: rgba(255,255,255,0.92);
+				font: 400 clamp(13px, 3.4vw, 15px)/1.4 Inter, system-ui, sans-serif;
+				text-align: center;
+			}
+		</style>
 		<meta name="generator" content="Hostinger Horizons" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 		<meta name="application-name" content="Ash Ledger" />
@@ -16,8 +48,8 @@
 		<meta name="apple-mobile-web-app-title" content="Ash Ledger" />
 		<!-- Android / Chromium -->
 		<meta name="mobile-web-app-capable" content="yes" />
-		<meta name="theme-color" content="#FF6B00" media="(prefers-color-scheme: light)" />
-		<meta name="theme-color" content="#FF6B00" media="(prefers-color-scheme: dark)" />
+		<meta name="theme-color" content="#FF7000" media="(prefers-color-scheme: light)" />
+		<meta name="theme-color" content="#FF7000" media="(prefers-color-scheme: dark)" />
 		<meta name="description" content="Gérez vos finances, ventes, dépenses, stocks et rapports grâce à l'intelligence artificielle." />
 		<meta property="og:title" content="Ash Ledger – Votre assistant financier IA" />
 		<meta property="og:description" content="Gérez vos finances, ventes, dépenses, stocks et rapports grâce à l'intelligence artificielle." />
@@ -51,6 +83,11 @@
 		</script>
 	</head>
 	<body>
+		<div id="ash-boot" aria-hidden="true">
+			<img src="/assets/logo/logo-symbol-white-transparent.png" alt="" width="128" height="128" />
+			<p>Ash Ledger</p>
+			<small>Ton assistant financier intelligent</small>
+		</div>
 		<div id="root"></div>
 		<script type="module" src="/src/main.jsx"></script>
 	</body>

@@ -11,12 +11,14 @@ import {
 const USER_A = {
 	id: 'pb_a',
 	clientId: 'client_a',
+	activeActivityId: 'activity_a',
 	businessUserId: 'rec_a',
 };
 
 const USER_B = {
 	id: 'pb_b',
 	clientId: 'client_b',
+	activeActivityId: 'activity_b',
 	businessUserId: 'rec_b',
 };
 
@@ -70,9 +72,9 @@ const SETTLED_A = [
 ];
 
 test.beforeEach(() => {
-	setDebtsQueryImplForTests(async (clientId) => {
-		if (clientId === 'client_a') return DEBTS_A;
-		if (clientId === 'client_b') return DEBTS_B;
+	setDebtsQueryImplForTests(async (scope) => {
+		if (scope.clientId === 'client_a') return DEBTS_A;
+		if (scope.clientId === 'client_b') return DEBTS_B;
 		return [];
 	});
 });
@@ -159,8 +161,8 @@ test('get_debts current_month period meta is returned', async () => {
 });
 
 test('get_debts settled status filters settled rows', async () => {
-	setDebtsQueryImplForTests(async (clientId) => (
-		clientId === 'client_a' ? [...DEBTS_A, ...SETTLED_A] : []
+	setDebtsQueryImplForTests(async (scope) => (
+		scope.clientId === 'client_a' ? [...DEBTS_A, ...SETTLED_A] : []
 	));
 	const result = await runGetDebts({ user: USER_A }, { status: 'settled' });
 	assert.equal(result.success, true);
@@ -169,8 +171,8 @@ test('get_debts settled status filters settled rows', async () => {
 });
 
 test('get_debts unpaid status excludes settled rows', async () => {
-	setDebtsQueryImplForTests(async (clientId) => (
-		clientId === 'client_a' ? [...DEBTS_A, ...SETTLED_A] : []
+	setDebtsQueryImplForTests(async (scope) => (
+		scope.clientId === 'client_a' ? [...DEBTS_A, ...SETTLED_A] : []
 	));
 	const result = await runGetDebts({ user: USER_A }, { status: 'unpaid' });
 	assert.equal(result.success, true);

@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
-import { ArrowLeft, Save, Eye, EyeOff, Camera } from 'lucide-react';
+import { ArrowLeft, Save, Eye, EyeOff, Camera, ChevronRight, LogOut } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/context/LanguageContext';
 import { isAcceptedImageFile, normalizeImageUploadFile } from '@/lib/imageUpload';
 import pb from '@/lib/pocketbaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cleanUtf8Text } from '@/lib/textEncoding';
+import AppBottomNav, { goChatWithDraft } from '@/components/AppBottomNav';
+import { PROFILE_HUB_LINKS } from '@/lib/ashyChat';
+import { activityTypeLabel, loadActivityConfig } from '@/lib/activityConfig';
+import { BRAND } from '@/lib/brandAssets';
 
 function Toast({ message, onDismiss }) {
   useEffect(() => {
@@ -58,7 +62,7 @@ function Input({ label, value, onChange, type = 'text', readOnly = false, right 
 }
 
 export default function ProfilePage() {
-  const { user, updateUserRecord } = useAuth();
+  const { user, updateUserRecord, logout, token } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
@@ -75,6 +79,8 @@ export default function ProfilePage() {
   const [showOld, setShowOld] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [toast, setToast] = useState(null);
+  const [activityType, setActivityType] = useState('');
+  const [activityName, setActivityName] = useState('');
 
   useEffect(() => {
     if (!user?.id) return;
@@ -87,6 +93,36 @@ export default function ProfilePage() {
       .catch(() => setToast({ type: 'error', text: 'Erreur lors du chargement du profil.' }))
       .finally(() => setLoading(false));
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    let cancelled = false;
+    loadActivityConfig(token)
+      .then((config) => {
+        if (cancelled) return;
+        setActivityType(config.form?.typeActivite || '');
+        setActivityName(config.form?.nomActivite || '');
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [token]);
+
+  const handleHub = (item) => {
+    if (item.action === 'support') {
+      navigate('/chat', { state: { openSupport: true } });
+      return;
+    }
+    if (item.draft) {
+      goChatWithDraft(navigate, item.draft, { send: item.send });
+      return;
+    }
+    if (item.to) navigate(item.to);
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
+  };
 
   const saveProfile = async () => {
     setSaving(true);
@@ -195,7 +231,7 @@ export default function ProfilePage() {
           <h1 className="text-white font-semibold text-base flex-1">{t('profile.title')}</h1>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-4 py-6 max-w-lg mx-auto w-full space-y-5">
+        <div className="flex-1 overflow-y-auto px-4 py-6 max-w-lg mx-auto w-full space-y-5 pb-28 lg:pb-6">
           {loading ? (
             <div className="flex justify-center py-16">
               <div className="w-8 h-8 rounded-full border-2 border-orange-400 border-t-transparent animate-spin" />
@@ -235,6 +271,31 @@ export default function ProfilePage() {
                 <p className="text-xs text-gray-400">
                   {uploadingAvatar ? 'Téléversement…' : 'Appuyez pour modifier votre photo'}
                 </p>
+                {(firstName || lastName) && (
+                  <p className="text-base font-semibold" style={{ color: BRAND.text }}>
+                    {[firstName, lastName].filter(Boolean).join(' ')}
+                  </p>
+                )}
+                {(activityName || activityType) && (
+                  <p className="text-xs" style={{ color: BRAND.textMuted }}>
+                    {[activityName, activityTypeLabel(activityType)].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+              </div>
+
+              <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                {PROFILE_HUB_LINKS.map((item, index) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleHub(item)}
+                    className="flex w-full min-h-[52px] items-center justify-between gap-3 px-4 py-3 text-left active:bg-stone-50"
+                    style={{ borderTop: index ? '1px solid rgba(23,32,51,0.06)' : 'none' }}
+                  >
+                    <span className="text-sm font-medium" style={{ color: BRAND.text }}>{item.label}</span>
+                    <ChevronRight size={16} className="text-stone-300" />
+                  </button>
+                ))}
               </div>
 
               {/* Profile info card */}
@@ -307,9 +368,19 @@ export default function ProfilePage() {
                   {savingPwd ? 'Modification…' : 'Modifier le mot de passe'}
                 </button>
               </div>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex w-full min-h-[52px] items-center justify-center gap-2 rounded-2xl bg-white text-sm font-semibold text-red-500 shadow-sm active:scale-[0.99]"
+              >
+                <LogOut size={16} />
+                Déconnexion
+              </button>
             </>
           )}
         </div>
+        <AppBottomNav />
       </div>
     </>
   );

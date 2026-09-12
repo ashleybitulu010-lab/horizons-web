@@ -36,6 +36,7 @@ import {
 const USER = {
 	id: 'pb_user',
 	clientId: 'client_1',
+	activeActivityId: 'activity_1',
 	businessUserId: 'rec_user',
 };
 
@@ -412,8 +413,8 @@ test('clearing conversation store does not remove Supabase truth', async () => {
 		referenceDate: REFERENCE_DATE,
 	});
 
-	clearConversationState(USER.id, 'sess-clear');
-	assert.equal(getConversationState(USER.id, 'sess-clear').topic, null);
+	clearConversationState(USER.id, 'sess-clear', USER.activeActivityId);
+	assert.equal(getConversationState(USER.id, 'sess-clear', USER.activeActivityId).topic, null);
 
 	const afterClear = await agent.run({
 		message: 'Combien ai-je vendu ?',
@@ -470,7 +471,7 @@ test('conversation memory never stores financial totals', async () => {
 		referenceDate: REFERENCE_DATE,
 	});
 
-	const stored = getConversationState(USER.id, 'sess-mem');
+	const stored = getConversationState(USER.id, 'sess-mem', USER.activeActivityId);
 	assert.equal(stored.filters.totalRevenue, undefined);
 	assert.equal(stored.references.totalRevenue, undefined);
 	assert.equal(stored.filters.summary, undefined);
@@ -861,15 +862,15 @@ test('create sale message asks for confirmation before write', async () => {
 	assert.match(result.reply, /Je vais enregistrer 2 poulets/i);
 	assert.match(result.reply, /Je confirme/i);
 
-	const stored = getConversationState(USER.id, 'sess-sale-confirm');
+	const stored = getConversationState(USER.id, 'sess-sale-confirm', USER.activeActivityId);
 	assert.equal(stored.pendingWrite?.tool, 'create_sale');
 	assert.equal(stored.pendingWrite?.quantity, 2);
 	assert.equal(stored.pendingWrite?.product, 'poulets');
 });
 
 test('create sale confirmation executes atomic write', async () => {
-	setCreateSaleImplForTests(async (clientId, input) => {
-		assert.equal(clientId, 'client_1');
+	setCreateSaleImplForTests(async (scope, input) => {
+		assert.equal(scope.clientId, 'client_1');
 		assert.equal(input.confirmed, true);
 		return {
 			saleId: 'sale-1',
@@ -906,7 +907,7 @@ test('create sale confirmation executes atomic write', async () => {
 	assert.match(confirmed.reply, /Vente enregistrée/i);
 	assert.match(confirmed.reply, /stock est très faible/i);
 
-	const stored = getConversationState(USER.id, sessionId);
+	const stored = getConversationState(USER.id, sessionId, USER.activeActivityId);
 	assert.equal(stored.pendingWrite, null);
 });
 
@@ -971,15 +972,15 @@ test('create expense message asks for confirmation before write', async () => {
 	assert.match(result.reply, /dépense de .*20.*transport/i);
 	assert.match(result.reply, /Je confirme/i);
 
-	const stored = getConversationState(USER.id, 'sess-expense-confirm');
+	const stored = getConversationState(USER.id, 'sess-expense-confirm', USER.activeActivityId);
 	assert.equal(stored.pendingWrite?.tool, 'create_expense');
 	assert.equal(stored.pendingWrite?.amount, 20);
 	assert.equal(stored.pendingWrite?.label, 'transport');
 });
 
 test('create expense confirmation executes atomic write', async () => {
-	setCreateExpenseImplForTests(async (clientId, input) => {
-		assert.equal(clientId, 'client_1');
+	setCreateExpenseImplForTests(async (scope, input) => {
+		assert.equal(scope.clientId, 'client_1');
 		assert.equal(input.confirmed, true);
 		return {
 			expenseId: 'expense-1',
@@ -1009,7 +1010,7 @@ test('create expense confirmation executes atomic write', async () => {
 	assert.equal(confirmed.toolResults[0].tool, 'create_expense');
 	assert.match(confirmed.reply, /Dépense enregistrée/i);
 
-	const stored = getConversationState(USER.id, sessionId);
+	const stored = getConversationState(USER.id, sessionId, USER.activeActivityId);
 	assert.equal(stored.pendingWrite, null);
 });
 

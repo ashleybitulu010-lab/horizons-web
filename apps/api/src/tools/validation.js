@@ -2,6 +2,8 @@ export const FORBIDDEN_IDENTITY_KEYS = Object.freeze([
 	'userId',
 	'clientId',
 	'client_id',
+	'activityId',
+	'activity_id',
 	'user_id',
 	'businessUserId',
 	'tenantId',

@@ -11,6 +11,7 @@ import {
 const USER = {
 	id: 'pb_user',
 	clientId: 'client_1',
+	activeActivityId: 'activity_1',
 	businessUserId: 'rec_user',
 };
 
@@ -25,8 +26,9 @@ test.afterEach(() => {
 });
 
 test('valid confirmed expense returns success summary', async () => {
-	setCreateExpenseImplForTests(async (clientId, input) => {
-		assert.equal(clientId, 'client_1');
+	setCreateExpenseImplForTests(async (scope, input) => {
+		assert.equal(scope.clientId, 'client_1');
+		assert.equal(scope.activityId, 'activity_1');
 		assert.equal(input.label, 'transport');
 		assert.equal(input.amount, 20);
 		assert.equal(input.confirmed, true);

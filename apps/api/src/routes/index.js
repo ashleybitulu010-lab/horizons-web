@@ -5,7 +5,8 @@ import chat from './chat.js';
 import { signup, login, getAirtableId } from './auth.js';
 import { getThread, saveMessage } from './thread.js';
 import history from './history.js';
-import { requireAuth, rejectForeignIdentity, assertParamUserIsSelf } from '../middleware/auth.js';
+import { requireAuth, rejectForeignIdentity, rejectForeignScope, assertParamUserIsSelf } from '../middleware/auth.js';
+import { resolveActivityScope } from '../middleware/activity-scope.js';
 
 const router = Router();
 
@@ -14,11 +15,11 @@ export default () => {
     router.use('/api', apiRoutes());
     router.post('/auth/signup', signup);
     router.post('/auth/login', login);
-    router.post('/auth/airtable-id', requireAuth, getAirtableId);
-    router.post('/chat', requireAuth, rejectForeignIdentity, chat);
-    router.post('/history', requireAuth, rejectForeignIdentity, history);
-    router.get('/thread/:userId', requireAuth, assertParamUserIsSelf('userId'), getThread);
-    router.post('/thread/message', requireAuth, rejectForeignIdentity, saveMessage);
+    router.post('/auth/airtable-id', requireAuth, resolveActivityScope, getAirtableId);
+    router.post('/chat', requireAuth, resolveActivityScope, rejectForeignIdentity, rejectForeignScope, chat);
+    router.post('/history', requireAuth, resolveActivityScope, rejectForeignIdentity, rejectForeignScope, history);
+    router.get('/thread/:userId', requireAuth, resolveActivityScope, assertParamUserIsSelf('userId'), getThread);
+    router.post('/thread/message', requireAuth, resolveActivityScope, rejectForeignIdentity, rejectForeignScope, saveMessage);
 
     return router;
 };

@@ -1,7 +1,7 @@
 import { Download, Share, Smartphone } from 'lucide-react';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 
-const APP_ICON = '/icons/icon-192.png';
+const APP_ICON = '/icons/icon-192.png?v=20260818c';
 
 function InstallHelp({ platform, onDismiss }) {
   if (platform.isInApp) {

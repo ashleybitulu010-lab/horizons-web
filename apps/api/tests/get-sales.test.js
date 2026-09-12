@@ -7,12 +7,14 @@ import { setSalesQueryImplForTests, resetSalesQueryImplForTests } from '../src/s
 const USER_A = {
 	id: 'pb_a',
 	clientId: 'client_a',
+	activeActivityId: 'activity_a',
 	businessUserId: 'rec_a',
 };
 
 const USER_B = {
 	id: 'pb_b',
 	clientId: 'client_b',
+	activeActivityId: 'activity_b',
 	businessUserId: 'rec_b',
 };
 
@@ -47,9 +49,9 @@ const SALES_B = [
 ];
 
 test.beforeEach(() => {
-	setSalesQueryImplForTests(async (clientId) => {
-		if (clientId === 'client_a') return SALES_A;
-		if (clientId === 'client_b') return SALES_B;
+	setSalesQueryImplForTests(async (scope) => {
+		if (scope.clientId === 'client_a') return SALES_A;
+		if (scope.clientId === 'client_b') return SALES_B;
 		return [];
 	});
 });

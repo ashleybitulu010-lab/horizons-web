@@ -12,12 +12,14 @@ import {
 const USER_A = {
 	id: 'pb_a',
 	clientId: 'client_a',
+	activeActivityId: 'activity_a',
 	businessUserId: 'rec_a',
 };
 
 const USER_B = {
 	id: 'pb_b',
 	clientId: 'client_b',
+	activeActivityId: 'activity_b',
 	businessUserId: 'rec_b',
 };
 
@@ -55,8 +57,8 @@ const PRODUCTS_B = [
 ];
 
 test.beforeEach(() => {
-	setProductsQueryImplForTests(async (clientId, input) => {
-		const rows = clientId === 'client_a' ? PRODUCTS_A : clientId === 'client_b' ? PRODUCTS_B : [];
+	setProductsQueryImplForTests(async (scope, input) => {
+		const rows = scope.clientId === 'client_a' ? PRODUCTS_A : scope.clientId === 'client_b' ? PRODUCTS_B : [];
 		let filtered = [...rows];
 
 		if (input.product) {

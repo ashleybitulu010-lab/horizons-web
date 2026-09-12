@@ -17,7 +17,7 @@ export function createApp() {
 	app.use(cors({
 		origin: process.env.CORS_ORIGIN || false,
 		methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'QUERY'],
-		allowedHeaders: ['Authorization', 'Content-Type', 'X-Ash-Internal-Key'],
+		allowedHeaders: ['Authorization', 'Content-Type', 'X-Ash-Internal-Key', 'X-Activity-Id'],
 	}));
 	app.use(morgan('combined'));
 	app.use(globalRateLimit);

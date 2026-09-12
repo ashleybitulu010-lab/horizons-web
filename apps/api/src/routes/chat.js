@@ -1,85 +1,75 @@
 import logger from '../utils/logger.js';
+import {
+	buildN8nChatClientResponse,
+	buildN8nChatPayload,
+	truncateProxyLogBody,
+} from '../utils/n8n-proxy.js';
+import {
+	parseN8nChatUpstreamResponse,
+	persistN8nAssistantMessage,
+	persistN8nUserMessage,
+} from '../services/n8n-chat-persistence.js';
 
-const N8N_WEBHOOK_URL = process.env.N8N_CHAT_WEBHOOK || process.env.N8N_WEBHOOK_URL;
-const N8N_API_KEY = process.env.N8N_CHAT_API_KEY;
+function readN8nChatWebhookUrl() {
+	return process.env.N8N_CHAT_WEBHOOK || process.env.N8N_WEBHOOK_URL;
+}
+
+function readN8nApiKey() {
+	return process.env.N8N_CHAT_API_KEY;
+}
 
 export default async (req, res) => {
-	const { message, sessionId, firstName, lastName, email } = req.body ?? {};
-	const user = req.user;
+	const { message } = req.body ?? {};
+	const trimmedMessage = typeof message === 'string' ? message.trim() : '';
 
-	if (!message || typeof message !== 'string' || !message.trim()) {
+	if (!trimmedMessage) {
 		return res.status(422).json({ error: 'message is required' });
 	}
 
-	if (!N8N_WEBHOOK_URL) {
+	const n8nWebhookUrl = readN8nChatWebhookUrl();
+	if (!n8nWebhookUrl) {
 		throw new Error('N8N_WEBHOOK_URL is not set in apps/api/.env');
 	}
 
-	const trustedUserId = user.businessUserId || user.id;
-	const trustedFirstName = user.firstName || firstName || '';
-	const trustedLastName = user.lastName || lastName || '';
-	const trustedEmail = user.email || email || '';
+	await persistN8nUserMessage(req.user, trimmedMessage);
 
-	const upstream = await fetch(N8N_WEBHOOK_URL, {
+	const upstreamBody = buildN8nChatPayload(req);
+	const n8nApiKey = readN8nApiKey();
+
+	const upstream = await fetch(n8nWebhookUrl, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
 			'Accept': 'application/json',
 			'User-Agent': 'AshLedger/1.0',
-			...(N8N_API_KEY ? { 'x-api-key': N8N_API_KEY } : {}),
+			...(n8nApiKey ? { 'x-api-key': n8nApiKey } : {}),
 		},
-		body: JSON.stringify({
-			message: message.trim(),
-			chatInput: message.trim(),
-			sessionId: sessionId || trustedUserId || 'default',
-			userId: trustedUserId,
-			pbUserId: user.id,
-			firstName: trustedFirstName,
-			lastName: trustedLastName,
-			email: trustedEmail,
-		}),
+		body: JSON.stringify(upstreamBody),
 	});
 
 	const rawBody = await upstream.text();
 	logger.info(`n8n response status: ${upstream.status} ${upstream.statusText}`);
-	logger.info(`n8n response body: ${rawBody}`);
+	logger.info(`n8n response body: ${truncateProxyLogBody(rawBody)}`);
 
 	if (!upstream.ok) {
-		logger.error(`n8n webhook error: ${upstream.status} ${upstream.statusText} — body: ${rawBody}`);
+		logger.error(`n8n webhook error: ${upstream.status} ${upstream.statusText} — body: ${truncateProxyLogBody(rawBody)}`);
 		throw new Error(`n8n webhook failed: ${upstream.status} ${upstream.statusText}`);
 	}
 
-	let reply = '';
+	const contentType = upstream.headers.get('content-type') || '';
+	const { reply, parsedData, persistAssistant } = parseN8nChatUpstreamResponse(rawBody, contentType);
 
-	if (rawBody && rawBody.trim()) {
-		const contentType = upstream.headers.get('content-type') || '';
-		if (contentType.includes('application/json') || rawBody.trim().startsWith('{') || rawBody.trim().startsWith('[')) {
-			try {
-				const data = JSON.parse(rawBody);
-				reply =
-					data.output ??
-					data.reply ??
-					data.text ??
-					data.message ??
-					data.answer ??
-					data.response ??
-					(Array.isArray(data) && data[0]?.output) ??
-					(typeof data === 'string' ? data : null);
-				if (!reply) {
-					logger.warn(`n8n JSON response missing expected fields: ${rawBody}`);
-					reply = "Je n'ai pas reçu de réponse compréhensible de l'agent.";
-				}
-			} catch (parseErr) {
-				logger.warn(`n8n response is not valid JSON: ${rawBody}`);
-				reply = rawBody.trim();
-			}
+	if (!persistAssistant) {
+		if (!rawBody || !rawBody.trim()) {
+			logger.warn('n8n returned an empty response body');
 		} else {
-			reply = rawBody.trim();
+			logger.warn(`n8n JSON response missing expected fields: ${truncateProxyLogBody(rawBody)}`);
 		}
-	} else {
-		logger.warn('n8n returned an empty response body');
-		reply = "L'agent n'a pas renvoyé de réponse. Veuillez réessayer.";
 	}
 
-	res.json({ reply: typeof reply === 'string' ? reply : String(reply) });
+	if (persistAssistant) {
+		await persistN8nAssistantMessage(req.user, reply, parsedData);
+	}
+
+	res.json(buildN8nChatClientResponse(parsedData, reply));
 };
