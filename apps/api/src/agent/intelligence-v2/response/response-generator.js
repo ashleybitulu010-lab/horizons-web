@@ -57,8 +57,10 @@ function resolveResponseStatus(analysis) {
 	if (analysis.partial || analysis.status === FINANCIAL_ANALYSIS_STATUS.PARTIAL) {
 		return RESPONSE_STATUS.PARTIAL;
 	}
-	if (analysis.status === FINANCIAL_ANALYSIS_STATUS.NO_DATA
-		|| analysis.status === FINANCIAL_ANALYSIS_STATUS.UNAVAILABLE
+	if (analysis.status === FINANCIAL_ANALYSIS_STATUS.NO_DATA) {
+		return RESPONSE_STATUS.NO_DATA;
+	}
+	if (analysis.status === FINANCIAL_ANALYSIS_STATUS.UNAVAILABLE
 		|| analysis.status === FINANCIAL_ANALYSIS_STATUS.INVALID_INPUT) {
 		return RESPONSE_STATUS.ERROR;
 	}

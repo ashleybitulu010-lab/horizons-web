@@ -218,6 +218,112 @@ function analyzeSalesRetrieve({ normalized, stepResults, partial }) {
 	return analysis;
 }
 
+function analyzeProfitRetrieve({ normalized, stepResults, partial }) {
+	const analysis = createEmptyFinancialAnalysis('PROFIT');
+	analysis.analysisType = FINANCIAL_ANALYSIS_TYPES.RETRIEVE;
+
+	const salesCurrent = normalized.buckets.sales.current;
+	const expensesCurrent = normalized.buckets.expenses.current;
+	const reportCurrent = normalized.buckets.report.current;
+
+	const currentCollected = resolveCollectedValue(salesCurrent, reportCurrent);
+	const currentExpenses = resolveExpenseValue(expensesCurrent, reportCurrent);
+	const currentRevenue = resolveRevenueValue(salesCurrent, reportCurrent);
+	const currentProfit = reportCurrent?.profit != null
+		? roundMoney(reportCurrent.profit)
+		: computeProfit(currentCollected, currentExpenses);
+
+	analysis.periods.current = salesCurrent?.period
+		|| expensesCurrent?.period
+		|| reportCurrent?.period
+		|| null;
+	analysis.evidence = normalized.evidence;
+	analysis.sourceSteps = stepResults.map((s) => s.stepId);
+	analysis.partial = partial;
+
+	const salesEmpty = salesCurrent?.noData || (salesCurrent == null && reportCurrent == null);
+	const expensesEmpty = expensesCurrent?.noData || (expensesCurrent == null && reportCurrent == null);
+
+	if (salesEmpty && expensesEmpty) {
+		analysis.status = FINANCIAL_ANALYSIS_STATUS.NO_DATA;
+		analysis.limitations.push(MISSING_DATA_STATE.NO_DATA);
+		return analysis;
+	}
+
+	analysis.metrics = {
+		revenue: currentRevenue,
+		collected: currentCollected,
+		expenses: currentExpenses,
+		profit: currentProfit,
+	};
+
+	if (partial || hasExecutionFailure(stepResults)) {
+		analysis.status = FINANCIAL_ANALYSIS_STATUS.PARTIAL;
+	} else if (currentProfit == null && currentCollected == null && currentExpenses == null) {
+		analysis.status = FINANCIAL_ANALYSIS_STATUS.NO_DATA;
+		analysis.limitations.push(MISSING_DATA_STATE.NO_DATA);
+	} else {
+		analysis.status = FINANCIAL_ANALYSIS_STATUS.COMPLETE;
+	}
+
+	analysis.diagnostics.metricCount = Object.keys(analysis.metrics).length;
+	return analysis;
+}
+
+function analyzeActivitySummary({ goal, normalized, stepResults, partial }) {
+	const analysis = createEmptyFinancialAnalysis(goal?.domain || 'GENERAL');
+	analysis.analysisType = FINANCIAL_ANALYSIS_TYPES.SUMMARY;
+
+	const reportCurrent = normalized.buckets.report.current;
+	const salesCurrent = normalized.buckets.sales.current;
+	const expensesCurrent = normalized.buckets.expenses.current;
+
+	const collected = resolveCollectedValue(salesCurrent, reportCurrent);
+	const expenses = resolveExpenseValue(expensesCurrent, reportCurrent);
+	const revenue = resolveRevenueValue(salesCurrent, reportCurrent);
+	const profit = reportCurrent?.profit != null
+		? roundMoney(reportCurrent.profit)
+		: computeProfit(collected, expenses);
+
+	analysis.periods.current = reportCurrent?.period
+		|| salesCurrent?.period
+		|| expensesCurrent?.period
+		|| null;
+	analysis.evidence = normalized.evidence;
+	analysis.sourceSteps = stepResults.map((s) => s.stepId);
+	analysis.partial = partial;
+
+	if (!reportCurrent && !salesCurrent && !expensesCurrent) {
+		analysis.status = FINANCIAL_ANALYSIS_STATUS.UNAVAILABLE;
+		analysis.limitations.push(MISSING_DATA_STATE.NOT_AVAILABLE);
+		return analysis;
+	}
+
+	analysis.metrics = {
+		revenue,
+		collected,
+		expenses,
+		profit,
+	};
+
+	const noFinancialData = (collected == null || collected === 0)
+		&& (expenses == null || expenses === 0)
+		&& (revenue == null || revenue === 0)
+		&& profit == null;
+
+	if (noFinancialData) {
+		analysis.status = FINANCIAL_ANALYSIS_STATUS.NO_DATA;
+		analysis.limitations.push(MISSING_DATA_STATE.NO_DATA);
+	} else if (partial || hasExecutionFailure(stepResults)) {
+		analysis.status = FINANCIAL_ANALYSIS_STATUS.PARTIAL;
+	} else {
+		analysis.status = FINANCIAL_ANALYSIS_STATUS.COMPLETE;
+	}
+
+	analysis.diagnostics.metricCount = Object.keys(analysis.metrics).length;
+	return analysis;
+}
+
 function analyzeExpensesRetrieve({ normalized, stepResults, partial }) {
 	const analysis = createEmptyFinancialAnalysis('EXPENSES');
 	analysis.analysisType = FINANCIAL_ANALYSIS_TYPES.RETRIEVE;
@@ -299,6 +405,31 @@ function analyzeDebts({ normalized, stepResults, partial }) {
 	return analysis;
 }
 
+function analyzeProductsRetrieve({ normalized, stepResults, partial }) {
+	const analysis = createEmptyFinancialAnalysis('PRODUCTS');
+	analysis.analysisType = FINANCIAL_ANALYSIS_TYPES.RETRIEVE;
+	const current = normalized.buckets.products.current;
+
+	if (!current) {
+		analysis.status = FINANCIAL_ANALYSIS_STATUS.UNAVAILABLE;
+		analysis.limitations.push(MISSING_DATA_STATE.NOT_AVAILABLE);
+		return analysis;
+	}
+
+	analysis.metrics = {
+		productCount: current.count,
+		products: current.products || [],
+	};
+	analysis.evidence = normalized.evidence;
+	analysis.sourceSteps = stepResults.map((s) => s.stepId);
+	analysis.partial = partial;
+	analysis.status = current.noData
+		? FINANCIAL_ANALYSIS_STATUS.NO_DATA
+		: FINANCIAL_ANALYSIS_STATUS.COMPLETE;
+
+	return analysis;
+}
+
 function analyzeStock({ normalized, stepResults, partial }) {
 	const analysis = createEmptyFinancialAnalysis('STOCK');
 	analysis.analysisType = FINANCIAL_ANALYSIS_TYPES.SUMMARY;
@@ -371,13 +502,17 @@ export function analyzeFinancialResults({
 	const domain = goal?.domain || 'GENERAL';
 	const objective = goal?.objective || 'SUMMARIZE';
 
-	if (domain === 'PROFIT' && (objective === 'EXPLAIN' || objective === 'COMPARE')) {
+	if (domain === 'PROFIT' && objective === 'RETRIEVE') {
+		financialAnalysis = analyzeProfitRetrieve({ normalized, stepResults, partial });
+	} else if (domain === 'PROFIT' && (objective === 'EXPLAIN' || objective === 'COMPARE')) {
 		financialAnalysis = analyzeProfitExplanation({
 			goal,
 			normalized,
 			stepResults,
 			partial,
 		});
+	} else if ((domain === 'PROFIT' || domain === 'GENERAL') && objective === 'SUMMARIZE') {
+		financialAnalysis = analyzeActivitySummary({ goal, normalized, stepResults, partial });
 	} else if (domain === 'SALES' && objective === 'RETRIEVE') {
 		financialAnalysis = analyzeSalesRetrieve({ normalized, stepResults, partial });
 	} else if (domain === 'EXPENSES' && objective === 'RETRIEVE') {
@@ -388,13 +523,8 @@ export function analyzeFinancialResults({
 		financialAnalysis = analyzeDebts({ normalized, stepResults, partial });
 	} else if (domain === 'STOCK') {
 		financialAnalysis = analyzeStock({ normalized, stepResults, partial });
-	} else if (domain === 'PROFIT' || domain === 'GENERAL') {
-		financialAnalysis = analyzeProfitExplanation({
-			goal,
-			normalized,
-			stepResults,
-			partial,
-		});
+	} else if (domain === 'PRODUCTS' && objective === 'RETRIEVE') {
+		financialAnalysis = analyzeProductsRetrieve({ normalized, stepResults, partial });
 	} else {
 		financialAnalysis = createEmptyFinancialAnalysis(domain);
 		financialAnalysis.status = FINANCIAL_ANALYSIS_STATUS.UNAVAILABLE;

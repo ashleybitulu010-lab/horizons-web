@@ -102,6 +102,18 @@ export function normalizeStepResults(stepResults = []) {
 			};
 		}
 
+		if (tool === 'get_products') {
+			const productList = step.data?.products || summary?.products || [];
+			const count = summary?.count ?? (Array.isArray(productList) ? productList.length : null);
+			buckets.products[side] = {
+				count,
+				products: productList,
+				period,
+				stepId: step.stepId,
+				noData: count === 0,
+			};
+		}
+
 		if (tool === 'generate_report') {
 			buckets.report[side] = {
 				revenue: summary?.totalRevenue ?? null,

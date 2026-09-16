@@ -329,9 +329,21 @@ export function parseCreateExpenseFromText(text) {
 	};
 }
 
+function looksLikeProductCatalogMessage(text) {
+	if (/\bd[eé]pense/i.test(text)) {
+		return false;
+	}
+	return /^(?:quels?|liste(?:r|z)?|montre(?:-|\s)?moi|donne(?:-|\s)?moi|affiche|mes).*\bproduits?\b/i.test(text)
+		|| /\bproduits?\s+enregistr/i.test(text);
+}
+
 function parseExpenseFollowUp(text, conversationState = {}) {
 	const trimmed = String(text || '').trim();
 	if (!trimmed || CREATE_EXPENSE_PREFIX.test(trimmed) || isConfirmationMessage(trimmed)) {
+		return null;
+	}
+
+	if (looksLikeProductCatalogMessage(trimmed)) {
 		return null;
 	}
 

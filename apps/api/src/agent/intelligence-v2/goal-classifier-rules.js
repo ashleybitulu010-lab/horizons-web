@@ -253,6 +253,51 @@ function extractActivityComparison(text) {
 	return buildActivityComparison(match[1].trim(), match[2].trim(), 'PROFIT');
 }
 
+const PRODUCT_CATALOG_READ_EXCLUSION = /\b(vendu|vente|d[eé]pens|b[eé]n[eé]f|stock|reste|[eé]puis|mieux|plus vendu|presque)\b/i;
+
+function isProductCatalogReadQuery(text) {
+	if (PRODUCT_CATALOG_READ_EXCLUSION.test(text)) {
+		return false;
+	}
+	return /^(?:quels?|liste(?:r|z)?|montre(?:-|\s)?moi|donne(?:-|\s)?moi|affiche).*(?:mes\s+)?produits/i.test(text)
+		|| /^mes produits/i.test(text)
+		|| /(?:quels?|liste).*(?:mes\s+)?produits\s*\??$/i.test(text)
+		|| /mon catalogue/i.test(text)
+		|| /mes articles/i.test(text)
+		|| /quels produits (?:ai-je|je vends)/i.test(text)
+		|| /\bcombien de produits\b/i.test(text);
+}
+
+function parseProductWriteAction(text) {
+	const createMatch = text.match(
+		/^(?:ajoute(?:r|z)?|cr[eé][eé](?:r|z)?|nouveau)\s+(?:le\s+|un\s+)?produit\s+(.+?)\.?$/i,
+	);
+	if (createMatch) {
+		return {
+			action: 'create',
+			product: sanitizeBusinessFieldValue(createMatch[1].trim()),
+		};
+	}
+
+	const updateMatch = text.match(/^modifi(?:e|er|é)\s+(?:le\s+)?produit\s+(.+?)\.?$/i);
+	if (updateMatch) {
+		return {
+			action: 'update',
+			product: sanitizeBusinessFieldValue(updateMatch[1].trim()),
+		};
+	}
+
+	return null;
+}
+
+function isGeneralActivitySummaryQuery(text) {
+	return /comment va(?:ient)?\s+(?:mon|ma|mes)\s+(?:activit[eé]|commerce|boutique)/i.test(text)
+		|| /quelle est ma situation/i.test(text)
+		|| /^fais(?:-|\s)?moi le point\.?$/i.test(text)
+		|| /comment se porte/i.test(text)
+		|| /(?:bilan|point)\s+(?:de\s+)?(?:mon|ma)\s+(?:activit[eé]|commerce|situation)/i.test(text);
+}
+
 /**
  * Deterministic goal classification from message + conversation context.
  * Returns null when no rule matches.
@@ -331,6 +376,46 @@ export function classifyGoalRules(message, conversationContext = {}, referenceDa
 			comparison: null,
 			activityReference: 'other activity',
 			parameters: {},
+		}, { rejectWriteExecution: true });
+	}
+
+	if (isProductCatalogReadQuery(text)) {
+		return validateGoal({
+			type: 'QUESTION',
+			domain: 'PRODUCTS',
+			objective: 'RETRIEVE',
+			period: null,
+			comparison: null,
+			activityReference: null,
+			parameters: {},
+		}, { rejectWriteExecution: true });
+	}
+
+	const productWriteAction = parseProductWriteAction(text);
+	if (productWriteAction) {
+		return validateGoal({
+			type: 'ACTION',
+			domain: 'PRODUCTS',
+			objective: productWriteAction.action === 'update' ? 'UPDATE' : 'CREATE',
+			period: null,
+			comparison: null,
+			activityReference: null,
+			parameters: {
+				product: productWriteAction.product,
+				confirmed: false,
+			},
+		}, { rejectWriteExecution: true });
+	}
+
+	if (isGeneralActivitySummaryQuery(text)) {
+		return validateGoal({
+			type: 'ANALYSIS',
+			domain: 'GENERAL',
+			objective: 'SUMMARIZE',
+			period: periodFromText(text, conversationContext, referenceDate),
+			comparison: null,
+			activityReference: null,
+			parameters: { summary: true },
 		}, { rejectWriteExecution: true });
 	}
 
@@ -632,10 +717,10 @@ export function classifyGoalRules(message, conversationContext = {}, referenceDa
 	}
 
 	if (/r[eé]sum[eé]|fais(?:-|\s)?moi un r[eé]sum[eé]|synth[eè]se|donne(?:-|\s)?moi un r[eé]sum[eé]/i.test(text)) {
-		const activitySummary = /activit[eé]|financ|b[eé]n[eé]f|global/i.test(text);
+		const activitySummary = /activit[eé]|financ|b[eé]n[eé]f|global|situation|commerce|point/i.test(text);
 		return validateGoal({
 			type: activitySummary ? 'ANALYSIS' : 'QUESTION',
-			domain: activitySummary ? 'PROFIT' : 'GENERAL',
+			domain: 'GENERAL',
 			objective: activitySummary ? 'SUMMARIZE' : 'RETRIEVE',
 			period: periodFromText(text, conversationContext, referenceDate),
 			comparison: null,
@@ -653,6 +738,18 @@ export function classifyGoalRules(message, conversationContext = {}, referenceDa
 			comparison: null,
 			activityReference: null,
 			parameters: { metric: 'expense_ratio' },
+		}, { rejectWriteExecution: true });
+	}
+
+	if ((isCompareCue(text) || isEvolutionCue(text)) && /b[eé]n[eé]f|profit|marge/i.test(text)) {
+		return validateGoal({
+			type: 'ANALYSIS',
+			domain: 'PROFIT',
+			objective: 'COMPARE',
+			period: periodFromText(text, conversationContext, referenceDate),
+			comparison: profitComparison(referenceDate),
+			activityReference: null,
+			parameters: {},
 		}, { rejectWriteExecution: true });
 	}
 

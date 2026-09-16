@@ -6,6 +6,7 @@ export const RESPONSE_SOURCE = Object.freeze({
 export const RESPONSE_STATUS = Object.freeze({
 	COMPLETE: 'COMPLETE',
 	PARTIAL: 'PARTIAL',
+	NO_DATA: 'NO_DATA',
 	FALLBACK: 'FALLBACK',
 	ERROR: 'ERROR',
 });

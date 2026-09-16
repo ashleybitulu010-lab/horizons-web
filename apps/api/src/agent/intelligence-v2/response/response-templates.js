@@ -30,6 +30,9 @@ export function templateNoData(analysis, context = {}) {
 	if (domain === 'EXPENSES') {
 		return `${activityPrefix(context)}Je n’ai trouvé aucune dépense ${period}.`;
 	}
+	if (domain === 'PRODUCTS') {
+		return `${activityPrefix(context)}Je n’ai trouvé aucun produit enregistré.`;
+	}
 	return `${activityPrefix(context)}Je n’ai trouvé aucune donnée financière ${period}.`;
 }
 
@@ -175,6 +178,71 @@ export function templateProfitExplanation(analysis, context = {}) {
 	return `${text}${buildPartialNotice(analysis)}`.trim();
 }
 
+export function templateProductsRetrieve(analysis, context = {}) {
+	const prefix = activityPrefix(context);
+
+	if (analysis?.status === FINANCIAL_ANALYSIS_STATUS.NO_DATA) {
+		return templateNoData(analysis, context);
+	}
+
+	const count = analysis.metrics?.productCount;
+	const products = analysis.metrics?.products || [];
+	if (count != null && count > 0) {
+		const names = products.slice(0, 5).map((p) => p?.name || p?.nom_produit).filter(Boolean);
+		if (names.length > 0) {
+			const suffix = count > names.length ? ` (+${count - names.length} autre${count - names.length > 1 ? 's' : ''})` : '';
+			return `${prefix}Tu as ${count} produit${count > 1 ? 's' : ''} enregistré${count > 1 ? 's' : ''} : ${names.join(', ')}${suffix}.`.trim();
+		}
+		return `${prefix}Tu as ${count} produit${count > 1 ? 's' : ''} enregistré${count > 1 ? 's' : ''}.`.trim();
+	}
+
+	return templateNoData(analysis, context);
+}
+
+export function templateProfitRetrieve(analysis, context = {}) {
+	const prefix = activityPrefix(context);
+	const period = formatPeriodLabel(analysis.periods?.current);
+
+	if (analysis?.status === FINANCIAL_ANALYSIS_STATUS.NO_DATA) {
+		return templateNoData(analysis, context);
+	}
+
+	const profit = analysis.metrics?.profit;
+	const profitText = formatMoneyV2(profit);
+	if (profitText) {
+		return `${prefix}Ton bénéfice ${period} est de ${profitText}.`.trim();
+	}
+
+	return templateError();
+}
+
+export function templateActivitySummary(analysis, context = {}) {
+	const prefix = activityPrefix(context);
+	const period = formatPeriodLabel(analysis.periods?.current);
+
+	if (analysis?.status === FINANCIAL_ANALYSIS_STATUS.NO_DATA) {
+		return templateNoData(analysis, context);
+	}
+
+	const metrics = analysis.metrics || {};
+	const parts = [];
+	if (metrics.revenue != null) {
+		parts.push(`un chiffre d’affaires de ${formatMoneyV2(metrics.revenue)}`);
+	}
+	if (metrics.expenses != null) {
+		parts.push(`des dépenses de ${formatMoneyV2(metrics.expenses)}`);
+	}
+	if (metrics.profit != null) {
+		parts.push(`un bénéfice de ${formatMoneyV2(metrics.profit)}`);
+	}
+
+	if (parts.length === 0) {
+		return templateNoData(analysis, context);
+	}
+
+	return `${prefix}Voici le point ${period} : ${parts.join(', ')}.`.trim();
+}
+
 export function templatePartial(analysis, context = {}) {
 	const prefix = activityPrefix(context);
 	if (analysis?.domain === 'PROFIT') {
@@ -219,6 +287,18 @@ export function selectTemplate(analysis, goal, context = {}) {
 
 	if (goal?.domain === 'EXPENSES' && goal?.objective === 'COMPARE') {
 		return templateExpensesCompare(analysis, context);
+	}
+
+	if (goal?.domain === 'PRODUCTS' && goal?.objective === 'RETRIEVE') {
+		return templateProductsRetrieve(analysis, context);
+	}
+
+	if (goal?.domain === 'PROFIT' && goal?.objective === 'RETRIEVE') {
+		return templateProfitRetrieve(analysis, context);
+	}
+
+	if (goal?.objective === 'SUMMARIZE' && (goal?.domain === 'GENERAL' || goal?.domain === 'PROFIT')) {
+		return templateActivitySummary(analysis, context);
 	}
 
 	if (analysis?.analysisType === FINANCIAL_ANALYSIS_TYPES.EXPLANATION

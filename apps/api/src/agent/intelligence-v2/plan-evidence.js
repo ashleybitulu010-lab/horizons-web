@@ -57,6 +57,7 @@ export function requiredEvidenceForGoal(goal) {
 			return ['products_catalog'];
 		}
 		if (domain === 'DEBTS') return ['debts_snapshot'];
+		if (domain === 'PROFIT') return ['sales_period', 'expenses_period'];
 		if (domain === 'GENERAL') return null;
 		return null;
 	}
