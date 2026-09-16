@@ -52,6 +52,10 @@ const authUserIds = [];
 const expenseIds = [];
 /** @type {string[]} */
 const saleIds = [];
+/** @type {string[]} */
+const activityIds = [];
+/** @type {Map<string, string>} */
+const clientActivityMap = new Map();
 
 function skipStaging(t) {
 	if (!STAGING_HARNESS_ENABLED) {
@@ -123,22 +127,46 @@ async function createClientRow(authUserId, label) {
 		.single();
 	if (error) throw error;
 	clientIds.push(data.id);
+	await createDefaultActivity(data.id, label);
+	return data.id;
+}
+
+async function createDefaultActivity(clientId, label) {
+	const { data, error } = await admin
+		.from('activities')
+		.insert({
+			client_id: clientId,
+			name: `F4-B1 ${label}`,
+			type: 'commerce',
+			is_default: true,
+		})
+		.select('id')
+		.single();
+	if (error) throw error;
+	activityIds.push(data.id);
+	clientActivityMap.set(clientId, data.id);
 	return data.id;
 }
 
 function userForClient(clientId, label) {
+	const activeActivityId = clientActivityMap.get(clientId);
+	if (!activeActivityId) {
+		throw new Error(`Missing default activity for client ${clientId}`);
+	}
 	return {
 		id: `pb-${label}`,
 		clientId,
+		activeActivityId,
 		businessUserId: `${TAG}-${label}`,
 	};
 }
 
-async function readDbPair(clientId) {
+async function readDbPair(clientId, activityId = clientActivityMap.get(clientId)) {
 	const { data, error } = await admin
 		.from('agent_sessions')
 		.select('state_type, payload, state_version, awaiting, intention')
-		.eq('client_id', clientId);
+		.eq('client_id', clientId)
+		.eq('activity_id', activityId);
 	if (error) throw error;
 	const draft = data?.find((r) => r.state_type === 'draft') ?? null;
 	const pending = data?.find((r) => r.state_type === 'pending') ?? null;
@@ -164,10 +192,16 @@ async function seedPendingExpense(clientId, user, { label = 'transport', amount 
 }
 
 async function seedProductAndStock(clientId, productName, quantity = 20) {
+	const activityId = clientActivityMap.get(clientId);
+	if (!activityId) {
+		throw new Error(`Missing default activity for client ${clientId}`);
+	}
+
 	const { data: produit, error: pErr } = await admin
 		.from('produits')
 		.insert({
 			client_id: clientId,
+			activity_id: activityId,
 			nom_produit: productName,
 			prix_vente_unitaire: 10,
 			prix_achat_unitaire: 5,
@@ -178,6 +212,7 @@ async function seedProductAndStock(clientId, productName, quantity = 20) {
 
 	const { error: sErr } = await admin.from('stocks').insert({
 		client_id: clientId,
+		activity_id: activityId,
 		produit_id: produit.id,
 		nom_article: productName,
 		entrees: quantity,
@@ -215,7 +250,9 @@ async function cleanupClient(clientId) {
 	await admin.from('depenses').delete().eq('client_id', clientId);
 	await admin.from('stocks').delete().eq('client_id', clientId);
 	await admin.from('produits').delete().eq('client_id', clientId);
+	await admin.from('activities').delete().eq('client_id', clientId);
 	await admin.from('clients').delete().eq('id', clientId);
+	clientActivityMap.delete(clientId);
 }
 
 describe('Phase 5.8-F4-B1-STAGING — prerequisites', { skip: !STAGING_HARNESS_ENABLED }, () => {

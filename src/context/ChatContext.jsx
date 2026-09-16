@@ -288,6 +288,7 @@ export function ChatProvider({ children }) {
         currency,
         recentMessages,
         token,
+        pendingAshyWriteConfirmation: pendingAshyWriteRef.current,
       });
 
       const {

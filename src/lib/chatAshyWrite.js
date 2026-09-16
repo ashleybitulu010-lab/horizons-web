@@ -15,7 +15,16 @@ import { CHAT_ROUTE } from './chatRouter.js';
 const ASHY_WRITE_SUCCESS_TOOLS = new Set(['create_sale', 'create_expense']);
 
 export function isAshyPendingWriteConfirmationResponse(response) {
-  if (!response || response.route !== 'ashy' || !response.ok) return false;
+  if (!response || response.route !== 'ashy') return false;
+  if (response.ashyFallbackBlocked) return false;
+
+  const v2Status = response.data?.v2Http?.actionProposalStatus;
+  if (v2Status === 'READY_FOR_CONFIRMATION' || v2Status === 'NEEDS_CLARIFICATION') {
+    return true;
+  }
+
+  if (!response.ok) return false;
+
   const results = response.data?.toolResults;
   if (Array.isArray(results)) {
     return results.some(
@@ -59,7 +68,7 @@ export function computeNextPendingAshyWrite({
   chatResponse,
   userMessage,
 }) {
-  if (chatResponse?.ashyFallback || chatRoute === CHAT_ROUTE.N8N) {
+  if (chatResponse?.ashyFallback || chatResponse?.ashyFallbackBlocked || chatRoute === CHAT_ROUTE.N8N) {
     return false;
   }
 

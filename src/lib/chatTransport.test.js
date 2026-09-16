@@ -255,7 +255,7 @@ test('Ashy create_sale success does not fallback to n8n', async () => {
   assert.equal(parsed.shouldRefreshDashboard, true);
 });
 
-test('Ashy write failure falls back to n8n without duplicate Ashy call', async () => {
+test('H4: Ashy write failure does NOT fall back to n8n', async () => {
   let ashyCalls = 0;
   let n8nCalls = 0;
   const res = await fetchChatResponse({
@@ -285,9 +285,57 @@ test('Ashy write failure falls back to n8n without duplicate Ashy call', async (
   });
 
   assert.equal(ashyCalls, 1);
-  assert.equal(n8nCalls, 1);
-  assert.equal(res.ashyFallback, true);
-  assert.equal(res.route, 'n8n');
+  assert.equal(n8nCalls, 0);
+  assert.equal(res.ashyFallbackBlocked, true);
+  assert.equal(res.noN8nFallback, true);
+  assert.equal(res.route, 'ashy');
+});
+
+test('H4: Ashy action network error does NOT fall back to n8n', async () => {
+  let n8nCalls = 0;
+  const res = await fetchChatResponse({
+    ...baseCtx,
+    message: 'Ajoute une dépense de 30 dollars pour le transport',
+    chatRoute: CHAT_ROUTE.ASHY,
+    sendAshy: throwingAshy(),
+    sendN8n: async () => { n8nCalls += 1; return { ok: true, route: 'n8n' }; },
+  });
+  assert.equal(n8nCalls, 0);
+  assert.equal(res.ashyFallbackBlocked, true);
+  assert.equal(res.noN8nFallback, true);
+});
+
+test('H4: Ashy confirm network error with pending does NOT fall back to n8n', async () => {
+  let n8nCalls = 0;
+  const res = await fetchChatResponse({
+    ...baseCtx,
+    message: 'Oui',
+    chatRoute: CHAT_ROUTE.ASHY,
+    pendingAshyWriteConfirmation: true,
+    sendAshy: throwingAshy(),
+    sendN8n: async () => { n8nCalls += 1; return { ok: true, route: 'n8n' }; },
+  });
+  assert.equal(n8nCalls, 0);
+  assert.equal(res.ashyFallbackBlocked, true);
+});
+
+test('H4: server noN8nFallback blocks n8n even for READ-shaped message', async () => {
+  let n8nCalls = 0;
+  const res = await fetchChatResponse({
+    ...baseCtx,
+    message: 'Combien ai-je vendu ce mois-ci ?',
+    chatRoute: CHAT_ROUTE.ASHY,
+    sendAshy: mockAshy({
+      ok: false,
+      status: 500,
+      rawText: '{}',
+      data: { noN8nFallback: true, fallbackPolicy: 'NO_FALLBACK' },
+      route: 'ashy',
+    }),
+    sendN8n: async () => { n8nCalls += 1; return { ok: true, route: 'n8n' }; },
+  });
+  assert.equal(n8nCalls, 0);
+  assert.equal(res.ashyFallbackBlocked, true);
 });
 
 test('shouldFallbackAshyToN8n detects failed Ashy HTTP', () => {

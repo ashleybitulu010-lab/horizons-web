@@ -44,6 +44,8 @@ function reconcileMisclassifiedReadIntent(message, resolved, conversationState) 
 
 let forceRegexForTests = true;
 let forceLlmForTests = false;
+/** @type {((message: string, state: object, options?: object) => void) | null} */
+let resolveIntentSpyForTests = null;
 
 export function setForceRegexResolverForTests(value = true) {
 	forceRegexForTests = value;
@@ -56,7 +58,12 @@ export function setForceLlmResolverForTests(value = true) {
 export function resetIntentResolverTestOverrides() {
 	forceRegexForTests = true;
 	forceLlmForTests = false;
+	resolveIntentSpyForTests = null;
 	resetChatCompletionImplForTests();
+}
+
+export function setResolveIntentSpyForTests(spy) {
+	resolveIntentSpyForTests = spy;
 }
 
 /**
@@ -64,6 +71,10 @@ export function resetIntentResolverTestOverrides() {
  * Phase 3.3: LLM primary when configured, regex fallback always available.
  */
 export async function resolveIntent(message, conversationState = {}, options = {}) {
+	if (resolveIntentSpyForTests) {
+		resolveIntentSpyForTests(message, conversationState, options);
+	}
+
 	const config = getLlmResolverConfig();
 	const useLlm = !options.forceRegex
 		&& !forceRegexForTests

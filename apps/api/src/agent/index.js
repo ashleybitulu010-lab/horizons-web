@@ -31,6 +31,16 @@ import { planToolExecution } from './tool-planner.js';
 import { createToolExecutionContext } from '../tools/context.js';
 import { executeTool } from '../tools/registry.js';
 import { resolveActivityReference } from '../services/activity-reference-resolver.js';
+import { emitShadowGoalDiagnostic } from './intelligence-v2/shadow-mode.js';
+import { isIntelligenceV2ShadowEnabled } from './intelligence-v2/config.js';
+import { handleV2HttpTurn } from './intelligence-v2/v2-http-handler.js';
+import {
+	buildV2PrimaryUnhandledAgentResponse,
+	resolveCutoverMode,
+	resolvePrimaryPath,
+	shouldBlockLegacyPassthrough,
+	shouldRunShadowObservation,
+} from './intelligence-v2/v2-cutover-policy.js';
 
 function conversationSnapshot(user, sessionId) {
 	return sanitizeConversationForClient(
@@ -306,8 +316,55 @@ export function createAshyAgent() {
 			}
 
 			const { state: previousState } = await getAgentSessionState({ user, sessionId });
+			const cutoverMode = resolveCutoverMode();
+
+			const v2Http = await handleV2HttpTurn({
+				message,
+				user,
+				sessionId,
+				previousState,
+				referenceDate,
+			});
+
+			if (v2Http.handled) {
+				const response = {
+					...v2Http.agentResponse,
+					cutoverMode,
+					primaryPath: resolvePrimaryPath(cutoverMode, { v2HttpHandled: true }),
+				};
+				if (response.v2Http) {
+					response.v2Http = {
+						...response.v2Http,
+						cutoverMode,
+						primaryPath: response.primaryPath,
+					};
+				}
+				return response;
+			}
+
+			if (shouldBlockLegacyPassthrough(cutoverMode)) {
+				return buildV2PrimaryUnhandledAgentResponse({
+					cutoverMode,
+					message,
+					previousState,
+					user,
+				});
+			}
+
 			const resolved = await resolveIntent(message, previousState);
+
 			const { user: scopedUser, clarification: activityClarification } = await resolveScopedUserFromIntent(user, resolved);
+
+			if (isIntelligenceV2ShadowEnabled() && shouldRunShadowObservation(cutoverMode)) {
+				emitShadowGoalDiagnostic({
+					message,
+					conversationContext: previousState,
+					legacyResolved: resolved,
+					referenceDate,
+					executionContext: { user: scopedUser },
+					primaryPath: 'LEGACY',
+				});
+			}
 
 			if (activityClarification) {
 				const clarifyState = mergeConversationState(previousState, conversationPatchFromIntent(resolved));

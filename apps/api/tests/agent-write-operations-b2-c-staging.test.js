@@ -33,6 +33,10 @@ const authUserIds = [];
 const expenseIds = [];
 /** @type {string[]} */
 const operationRowIds = [];
+/** @type {string[]} */
+const activityIds = [];
+/** @type {Map<string, string>} */
+const clientActivityMap = new Map();
 
 function skipStaging(t) {
 	if (!STAGING_HARNESS_ENABLED) {
@@ -72,10 +76,33 @@ async function createClientRow(authUserId, label) {
 		.single();
 	if (error) throw error;
 	clientIds.push(data.id);
+	await createDefaultActivity(data.id, label);
+	return data.id;
+}
+
+async function createDefaultActivity(clientId, label) {
+	const { data, error } = await admin
+		.from('activities')
+		.insert({
+			client_id: clientId,
+			name: `B2-C ${label}`,
+			type: 'commerce',
+			is_default: true,
+		})
+		.select('id')
+		.single();
+	if (error) throw error;
+	activityIds.push(data.id);
+	clientActivityMap.set(clientId, data.id);
 	return data.id;
 }
 
 async function seedPendingSession(clientId, pendingWrite, consumeToken) {
+	const activityId = clientActivityMap.get(clientId);
+	if (!activityId) {
+		throw new Error(`Missing default activity for client ${clientId}`);
+	}
+
 	const payload = {
 		pendingWrite,
 		consumeToken,
@@ -84,16 +111,17 @@ async function seedPendingSession(clientId, pendingWrite, consumeToken) {
 		.from('agent_sessions')
 		.upsert({
 			client_id: clientId,
+			activity_id: activityId,
 			state_type: 'pending',
 			payload,
 			awaiting: 'confirm',
 			intention: pendingWrite.tool,
 			state_version: 1,
-		}, { onConflict: 'client_id,state_type' })
+		}, { onConflict: 'client_id,activity_id,state_type' })
 		.select('id, state_version')
 		.single();
 	if (error) throw error;
-	return { sessionId: data.id, version: data.state_version };
+	return { sessionId: data.id, version: data.state_version, activityId };
 }
 
 async function countExpenses(clientId) {
@@ -109,9 +137,11 @@ async function rpcConfirmExpense(clientId, {
 	consumeToken,
 	operationId,
 	requestHash,
+	activityId = clientActivityMap.get(clientId),
 }) {
 	return admin.rpc('confirm_and_create_expense', {
 		p_client_id: clientId,
+		p_activity_id: activityId,
 		p_expected_version: null,
 		p_consume_token: consumeToken,
 		p_operation_id: operationId,
@@ -136,11 +166,16 @@ describe('Phase 5.8-F4-B2-C-STAGING — idempotent confirm RPC', { skip: !STAGIN
 		for (const id of operationRowIds.splice(0)) {
 			await admin.from('agent_write_operations').delete().eq('id', id);
 		}
+		for (const id of activityIds.splice(0)) {
+			await admin.from('agent_sessions').delete().eq('activity_id', id);
+		}
 		for (const id of clientIds.splice(0)) {
 			await admin.from('agent_write_operations').delete().eq('client_id', id);
 			await admin.from('agent_sessions').delete().eq('client_id', id);
 			await admin.from('depenses').delete().eq('client_id', id);
+			await admin.from('activities').delete().eq('client_id', id);
 			await admin.from('clients').delete().eq('id', id);
+			clientActivityMap.delete(id);
 		}
 		for (const uid of authUserIds) {
 			await admin.auth.admin.deleteUser(uid);

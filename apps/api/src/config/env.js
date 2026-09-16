@@ -19,6 +19,19 @@ export function getEnv() {
 		ashyLlmModel: process.env.ASHY_LLM_MODEL || 'gpt-4o-mini',
 		ashyLlmBaseUrl: process.env.ASHY_LLM_BASE_URL || 'https://api.openai.com/v1',
 		ashyLlmTimeoutMs: Number(process.env.ASHY_LLM_TIMEOUT_MS || 8000),
+		ashyIntelligenceV2: process.env.ASHY_INTELLIGENCE_V2 === 'true',
+		ashyIntelligenceV2Http: process.env.ASHY_INTELLIGENCE_V2_HTTP === 'true',
+		ashyIntelligenceV2HttpConfirm: process.env.ASHY_INTELLIGENCE_V2_HTTP_CONFIRM === 'true',
+		ashyIntelligenceV2Shadow: process.env.ASHY_INTELLIGENCE_V2_SHADOW === 'true',
+		ashyIntelligenceV2Actions: process.env.ASHY_INTELLIGENCE_V2_ACTIONS === 'true',
+		ashyIntelligenceV2Llm: process.env.ASHY_INTELLIGENCE_V2_LLM === 'true',
+		ashyV2MaxConcurrency: Number(process.env.ASHY_V2_MAX_CONCURRENCY || 4),
+		ashyV2StepTimeoutMs: Number(process.env.ASHY_V2_STEP_TIMEOUT_MS || 10000),
+		ashyV2PlanTimeoutMs: Number(process.env.ASHY_V2_PLAN_TIMEOUT_MS || 30000),
+		ashyV2ShadowTimeoutMs: Number(process.env.ASHY_INTELLIGENCE_V2_SHADOW_TIMEOUT_MS || 3000),
+		ashyIntelligenceV2Primary: process.env.ASHY_INTELLIGENCE_V2_PRIMARY === 'true',
+		ashyV2CutoverMode: process.env.ASHY_V2_CUTOVER_MODE || '',
+		ashyV2PrimarySafeFallback: process.env.ASHY_V2_PRIMARY_SAFE_FALLBACK === 'true',
 	};
 }
 
