@@ -196,6 +196,9 @@ export function resolveChatRoute(message, options = {}) {
   if (isMigratedReadIntent(READ_CAPABILITY.STOCK, text, options.env)) {
     return CHAT_ROUTE.ASHY;
   }
+  if (isMigratedReadIntent(READ_CAPABILITY.PRODUCTS, text, options.env)) {
+    return CHAT_ROUTE.ASHY;
+  }
 
   if (!readFlag && !writeFlag) {
     return CHAT_ROUTE.N8N;

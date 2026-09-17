@@ -3,10 +3,12 @@ import test from 'node:test';
 
 import {
   isAshyReadExpensesMigrated,
+  isAshyReadProductsMigrated,
   isAshyReadSalesMigrated,
   isAshyReadStockMigrated,
   isExpensesReadIntent,
   isMigratedReadIntent,
+  isProductsReadIntent,
   isSalesReadIntent,
   isStockReadIntent,
   READ_CAPABILITY,
@@ -19,7 +21,9 @@ const EXPENSES_ON = { ...FLAG_OFF, VITE_ASHY_READ_EXPENSES: 'true' };
 const EXPENSES_ROLLBACK = { ...FLAG_OFF, VITE_ASHY_READ_EXPENSES: 'false' };
 const H122_ON = { ...FLAG_OFF, VITE_ASHY_READ_EXPENSES: 'true' };
 const H123_ON = { ...FLAG_OFF, VITE_ASHY_READ_EXPENSES: 'true', VITE_ASHY_READ_STOCK: 'true' };
+const H124_ON = { ...H123_ON, VITE_ASHY_READ_PRODUCTS: 'true' };
 const STOCK_ROLLBACK = { ...FLAG_OFF, VITE_ASHY_READ_STOCK: 'false' };
+const PRODUCTS_ROLLBACK = { ...H123_ON, VITE_ASHY_READ_PRODUCTS: 'false' };
 
 test('isAshyReadSalesMigrated defaults ON for H12.1 rollback via false', () => {
   assert.equal(isAshyReadSalesMigrated({}), true);
@@ -194,6 +198,80 @@ test('isMigratedReadIntent matches SALES and EXPENSES capabilities', () => {
   );
   assert.equal(
     isMigratedReadIntent(READ_CAPABILITY.STOCK, 'Quel est mon stock ?', STOCK_ROLLBACK),
+    false,
+  );
+});
+
+test('isAshyReadProductsMigrated defaults OFF; true enables H12.4', () => {
+  assert.equal(isAshyReadProductsMigrated({}), false);
+  assert.equal(isAshyReadProductsMigrated({ VITE_ASHY_READ_PRODUCTS: 'false' }), false);
+  assert.equal(isAshyReadProductsMigrated({ VITE_ASHY_READ_PRODUCTS: 'true' }), true);
+});
+
+test('H12.4 isProductsReadIntent detects catalog reads not writes', () => {
+  assert.equal(isProductsReadIntent('Liste mes produits'), true);
+  assert.equal(isProductsReadIntent('Montre-moi mes produits'), true);
+  assert.equal(isProductsReadIntent('Quels sont mes produits ?'), true);
+  assert.equal(isProductsReadIntent('Quels produits ai-je ?'), true);
+  assert.equal(isProductsReadIntent('Donne-moi la liste de mes produits'), true);
+  assert.equal(isProductsReadIntent('Quels produits sont enregistrés ?'), true);
+  assert.equal(isProductsReadIntent('Ajoute un produit'), false);
+  assert.equal(isProductsReadIntent('Crée un produit'), false);
+  assert.equal(isProductsReadIntent('Modifie le prix du poulet'), false);
+  assert.equal(isProductsReadIntent('Supprime le produit poulet'), false);
+  assert.equal(isProductsReadIntent('Combien me reste-t-il de poulets ?'), false);
+  assert.equal(isProductsReadIntent('Quel est mon stock ?'), false);
+  assert.equal(isProductsReadIntent('Quel est le prix du poulet ?'), false);
+  assert.equal(isProductsReadIntent('Combien coûte mon poulet ?'), false);
+});
+
+test('H12.4 products migration routes to ashy when flag ON', () => {
+  assert.equal(resolveChatRoute('Liste mes produits', { env: H124_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Montre-moi mes produits', { env: H124_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Quels produits ai-je ?', { env: H124_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Donne-moi la liste de mes produits', { env: H124_ON }), CHAT_ROUTE.ASHY);
+});
+
+test('H12.4 products flag OFF keeps legacy n8n routing', () => {
+  assert.equal(resolveChatRoute('Liste mes produits', { env: PRODUCTS_ROLLBACK }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Montre-moi mes produits', { env: PRODUCTS_ROLLBACK }), CHAT_ROUTE.N8N);
+});
+
+test('H12.4 sales expenses stock stay V2 when products flag enabled', () => {
+  assert.equal(resolveChatRoute('Quelles sont mes ventes ?', { env: H124_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Quelles sont mes dépenses ?', { env: H124_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Quel est mon stock ?', { env: H124_ON }), CHAT_ROUTE.ASHY);
+});
+
+test('H12.4 write safety — product writes not routed as migrated read', () => {
+  const writeOn = { ...H124_ON, VITE_ASHY_WRITE_CHAT: 'true' };
+  assert.equal(resolveChatRoute('Ajoute un produit', { env: writeOn }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Crée un produit', { env: writeOn }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Modifie le prix du poulet', { env: writeOn }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Supprime le produit poulet', { env: writeOn }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Ajoute un produit', { env: H124_ON }), CHAT_ROUTE.N8N);
+});
+
+test('H12.4 stock regression — stock reads stay stock not products', () => {
+  assert.equal(resolveChatRoute('Quel est mon stock ?', { env: H124_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Combien me reste-t-il de poulets ?', { env: H124_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(isProductsReadIntent('Combien me reste-t-il de poulets ?'), false);
+});
+
+test('H12.4 regression — debts/profit/pdf and price gaps not migrated', () => {
+  assert.equal(resolveChatRoute('Qui me doit de l\'argent ?', { env: H124_ON }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Génère mon bilan PDF', { env: H124_ON }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Quel est le prix du poulet ?', { env: H124_ON }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Combien coûte mon poulet ?', { env: H124_ON }), CHAT_ROUTE.N8N);
+});
+
+test('isMigratedReadIntent matches PRODUCTS capability', () => {
+  assert.equal(
+    isMigratedReadIntent(READ_CAPABILITY.PRODUCTS, 'Liste mes produits', H124_ON),
+    true,
+  );
+  assert.equal(
+    isMigratedReadIntent(READ_CAPABILITY.PRODUCTS, 'Liste mes produits', PRODUCTS_ROLLBACK),
     false,
   );
 });
