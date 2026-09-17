@@ -24,8 +24,10 @@ const BOTH_ON = { VITE_ASHY_READ_CHAT: 'true', VITE_ASHY_WRITE_CHAT: 'true' };
 const FLAG_OFF = { VITE_ASHY_READ_CHAT: 'false', VITE_ASHY_WRITE_CHAT: 'false' };
 
 test('resolveChatRoute respects env flag helper', () => {
-  assert.equal(resolveChatRoute('Combien ai-je vendu ?', { env: FLAG_OFF }), CHAT_ROUTE.N8N);
+  const rollback = { ...FLAG_OFF, VITE_ASHY_READ_SALES: 'false' };
+  assert.equal(resolveChatRoute('Combien ai-je vendu ?', { env: rollback }), CHAT_ROUTE.N8N);
   assert.equal(resolveChatRoute('Combien ai-je vendu ?', { env: READ_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Quelles sont mes ventes ?', { env: FLAG_OFF }), CHAT_ROUTE.ASHY);
 });
 
 test('isAshyReadChatEnabled is false by default', () => {
@@ -40,10 +42,17 @@ test('isAshyWriteChatEnabled is false by default', () => {
   assert.equal(isAshyWriteChatEnabled({ VITE_ASHY_WRITE_CHAT: 'true' }), true);
 });
 
-test('flag OFF routes every message to n8n', () => {
-  assert.equal(resolveChatRoute('Combien ai-je vendu ce mois-ci ?', { flagEnabled: false }), CHAT_ROUTE.N8N);
-  assert.equal(resolveChatRoute("J'ai vendu 10 pains", { flagEnabled: false }), CHAT_ROUTE.N8N);
-  assert.equal(resolveChatRoute('Génère mon bilan PDF', { flagEnabled: false }), CHAT_ROUTE.N8N);
+test('flag OFF routes non-migrated messages to n8n', () => {
+  const rollback = { ...FLAG_OFF, VITE_ASHY_READ_SALES: 'false' };
+  assert.equal(resolveChatRoute('Combien ai-je vendu ce mois-ci ?', { env: rollback }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute("J'ai vendu 10 pains", { env: rollback }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Génère mon bilan PDF', { env: rollback }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Bonjour Ashy', { env: FLAG_OFF }), CHAT_ROUTE.N8N);
+});
+
+test('H12.1 SALES read routes to ashy when global read flag OFF', () => {
+  assert.equal(resolveChatRoute('Quelles sont mes ventes ?', { env: FLAG_OFF }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Quelles sont mes dépenses ?', { env: FLAG_OFF }), CHAT_ROUTE.N8N);
 });
 
 test('flag ON routes read queries to ashy', () => {

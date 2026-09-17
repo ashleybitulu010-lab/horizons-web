@@ -5,6 +5,7 @@
 
 import { isAshyReadChatEnabled } from './ashyReadChatFlag.js';
 import { isAshyWriteChatEnabled } from './ashyWriteChatFlag.js';
+import { isMigratedReadIntent, READ_CAPABILITY } from './ashyReadMigration.js';
 
 export const CHAT_ROUTE = Object.freeze({
   ASHY: 'ashy',
@@ -156,11 +157,6 @@ export function resolveChatRoute(message, options = {}) {
   const readFlag = options.readFlagEnabled ?? isAshyReadChatEnabled(options.env);
   const writeFlag = options.writeFlagEnabled ?? isAshyWriteChatEnabled(options.env);
   const pendingAshyWrite = Boolean(options.pendingAshyWriteConfirmation);
-
-  if (!readFlag && !writeFlag) {
-    return CHAT_ROUTE.N8N;
-  }
-
   const text = extractClassificationText(message);
 
   if (isPdfReportRequest(text)) {
@@ -187,6 +183,15 @@ export function resolveChatRoute(message, options = {}) {
       return CHAT_ROUTE.N8N;
     }
   } else if (isWriteIntent(text)) {
+    return CHAT_ROUTE.N8N;
+  }
+
+  // H12.1 — SALES read migrated to V2 primary (independent of global read flag).
+  if (isMigratedReadIntent(READ_CAPABILITY.SALES, text, options.env)) {
+    return CHAT_ROUTE.ASHY;
+  }
+
+  if (!readFlag && !writeFlag) {
     return CHAT_ROUTE.N8N;
   }
 
