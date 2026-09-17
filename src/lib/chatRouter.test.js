@@ -55,6 +55,20 @@ test('H12.1 SALES read routes to ashy when global read flag OFF', () => {
   assert.equal(resolveChatRoute('Quelles sont mes dépenses ?', { env: FLAG_OFF }), CHAT_ROUTE.N8N);
 });
 
+test('H12.2 EXPENSES read routes to ashy when VITE_ASHY_READ_EXPENSES=true', () => {
+  const h122 = { ...FLAG_OFF, VITE_ASHY_READ_EXPENSES: 'true' };
+  assert.equal(resolveChatRoute('Quelles sont mes dépenses ?', { env: h122 }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Montre-moi mes dépenses', { env: h122 }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Combien ai-je dépensé ?', { env: h122 }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Quel est mon stock ?', { env: h122 }), CHAT_ROUTE.N8N);
+});
+
+test('H12.2 write safety with expenses flag ON', () => {
+  const h122Write = { ...FLAG_OFF, VITE_ASHY_READ_EXPENSES: 'true', VITE_ASHY_WRITE_CHAT: 'true' };
+  assert.equal(resolveChatRoute("J'ai dépensé 30 dollars", { env: h122Write }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Ajoute une dépense de 30 dollars', { env: h122Write }), CHAT_ROUTE.N8N);
+});
+
 test('flag ON routes read queries to ashy', () => {
   const opts = { env: READ_ON };
   assert.equal(resolveChatRoute('Combien ai-je vendu ce mois-ci ?', opts), CHAT_ROUTE.ASHY);
