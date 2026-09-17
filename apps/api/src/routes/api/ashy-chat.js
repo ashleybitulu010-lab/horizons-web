@@ -1,5 +1,12 @@
 import { createAshyAgent } from '../../agent/index.js';
 import logger from '../../utils/logger.js';
+import { inferReadCapabilityFromMessage } from '../../observability/read-capability-inference.js';
+import {
+	createReadRoutingCorrelationId,
+	recordReadRoutingEvent,
+	READ_ROUTING_OUTCOME,
+	recordV2AshyChatRouting,
+} from '../../observability/read-routing-observability.js';
 import {
 	persistAshyAssistantMessage,
 	persistAshyUserMessage,
@@ -27,6 +34,12 @@ function buildAshyChatPayload(result) {
 	return payload;
 }
 
+function readCorrelationId(req) {
+	return req.get('x-ash-read-correlation')
+		|| req.get('X-Ash-Read-Correlation')
+		|| createReadRoutingCorrelationId();
+}
+
 export default async function ashyChat(req, res) {
 	const { message, sessionId } = req.body ?? {};
 
@@ -42,9 +55,12 @@ export default async function ashyChat(req, res) {
 	}
 
 	const trimmedMessage = message.trim();
+	const correlationId = readCorrelationId(req);
+	res.setHeader('X-Ash-Read-Correlation', correlationId);
 
 	await persistAshyUserMessage(req.user, trimmedMessage);
 
+	const startedAt = Date.now();
 	try {
 		const agent = createAshyAgent();
 		const result = await agent.run({
@@ -55,11 +71,30 @@ export default async function ashyChat(req, res) {
 
 		await persistAshyAssistantMessage(req.user, result.reply, result.toolResults);
 
+		recordV2AshyChatRouting({
+			result,
+			latencyMs: Date.now() - startedAt,
+			correlationId,
+			httpStatus: 200,
+		});
+
 		return res.json(buildAshyChatPayload(result));
 	} catch (err) {
 		logger.warn('[ashy-chat] agent.run failed', {
 			code: err?.code || 'AGENT_RUN_FAILED',
 			userId: req.user?.id,
+		});
+		recordReadRoutingEvent({
+			route: 'READ',
+			capability: inferReadCapabilityFromMessage(trimmedMessage),
+			primaryPath: 'V2_HTTP',
+			outcome: READ_ROUTING_OUTCOME.READ_V2_ERROR,
+			fallback: false,
+			latencyMs: Date.now() - startedAt,
+			correlationId,
+			goalType: 'QUESTION',
+			httpStatus: 500,
+			errorCode: err?.code || 'AGENT_RUN_FAILED',
 		});
 		return res.status(500).json({
 			error: {

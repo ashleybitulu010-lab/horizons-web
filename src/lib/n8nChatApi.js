@@ -15,12 +15,16 @@ export async function sendN8nChatMessage({
   currency,
   recentMessages,
   token,
+  readCorrelationId = null,
+  readFallbackMode = null,
 }) {
   const headers = {
     'Content-Type': 'application/json; charset=UTF-8',
     Accept: 'application/json; charset=UTF-8',
   };
   if (token) headers.Authorization = `Bearer ${token}`;
+  if (readCorrelationId) headers['X-Ash-Read-Correlation'] = readCorrelationId;
+  if (readFallbackMode) headers['X-Ash-Read-Fallback'] = readFallbackMode;
 
   const res = await apiServerClient.fetch('/chat', {
     method: 'POST',

@@ -11,12 +11,14 @@ export async function sendAshyChatMessage({
   message,
   sessionId,
   token,
+  readCorrelationId = null,
 }) {
   const headers = {
     'Content-Type': 'application/json; charset=UTF-8',
     Accept: 'application/json; charset=UTF-8',
   };
   if (token) headers.Authorization = `Bearer ${token}`;
+  if (readCorrelationId) headers['X-Ash-Read-Correlation'] = readCorrelationId;
 
   const res = await apiServerClient.fetch('/api/ashy/chat', {
     method: 'POST',
@@ -35,11 +37,17 @@ export async function sendAshyChatMessage({
     data = {};
   }
 
+  const correlationId = res.headers.get('X-Ash-Read-Correlation')
+    || res.headers.get('x-ash-read-correlation')
+    || readCorrelationId
+    || null;
+
   return {
     ok: res.ok,
     status: res.status,
     rawText,
     data,
     route: 'ashy',
+    readCorrelationId: correlationId,
   };
 }

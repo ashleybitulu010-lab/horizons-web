@@ -25,6 +25,8 @@ function buildN8nPayload({
   currency,
   recentMessages,
   token,
+  readCorrelationId = null,
+  readFallbackMode = null,
 }) {
   return {
     message,
@@ -34,7 +36,16 @@ function buildN8nPayload({
     currency,
     recentMessages,
     token,
+    readCorrelationId,
+    readFallbackMode,
   };
+}
+
+function createClientReadCorrelationId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return `rr-${crypto.randomUUID().slice(0, 12)}`;
+  }
+  return `rr-${Date.now().toString(36)}`;
 }
 
 function logFallbackDecision(decision, context = {}) {
@@ -65,6 +76,7 @@ export async function fetchChatResponse({
   sendAshy = sendAshyChatMessage,
   sendN8n = sendN8nChatMessage,
 }) {
+  const readCorrelationId = createClientReadCorrelationId();
   const n8nPayload = buildN8nPayload({
     message,
     sessionId,
@@ -73,6 +85,7 @@ export async function fetchChatResponse({
     currency,
     recentMessages,
     token,
+    readCorrelationId,
   });
 
   const fallbackContext = {
@@ -87,7 +100,12 @@ export async function fetchChatResponse({
 
   let ashyResponse;
   try {
-    ashyResponse = await sendAshy({ message, sessionId, token });
+    ashyResponse = await sendAshy({
+      message,
+      sessionId,
+      token,
+      readCorrelationId,
+    });
   } catch {
     const decision = resolveAshyFallbackDecision(null, {
       ...fallbackContext,
@@ -100,7 +118,11 @@ export async function fetchChatResponse({
         networkError: true,
       });
     }
-    const n8nResponse = await sendN8n(n8nPayload);
+    const n8nResponse = await sendN8n({
+      ...n8nPayload,
+      readCorrelationId,
+      readFallbackMode: 'safe-fallback',
+    });
     return { ...n8nResponse, ashyFallback: true };
   }
 
@@ -114,6 +136,10 @@ export async function fetchChatResponse({
     return buildAshyBlockedFallbackResponse(ashyResponse, fallbackContext);
   }
 
-  const n8nResponse = await sendN8n(n8nPayload);
+  const n8nResponse = await sendN8n({
+    ...n8nPayload,
+    readCorrelationId: ashyResponse.readCorrelationId || readCorrelationId,
+    readFallbackMode: 'safe-fallback',
+  });
   return { ...n8nResponse, ashyFallback: true };
 }

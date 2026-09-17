@@ -1,4 +1,9 @@
 import logger from '../utils/logger.js';
+import { isLikelyReadMessage } from '../observability/read-capability-inference.js';
+import {
+	createReadRoutingCorrelationId,
+	recordLegacyN8nChatRouting,
+} from '../observability/read-routing-observability.js';
 import {
 	buildN8nChatClientResponse,
 	buildN8nChatPayload,
@@ -18,6 +23,16 @@ function readN8nApiKey() {
 	return process.env.N8N_CHAT_API_KEY;
 }
 
+function readRoutingHeaders(req) {
+	const correlationId = req.get('x-ash-read-correlation')
+		|| req.get('X-Ash-Read-Correlation')
+		|| createReadRoutingCorrelationId();
+	const fallbackMode = req.get('x-ash-read-fallback')
+		|| req.get('X-Ash-Read-Fallback')
+		|| null;
+	return { correlationId, fallbackMode };
+}
+
 export default async (req, res) => {
 	const { message } = req.body ?? {};
 	const trimmedMessage = typeof message === 'string' ? message.trim() : '';
@@ -31,11 +46,15 @@ export default async (req, res) => {
 		throw new Error('N8N_WEBHOOK_URL is not set in apps/api/.env');
 	}
 
+	const { correlationId, fallbackMode } = readRoutingHeaders(req);
+	res.setHeader('X-Ash-Read-Correlation', correlationId);
+
 	await persistN8nUserMessage(req.user, trimmedMessage);
 
 	const upstreamBody = buildN8nChatPayload(req);
 	const n8nApiKey = readN8nApiKey();
 
+	const startedAt = Date.now();
 	const upstream = await fetch(n8nWebhookUrl, {
 		method: 'POST',
 		headers: {
@@ -69,6 +88,16 @@ export default async (req, res) => {
 
 	if (persistAssistant) {
 		await persistN8nAssistantMessage(req.user, reply, parsedData);
+	}
+
+	if (isLikelyReadMessage(trimmedMessage) || fallbackMode === 'safe-fallback') {
+		recordLegacyN8nChatRouting({
+			message: trimmedMessage,
+			latencyMs: Date.now() - startedAt,
+			correlationId,
+			httpStatus: upstream.status,
+			fallbackMode,
+		});
 	}
 
 	res.json(buildN8nChatClientResponse(parsedData, reply));
