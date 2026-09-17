@@ -453,7 +453,11 @@ function analyzeDebts({ normalized, stepResults, partial }) {
 	analysis.evidence = normalized.evidence;
 	analysis.sourceSteps = stepResults.map((s) => s.stepId);
 	analysis.partial = partial;
-	analysis.status = FINANCIAL_ANALYSIS_STATUS.COMPLETE;
+	const noUnpaid = (current.unpaidCount === 0 || current.unpaidCount == null)
+		&& (current.totalRemaining === 0 || current.totalRemaining == null);
+	analysis.status = noUnpaid
+		? FINANCIAL_ANALYSIS_STATUS.NO_DATA
+		: FINANCIAL_ANALYSIS_STATUS.COMPLETE;
 	return analysis;
 }
 

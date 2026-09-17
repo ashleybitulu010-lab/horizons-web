@@ -26,6 +26,7 @@ import {
 	templateNoData,
 	templateProfitExplanation,
 	templateSalesRetrieve,
+	templateDebtsRetrieve,
 	templateStockRetrieve,
 	templateWriteDeferred,
 } from '../src/agent/intelligence-v2/response/response-templates.js';
@@ -128,6 +129,35 @@ test('template: stock no data', () => {
 	}).financialAnalysis;
 	const text = selectTemplate(analysis, createEmptyGoal({ type: 'QUESTION', domain: 'STOCK', objective: 'RETRIEVE' }));
 	assert.match(text, /aucun stock/i);
+});
+
+test('template: debts retrieve', () => {
+	const analysis = analyzeFinancialResults({
+		goal: createEmptyGoal({ type: 'QUESTION', domain: 'DEBTS', objective: 'RETRIEVE' }),
+		stepResults: [{
+			stepId: 'debts_current', tool: 'get_debts', status: 'SUCCESS',
+			arguments: {},
+			summary: { count: 2, unpaidCount: 2, totalRemaining: 150 },
+			toolResult: { data: { summary: { count: 2, unpaidCount: 2, totalRemaining: 150 } }, meta: {} },
+		}],
+	}).financialAnalysis;
+	const text = templateDebtsRetrieve(analysis);
+	assert.match(text, /2 dettes impay/);
+	assert.match(text, /150/);
+});
+
+test('template: debts no data', () => {
+	const analysis = analyzeFinancialResults({
+		goal: createEmptyGoal({ type: 'QUESTION', domain: 'DEBTS', objective: 'RETRIEVE' }),
+		stepResults: [{
+			stepId: 'debts_current', tool: 'get_debts', status: 'SUCCESS',
+			arguments: {},
+			summary: { count: 0, unpaidCount: 0, totalRemaining: 0 },
+			toolResult: { data: { summary: { count: 0, unpaidCount: 0, totalRemaining: 0 } }, meta: {} },
+		}],
+	}).financialAnalysis;
+	const text = selectTemplate(analysis, createEmptyGoal({ type: 'QUESTION', domain: 'DEBTS', objective: 'RETRIEVE' }));
+	assert.match(text, /aucune dette impay/i);
 });
 
 test('template: no data sales', () => {

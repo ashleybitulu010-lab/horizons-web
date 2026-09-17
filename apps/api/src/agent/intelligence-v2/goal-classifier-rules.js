@@ -1091,7 +1091,7 @@ export function classifyGoalRules(message, conversationContext = {}, referenceDa
 		}, { rejectWriteExecution: true });
 	}
 
-	if (/qui me doit|me doivent|doit encore|doivent encore|dettes?\s*(?:clients?)?|quelles?\s+(?:sont\s+)?(?:mes\s+)?dettes|combien.*me\s+doiv|montre.*(?:mes\s+)?dettes|^mes dettes|ai-je des dettes|montre.*dettes|combien me doit/i.test(text)
+	if (/qui me doit|me doivent|doit encore|doivent encore|dettes?\s*(?:clients?)?|quelles?\s+(?:sont\s+)?(?:mes\s+)?dettes|combien.*me\s+doiv|montre.*(?:mes\s+)?dettes|^mes dettes|ai-je des dettes|montre.*dettes|combien me doit|clients?\s+d[eé]biteurs|d[eé]biteurs|total.*(?:mes\s+)?dettes|dettes de mes clients/i.test(text)
 		&& !/\bd[eé]penses?\b/i.test(text)) {
 		return validateGoal({
 			type: 'QUESTION',

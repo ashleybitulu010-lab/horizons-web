@@ -1,9 +1,10 @@
 /**
- * H12.1 + H12.2 + H12.3 + H12.4 — incremental Legacy → V2 read migration (one capability at a time).
+ * H12.1 + H12.2 + H12.3 + H12.4 + H12.5 — incremental Legacy → V2 read migration (one capability at a time).
  * Rollback SALES: VITE_ASHY_READ_SALES=false
  * Rollback EXPENSES: VITE_ASHY_READ_EXPENSES=false
  * Rollback STOCK: VITE_ASHY_READ_STOCK=false
  * Rollback PRODUCTS: VITE_ASHY_READ_PRODUCTS=false
+ * Rollback DEBTS: VITE_ASHY_READ_DEBTS=false
  */
 
 export const READ_CAPABILITY = Object.freeze({
@@ -11,6 +12,7 @@ export const READ_CAPABILITY = Object.freeze({
   EXPENSES: 'EXPENSES',
   STOCK: 'STOCK',
   PRODUCTS: 'PRODUCTS',
+  DEBTS: 'DEBTS',
 });
 
 const CREATE_SALE_PREFIX = /^j['']?ai vendu\b/i;
@@ -60,6 +62,11 @@ export function isAshyReadStockMigrated(env = import.meta.env) {
 /** H12.4 fourth migrated READ. Default OFF; explicit true enables. */
 export function isAshyReadProductsMigrated(env = import.meta.env) {
   return String(env?.VITE_ASHY_READ_PRODUCTS || '').toLowerCase() === 'true';
+}
+
+/** H12.5 fifth migrated READ. Default OFF; explicit true enables. */
+export function isAshyReadDebtsMigrated(env = import.meta.env) {
+  return String(env?.VITE_ASHY_READ_DEBTS || '').toLowerCase() === 'true';
 }
 
 const SALES_READ_PATTERNS = [
@@ -120,6 +127,40 @@ function isProductsWriteOpener(text) {
   return false;
 }
 
+const DEBTS_READ_PATTERNS = [
+  /^quelles?\s+(?:sont\s+)?(?:mes\s+)?dettes/i,
+  /^montre(?:-moi)?(?:\s+(?:mes|les))?\s+dettes/i,
+  /^(?:et\s+)?(?:mes|les)\s+dettes\s*\??$/i,
+  /^mes dettes/i,
+  /qui me doit/i,
+  /combien.*me\s+doiv/i,
+  /combien me doit/i,
+  /me doivent|doit encore|doivent encore/i,
+  /dettes?\s*(?:clients?)/i,
+  /ai-je des dettes/i,
+  /montre.*dettes/i,
+  /quel(?:le)?s?\s+(?:sont\s+)?(?:mes\s+)?clients?\s+d[eé]biteurs/i,
+  /donne(?:-moi)?(?:\s+la\s+liste\s+(?:des\s+)?)?d[eé]biteurs/i,
+  /liste.*d[eé]biteurs/i,
+  /total.*(?:mes\s+)?dettes/i,
+  /montre.*dettes.*clients/i,
+];
+
+function isDebtsWriteOpener(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (/^j['']?ai pay[eé]/i.test(t) && /\bdette/i.test(t)) return true;
+  if (/^j['']?ai re[cç]u un paiement/i.test(t)) return true;
+  if (/^enregistre(?:r|z)?\s+(?:le\s+)?paiement/i.test(t)) return true;
+  if (/^ajoute(?:r|z)?\s+(?:un\s+)?paiement/i.test(t)) return true;
+  if (/^ajoute(?:r|z)?\s+une\s+dette/i.test(t)) return true;
+  if (/^cr[eé][eé](?:r|z)?\s+une\s+dette/i.test(t)) return true;
+  if (/^modifi(?:e|er|é)\s+(?:la\s+)?dette/i.test(t)) return true;
+  if (/^supprime(?:r|z)?\s+(?:cette\s+)?dette/i.test(t)) return true;
+  if (/le client a pay[eé]/i.test(t)) return true;
+  return false;
+}
+
 /**
  * Sales READ only — excludes write openers and generic write intents.
  */
@@ -171,6 +212,20 @@ export function isProductsReadIntent(text) {
   return PRODUCTS_READ_PATTERNS.some((pattern) => pattern.test(t));
 }
 
+/**
+ * Debts READ only — excludes debt/payment writes and expense overlap.
+ */
+export function isDebtsReadIntent(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (isDebtsWriteOpener(t)) return false;
+  if (isSalesWriteOpener(t)) return false;
+  if (isExpensesWriteOpener(t)) return false;
+  if (/\bd[eé]penses?\b/i.test(t)) return false;
+  if (/^un client me doit\b/i.test(t)) return false;
+  return DEBTS_READ_PATTERNS.some((pattern) => pattern.test(t));
+}
+
 export function isMigratedReadIntent(capability, text, env = import.meta.env) {
   if (capability === READ_CAPABILITY.SALES) {
     return isAshyReadSalesMigrated(env) && isSalesReadIntent(text);
@@ -183,6 +238,9 @@ export function isMigratedReadIntent(capability, text, env = import.meta.env) {
   }
   if (capability === READ_CAPABILITY.PRODUCTS) {
     return isAshyReadProductsMigrated(env) && isProductsReadIntent(text);
+  }
+  if (capability === READ_CAPABILITY.DEBTS) {
+    return isAshyReadDebtsMigrated(env) && isDebtsReadIntent(text);
   }
   return false;
 }

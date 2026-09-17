@@ -36,6 +36,9 @@ export function templateNoData(analysis, context = {}) {
 	if (domain === 'STOCK') {
 		return `${activityPrefix(context)}Je n’ai trouvé aucun stock enregistré pour ton activité.`;
 	}
+	if (domain === 'DEBTS') {
+		return `${activityPrefix(context)}Je n’ai trouvé aucune dette impayée pour ton activité.`;
+	}
 	return `${activityPrefix(context)}Je n’ai trouvé aucune donnée financière ${period}.`;
 }
 
@@ -237,6 +240,32 @@ export function templateStockRetrieve(analysis, context = {}) {
 	return templateError();
 }
 
+export function templateDebtsRetrieve(analysis, context = {}) {
+	const prefix = activityPrefix(context);
+	const metrics = analysis.metrics || {};
+
+	if (analysis?.status === FINANCIAL_ANALYSIS_STATUS.NO_DATA) {
+		return templateNoData(analysis, context);
+	}
+
+	const totalRemaining = metrics.totalRemaining;
+	const unpaidCount = metrics.unpaidCount;
+
+	if (unpaidCount === 0 || totalRemaining === 0) {
+		return `${prefix}Je n’ai trouvé aucune dette impayée pour ton activité.`.trim();
+	}
+
+	const totalText = formatMoneyV2(totalRemaining);
+	if (totalText && unpaidCount != null) {
+		return `${prefix}Tu as ${unpaidCount} dette${unpaidCount > 1 ? 's' : ''} impayée${unpaidCount > 1 ? 's' : ''} pour un total de ${totalText}.`.trim();
+	}
+	if (totalText) {
+		return `${prefix}Le total de tes dettes impayées est de ${totalText}.`.trim();
+	}
+
+	return templateError();
+}
+
 export function templateProductsRetrieve(analysis, context = {}) {
 	const prefix = activityPrefix(context);
 
@@ -358,6 +387,10 @@ export function selectTemplate(analysis, goal, context = {}) {
 
 	if (goal?.domain === 'PRODUCTS' && goal?.objective === 'RETRIEVE') {
 		return templateProductsRetrieve(analysis, context);
+	}
+
+	if (goal?.domain === 'DEBTS' && goal?.objective === 'RETRIEVE') {
+		return templateDebtsRetrieve(analysis, context);
 	}
 
 	if (goal?.domain === 'PROFIT' && goal?.objective === 'RETRIEVE') {

@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  isAshyReadDebtsMigrated,
   isAshyReadExpensesMigrated,
   isAshyReadProductsMigrated,
   isAshyReadSalesMigrated,
   isAshyReadStockMigrated,
+  isDebtsReadIntent,
   isExpensesReadIntent,
   isMigratedReadIntent,
   isProductsReadIntent,
@@ -22,8 +24,10 @@ const EXPENSES_ROLLBACK = { ...FLAG_OFF, VITE_ASHY_READ_EXPENSES: 'false' };
 const H122_ON = { ...FLAG_OFF, VITE_ASHY_READ_EXPENSES: 'true' };
 const H123_ON = { ...FLAG_OFF, VITE_ASHY_READ_EXPENSES: 'true', VITE_ASHY_READ_STOCK: 'true' };
 const H124_ON = { ...H123_ON, VITE_ASHY_READ_PRODUCTS: 'true' };
+const H125_ON = { ...H124_ON, VITE_ASHY_READ_DEBTS: 'true' };
 const STOCK_ROLLBACK = { ...FLAG_OFF, VITE_ASHY_READ_STOCK: 'false' };
 const PRODUCTS_ROLLBACK = { ...H123_ON, VITE_ASHY_READ_PRODUCTS: 'false' };
+const DEBTS_ROLLBACK = { ...H124_ON, VITE_ASHY_READ_DEBTS: 'false' };
 
 test('isAshyReadSalesMigrated defaults ON for H12.1 rollback via false', () => {
   assert.equal(isAshyReadSalesMigrated({}), true);
@@ -272,6 +276,74 @@ test('isMigratedReadIntent matches PRODUCTS capability', () => {
   );
   assert.equal(
     isMigratedReadIntent(READ_CAPABILITY.PRODUCTS, 'Liste mes produits', PRODUCTS_ROLLBACK),
+    false,
+  );
+});
+
+test('isAshyReadDebtsMigrated defaults OFF; true enables H12.5', () => {
+  assert.equal(isAshyReadDebtsMigrated({}), false);
+  assert.equal(isAshyReadDebtsMigrated({ VITE_ASHY_READ_DEBTS: 'false' }), false);
+  assert.equal(isAshyReadDebtsMigrated({ VITE_ASHY_READ_DEBTS: 'true' }), true);
+});
+
+test('H12.5 isDebtsReadIntent detects debt reads not writes', () => {
+  assert.equal(isDebtsReadIntent('Quelles sont mes dettes ?'), true);
+  assert.equal(isDebtsReadIntent('Montre-moi mes dettes'), true);
+  assert.equal(isDebtsReadIntent('Qui me doit de l\'argent ?'), true);
+  assert.equal(isDebtsReadIntent('Combien me doit-on ?'), true);
+  assert.equal(isDebtsReadIntent('Quels sont mes clients débiteurs ?'), true);
+  assert.equal(isDebtsReadIntent('Donne-moi la liste des débiteurs'), true);
+  assert.equal(isDebtsReadIntent('Ajoute une dette de 50 dollars'), false);
+  assert.equal(isDebtsReadIntent('Crée une dette'), false);
+  assert.equal(isDebtsReadIntent('J\'ai payé 30 dollars de ma dette'), false);
+  assert.equal(isDebtsReadIntent('Enregistre le paiement de ma dette'), false);
+  assert.equal(isDebtsReadIntent('Ajoute un paiement de 20 dollars'), false);
+  assert.equal(isDebtsReadIntent('Modifie la dette du client'), false);
+  assert.equal(isDebtsReadIntent('Combien ai-je payé ?'), false);
+  assert.equal(isDebtsReadIntent('Mes paiements'), false);
+});
+
+test('H12.5 debts migration routes to ashy when flag ON', () => {
+  assert.equal(resolveChatRoute('Quelles sont mes dettes ?', { env: H125_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Qui me doit de l\'argent ?', { env: H125_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Combien me doit-on ?', { env: H125_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Donne-moi la liste des débiteurs', { env: H125_ON }), CHAT_ROUTE.ASHY);
+});
+
+test('H12.5 debts flag OFF keeps legacy n8n routing', () => {
+  assert.equal(resolveChatRoute('Quelles sont mes dettes ?', { env: DEBTS_ROLLBACK }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Qui me doit de l\'argent ?', { env: DEBTS_ROLLBACK }), CHAT_ROUTE.N8N);
+});
+
+test('H12.5 sales expenses stock products stay V2 when debts flag enabled', () => {
+  assert.equal(resolveChatRoute('Quelles sont mes ventes ?', { env: H125_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Quelles sont mes dépenses ?', { env: H125_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Quel est mon stock ?', { env: H125_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Liste mes produits', { env: H125_ON }), CHAT_ROUTE.ASHY);
+});
+
+test('H12.5 write safety — debt/payment writes not routed as migrated read', () => {
+  const writeOn = { ...H125_ON, VITE_ASHY_WRITE_CHAT: 'true' };
+  assert.equal(resolveChatRoute('Ajoute une dette de 50 dollars', { env: writeOn }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('J\'ai payé 30 dollars de ma dette', { env: writeOn }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Enregistre le paiement de ma dette', { env: writeOn }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Ajoute un paiement de 20 dollars', { env: writeOn }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('J\'ai payé 30 dollars de ma dette', { env: H125_ON }), CHAT_ROUTE.N8N);
+});
+
+test('H12.5 regression — profit/pdf and payment ambiguity not migrated', () => {
+  assert.equal(resolveChatRoute('Génère mon bilan PDF', { env: H125_ON }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Combien ai-je payé ?', { env: H125_ON }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Mes paiements', { env: H125_ON }), CHAT_ROUTE.N8N);
+});
+
+test('isMigratedReadIntent matches DEBTS capability', () => {
+  assert.equal(
+    isMigratedReadIntent(READ_CAPABILITY.DEBTS, 'Quelles sont mes dettes ?', H125_ON),
+    true,
+  );
+  assert.equal(
+    isMigratedReadIntent(READ_CAPABILITY.DEBTS, 'Quelles sont mes dettes ?', DEBTS_ROLLBACK),
     false,
   );
 });

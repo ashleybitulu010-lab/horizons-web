@@ -406,6 +406,22 @@ test('debts: unavailable without data', () => {
 	assert.equal(result.financialAnalysis.status, FINANCIAL_ANALYSIS_STATUS.UNAVAILABLE);
 });
 
+test('debts: no unpaid returns NO_DATA', () => {
+	const steps = [{
+		stepId: 'debts_current',
+		tool: 'get_debts',
+		status: 'SUCCESS',
+		arguments: {},
+		summary: { count: 0, unpaidCount: 0, totalRemaining: 0 },
+		toolResult: { success: true, data: { summary: { count: 0, unpaidCount: 0, totalRemaining: 0 } } },
+	}];
+	const result = analyzeFinancialResults({
+		goal: createEmptyGoal({ type: 'QUESTION', domain: 'DEBTS', objective: 'RETRIEVE' }),
+		stepResults: steps,
+	});
+	assert.equal(result.financialAnalysis.status, FINANCIAL_ANALYSIS_STATUS.NO_DATA);
+});
+
 // TRACEABILITY
 test('traceability: sourceSteps preserved', () => {
 	const steps = buildGoldenStepResults();
