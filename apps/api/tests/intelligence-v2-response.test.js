@@ -26,6 +26,7 @@ import {
 	templateNoData,
 	templateProfitExplanation,
 	templateSalesRetrieve,
+	templateStockRetrieve,
 	templateWriteDeferred,
 } from '../src/agent/intelligence-v2/response/response-templates.js';
 import {
@@ -98,6 +99,35 @@ test('template: expenses compare', () => {
 	const text = selectTemplate(analysis, createEmptyGoal({ type: 'ANALYSIS', domain: 'EXPENSES', objective: 'COMPARE' }));
 	assert.match(text, /augmentation/i);
 	assert.match(text, /100\s*%/);
+});
+
+test('template: stock retrieve', () => {
+	const analysis = analyzeFinancialResults({
+		goal: createEmptyGoal({ type: 'QUESTION', domain: 'STOCK', objective: 'RETRIEVE' }),
+		stepResults: [{
+			stepId: 'stock_current', tool: 'get_stock', status: 'SUCCESS',
+			arguments: {},
+			summary: { count: 2, totalQuantity: 15, lowStockCount: 0, outOfStockCount: 0 },
+			toolResult: { data: { summary: { count: 2, totalQuantity: 15, lowStockCount: 0, outOfStockCount: 0 } }, meta: {} },
+		}],
+	}).financialAnalysis;
+	const text = templateStockRetrieve(analysis);
+	assert.match(text, /2 produits/);
+	assert.match(text, /15 unit/);
+});
+
+test('template: stock no data', () => {
+	const analysis = analyzeFinancialResults({
+		goal: createEmptyGoal({ type: 'QUESTION', domain: 'STOCK', objective: 'RETRIEVE' }),
+		stepResults: [{
+			stepId: 'stock_current', tool: 'get_stock', status: 'SUCCESS',
+			arguments: {},
+			summary: { count: 0, totalQuantity: 0, lowStockCount: 0, outOfStockCount: 0 },
+			toolResult: { data: { summary: { count: 0, totalQuantity: 0, lowStockCount: 0, outOfStockCount: 0 } }, meta: {} },
+		}],
+	}).financialAnalysis;
+	const text = selectTemplate(analysis, createEmptyGoal({ type: 'QUESTION', domain: 'STOCK', objective: 'RETRIEVE' }));
+	assert.match(text, /aucun stock/i);
 });
 
 test('template: no data sales', () => {

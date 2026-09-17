@@ -502,7 +502,12 @@ function analyzeStock({ normalized, stepResults, partial }) {
 	analysis.evidence = normalized.evidence;
 	analysis.sourceSteps = stepResults.map((s) => s.stepId);
 	analysis.partial = partial;
-	analysis.status = FINANCIAL_ANALYSIS_STATUS.COMPLETE;
+	analysis.status = current.count === 0
+		? FINANCIAL_ANALYSIS_STATUS.NO_DATA
+		: FINANCIAL_ANALYSIS_STATUS.COMPLETE;
+	if (current.count === 0) {
+		analysis.limitations.push(MISSING_DATA_STATE.NO_DATA);
+	}
 	return analysis;
 }
 

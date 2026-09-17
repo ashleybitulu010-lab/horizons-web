@@ -33,6 +33,9 @@ export function templateNoData(analysis, context = {}) {
 	if (domain === 'PRODUCTS') {
 		return `${activityPrefix(context)}Je n’ai trouvé aucun produit enregistré.`;
 	}
+	if (domain === 'STOCK') {
+		return `${activityPrefix(context)}Je n’ai trouvé aucun stock enregistré pour ton activité.`;
+	}
 	return `${activityPrefix(context)}Je n’ai trouvé aucune donnée financière ${period}.`;
 }
 
@@ -203,6 +206,37 @@ export function templateProfitExplanation(analysis, context = {}) {
 	return `${text}${buildPartialNotice(analysis)}`.trim();
 }
 
+export function templateStockRetrieve(analysis, context = {}) {
+	const prefix = activityPrefix(context);
+	const metrics = analysis.metrics || {};
+
+	if (analysis.status === FINANCIAL_ANALYSIS_STATUS.NO_DATA) {
+		return templateNoData(analysis, context);
+	}
+
+	const count = metrics.count;
+	const totalQuantity = metrics.totalQuantity;
+	const lowStockCount = metrics.lowStockCount;
+
+	if (count === 0) {
+		return `${prefix}Je n’ai trouvé aucun stock enregistré pour ton activité.`.trim();
+	}
+
+	if (lowStockCount > 0) {
+		return `${prefix}${lowStockCount} produit${lowStockCount > 1 ? 's' : ''} ${lowStockCount > 1 ? 'sont' : 'est'} presque épuisé${lowStockCount > 1 ? 's' : ''} sur ${count} produit${count > 1 ? 's' : ''} en stock (${totalQuantity ?? 0} unité${(totalQuantity ?? 0) > 1 ? 's' : ''} au total).`.trim();
+	}
+
+	if (count != null && totalQuantity != null) {
+		return `${prefix}Tu as ${count} produit${count > 1 ? 's' : ''} en stock pour un total de ${totalQuantity} unité${totalQuantity > 1 ? 's' : ''}.`.trim();
+	}
+
+	if (count != null) {
+		return `${prefix}Tu as ${count} produit${count > 1 ? 's' : ''} en stock.`.trim();
+	}
+
+	return templateError();
+}
+
 export function templateProductsRetrieve(analysis, context = {}) {
 	const prefix = activityPrefix(context);
 
@@ -316,6 +350,10 @@ export function selectTemplate(analysis, goal, context = {}) {
 
 	if (goal?.domain === 'EXPENSES' && goal?.objective === 'RETRIEVE') {
 		return templateExpensesRetrieve(analysis, context);
+	}
+
+	if (goal?.domain === 'STOCK' && goal?.objective === 'RETRIEVE') {
+		return templateStockRetrieve(analysis, context);
 	}
 
 	if (goal?.domain === 'PRODUCTS' && goal?.objective === 'RETRIEVE') {

@@ -186,11 +186,14 @@ export function resolveChatRoute(message, options = {}) {
     return CHAT_ROUTE.N8N;
   }
 
-  // H12.1 / H12.2 — incremental READ migrations (independent of global read flag).
+  // H12.1 / H12.2 / H12.3 — incremental READ migrations (independent of global read flag).
   if (isMigratedReadIntent(READ_CAPABILITY.SALES, text, options.env)) {
     return CHAT_ROUTE.ASHY;
   }
   if (isMigratedReadIntent(READ_CAPABILITY.EXPENSES, text, options.env)) {
+    return CHAT_ROUTE.ASHY;
+  }
+  if (isMigratedReadIntent(READ_CAPABILITY.STOCK, text, options.env)) {
     return CHAT_ROUTE.ASHY;
   }
 

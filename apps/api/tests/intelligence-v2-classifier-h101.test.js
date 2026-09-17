@@ -175,3 +175,12 @@ test('H10.1 empty catalog sale still ACTION at classifier level', async () => {
 	assertAction(result, { domain: 'SALES', label: 'empty catalog sale intent' });
 	assert.notEqual(result.goal.type, 'QUESTION');
 });
+
+test('H12.3 stock remaining query is STOCK READ not expense action', async () => {
+	const result = await classify('Combien me reste-t-il de poulets ?');
+	assertNotAction(result, 'stock remaining');
+	assert.equal(result.goal.type, 'QUESTION');
+	assert.equal(result.goal.domain, 'STOCK');
+	assert.equal(result.goal.objective, 'RETRIEVE');
+	assert.equal(result.goal.parameters.product, 'poulets');
+});

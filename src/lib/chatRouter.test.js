@@ -69,6 +69,23 @@ test('H12.2 write safety with expenses flag ON', () => {
   assert.equal(resolveChatRoute('Ajoute une dépense de 30 dollars', { env: h122Write }), CHAT_ROUTE.N8N);
 });
 
+test('H12.3 STOCK read routes to ashy when VITE_ASHY_READ_STOCK=true', () => {
+  const h123 = { ...FLAG_OFF, VITE_ASHY_READ_EXPENSES: 'true', VITE_ASHY_READ_STOCK: 'true' };
+  assert.equal(resolveChatRoute('Quel est mon stock ?', { env: h123 }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Montre-moi mon stock', { env: h123 }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Quels sont mes stocks ?', { env: h123 }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Combien me reste-t-il de poulets ?', { env: h123 }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Quels produits me restent ?', { env: h123 }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Liste mes produits', { env: h123 }), CHAT_ROUTE.N8N);
+});
+
+test('H12.3 write safety with stock flag ON', () => {
+  const h123Write = { ...FLAG_OFF, VITE_ASHY_READ_STOCK: 'true', VITE_ASHY_WRITE_CHAT: 'true' };
+  assert.equal(resolveChatRoute('Ajoute 10 poulets au stock', { env: h123Write }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Retire 5 poulets du stock', { env: h123Write }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute("J'ai reçu 10 produits", { env: h123Write }), CHAT_ROUTE.N8N);
+});
+
 test('flag ON routes read queries to ashy', () => {
   const opts = { env: READ_ON };
   assert.equal(resolveChatRoute('Combien ai-je vendu ce mois-ci ?', opts), CHAT_ROUTE.ASHY);

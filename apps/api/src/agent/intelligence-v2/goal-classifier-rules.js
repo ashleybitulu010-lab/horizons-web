@@ -368,6 +368,20 @@ function isDeclarativeSaleWriteQuery(text) {
 		|| /^j['']?ai\s+fait\s+une\s+vente/i.test(text);
 }
 
+function isStockRemainingReadQuery(text) {
+	return /combien\s+(?:me\s+)?reste(?:-\s?t-\s?il|\s+il)?(?:\s+de)?/i.test(text)
+		|| /reste(?:-\s?t-\s?il|\s+il)\s+de/i.test(text)
+		|| /il\s+me\s+reste\s+combien/i.test(text)
+		|| /quels?\s+produits?\s+(?:me\s+)?restent/i.test(text);
+}
+
+function parseStockRemainingProduct(text) {
+	const match = text.match(/reste(?:-\s?t-\s?il|\s+il)?(?:\s+de)?\s+(.+?)\??$/i)
+		|| text.match(/il\s+me\s+reste\s+combien(?:\s+de)?\s+(.+?)\??$/i)
+		|| text.match(/quels?\s+produits?\s+(?:me\s+)?restent(?:\s+de)?\s*(.+?)\??$/i);
+	return match?.[1] ? sanitizeBusinessFieldValue(match[1].trim()) : null;
+}
+
 function extractActivityReference(text) {
 	const otherActivity = text.match(/(?:dans\s+)?(?:mon|ma)\s+(?:autre\s+)?activit[eé]/i);
 	if (otherActivity) {
@@ -531,6 +545,19 @@ export function classifyGoalRules(message, conversationContext = {}, referenceDa
 			comparison: null,
 			activityReference: null,
 			parameters: {},
+		}, { rejectWriteExecution: true });
+	}
+
+	if (isStockRemainingReadQuery(text) && !/\bd[eé]pens/i.test(text)) {
+		const product = parseStockRemainingProduct(text);
+		return validateGoal({
+			type: 'QUESTION',
+			domain: 'STOCK',
+			objective: 'RETRIEVE',
+			period: null,
+			comparison: null,
+			activityReference: null,
+			parameters: product ? { product } : {},
 		}, { rejectWriteExecution: true });
 	}
 
@@ -1052,7 +1079,7 @@ export function classifyGoalRules(message, conversationContext = {}, referenceDa
 		}, { rejectWriteExecution: true });
 	}
 
-	if (/combien.*(?:en|de)\s+stock|il me reste.*stock|(?:mon|mes)\s+stock/i.test(text)) {
+	if (/combien\s+(?:me\s+)?reste(?:-\s?t-\s?il|\s+il)?(?:\s+de)?|combien.*(?:en|de)\s+stock|il me reste.*stock|(?:mon|mes)\s+stock|quels?\s+produits?\s+(?:me\s+)?restent/i.test(text)) {
 		return validateGoal({
 			type: 'QUESTION',
 			domain: 'STOCK',
