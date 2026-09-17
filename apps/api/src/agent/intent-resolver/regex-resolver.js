@@ -347,6 +347,10 @@ function parseExpenseFollowUp(text, conversationState = {}) {
 		return null;
 	}
 
+	if (isDebtRelatedText(trimmed)) {
+		return null;
+	}
+
 	const filters = conversationState.filters || {};
 	const hasPartialDraft = Boolean(filters.label) || filters.amount != null;
 	if (!hasPartialDraft) {

@@ -68,7 +68,7 @@ function isExplainCue(text) {
 }
 
 function isEvolutionCue(text) {
-	return /comment [eé]volue/i.test(text)
+	return /comment [eé]volu/i.test(text)
 		|| /[eé]volution/i.test(text);
 }
 
@@ -168,7 +168,7 @@ function parseExpenseAction(text) {
 	}
 
 	const jaiDepense = text.match(
-		/^j['']?ai d[eé]pens[eé]\s+(\d+(?:[.,]\d+)?)\s*\$?\s*(?:pour|en|de|dans)\s+(.+)$/i,
+		/^j['']?ai d[eé]pens[eé]\s+(\d+(?:[.,]\d+)?)\s*(?:\$|dollars?)?\s*(?:pour|en|de|dans)\s+(.+?)\.?$/i,
 	);
 	if (jaiDepense) {
 		return {
@@ -294,6 +294,7 @@ function isGeneralActivitySummaryQuery(text) {
 	return /comment va(?:ient)?\s+(?:mon|ma|mes)\s+(?:activit[eé]|commerce|boutique)/i.test(text)
 		|| /quelle est ma situation/i.test(text)
 		|| /^fais(?:-|\s)?moi le point\.?$/i.test(text)
+		|| /^donne(?:-|\s)?moi un r[eé]sum[eé]\.?$/i.test(text)
 		|| /comment se porte/i.test(text)
 		|| /(?:bilan|point)\s+(?:de\s+)?(?:mon|ma)\s+(?:activit[eé]|commerce|situation)/i.test(text);
 }
@@ -591,7 +592,7 @@ export function classifyGoalRules(message, conversationContext = {}, referenceDa
 		}, { rejectWriteExecution: true });
 	}
 
-	if (isCompareCue(text) && /d[eé]penses?/i.test(text)) {
+	if ((isCompareCue(text) || isEvolutionCue(text)) && /d[eé]penses?/i.test(text)) {
 		return validateGoal({
 			type: 'ANALYSIS',
 			domain: 'EXPENSES',
@@ -789,7 +790,8 @@ export function classifyGoalRules(message, conversationContext = {}, referenceDa
 		}, { rejectWriteExecution: true });
 	}
 
-	if (/qui me doit|me doivent|doit encore|doivent encore/i.test(text)) {
+	if (/qui me doit|me doivent|doit encore|doivent encore|dettes?\s*(?:clients?)?|quelles?\s+(?:sont\s+)?(?:mes\s+)?dettes|combien.*me\s+doiv|montre.*(?:mes\s+)?dettes|^mes dettes|ai-je des dettes|montre.*dettes|combien me doit/i.test(text)
+		&& !/\bd[eé]penses?\b/i.test(text)) {
 		return validateGoal({
 			type: 'QUESTION',
 			domain: 'DEBTS',

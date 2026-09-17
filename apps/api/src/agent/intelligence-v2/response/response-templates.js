@@ -92,6 +92,31 @@ export function templateExpensesRetrieve(analysis, context = {}) {
 	return templateError();
 }
 
+export function templateSalesCompare(analysis, context = {}) {
+	const prefix = activityPrefix(context);
+
+	if (analysis?.status === FINANCIAL_ANALYSIS_STATUS.NO_DATA) {
+		return `${prefix}Je n’ai pas assez de données de ventes pour effectuer une comparaison entre deux périodes.`.trim();
+	}
+
+	const comparison = analysis.comparisons?.revenue;
+	if (!comparison || comparison.current == null) {
+		return templateError();
+	}
+
+	const currentText = formatMoneyV2(comparison.current);
+	const previousText = formatMoneyV2(comparison.previous);
+	const deltaText = formatMoneyV2(Math.abs(comparison.absoluteChange ?? 0));
+	const direction = directionNoun(comparison.direction, 'augmentation', 'baisse', 'stagnation');
+
+	if (comparison.previous === 0 || comparison.percentageChange == null) {
+		return `${prefix}Tes ventes sont passées de ${previousText ?? '0 $'} à ${currentText}. Il n’y a pas de base précédente permettant de calculer un pourcentage.`.trim();
+	}
+
+	const pct = formatPercentV2(comparison.percentageChange);
+	return `${prefix}Tes ventes ont connu une ${direction} de ${deltaText}, soit ${pct} par rapport à la période précédente (${previousText} → ${currentText}).`.trim();
+}
+
 export function templateExpensesCompare(analysis, context = {}) {
 	const comparison = analysis.comparisons?.expenses;
 	const prefix = activityPrefix(context);
@@ -256,6 +281,14 @@ export function selectTemplate(analysis, goal, context = {}) {
 		return templateWriteDeferred();
 	}
 
+	if (goal?.domain === 'SALES' && goal?.objective === 'COMPARE') {
+		return templateSalesCompare(analysis, context);
+	}
+
+	if (goal?.domain === 'EXPENSES' && goal?.objective === 'COMPARE') {
+		return templateExpensesCompare(analysis, context);
+	}
+
 	if (analysis?.status === FINANCIAL_ANALYSIS_STATUS.NO_DATA) {
 		return templateNoData(analysis, context);
 	}
@@ -283,10 +316,6 @@ export function selectTemplate(analysis, goal, context = {}) {
 
 	if (goal?.domain === 'EXPENSES' && goal?.objective === 'RETRIEVE') {
 		return templateExpensesRetrieve(analysis, context);
-	}
-
-	if (goal?.domain === 'EXPENSES' && goal?.objective === 'COMPARE') {
-		return templateExpensesCompare(analysis, context);
 	}
 
 	if (goal?.domain === 'PRODUCTS' && goal?.objective === 'RETRIEVE') {

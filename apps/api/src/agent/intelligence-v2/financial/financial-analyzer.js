@@ -350,6 +350,58 @@ function analyzeExpensesRetrieve({ normalized, stepResults, partial }) {
 	return analysis;
 }
 
+function analyzeSalesCompare({ normalized, stepResults, partial }) {
+	const analysis = createEmptyFinancialAnalysis('SALES');
+	analysis.analysisType = FINANCIAL_ANALYSIS_TYPES.COMPARISON;
+
+	const current = normalized.buckets.sales.current;
+	const previous = normalized.buckets.sales.previous;
+
+	if (!current && !previous) {
+		analysis.status = FINANCIAL_ANALYSIS_STATUS.UNAVAILABLE;
+		analysis.limitations.push(MISSING_DATA_STATE.NOT_AVAILABLE);
+		return analysis;
+	}
+
+	const currentEmpty = current?.noData || current?.salesCount === 0;
+	const previousEmpty = previous?.noData || previous?.salesCount === 0;
+
+	if (currentEmpty && previousEmpty) {
+		analysis.periods.current = current?.period || null;
+		analysis.periods.previous = previous?.period || null;
+		analysis.evidence = normalized.evidence;
+		analysis.sourceSteps = stepResults.map((s) => s.stepId);
+		analysis.partial = partial;
+		analysis.status = FINANCIAL_ANALYSIS_STATUS.NO_DATA;
+		analysis.limitations.push(MISSING_DATA_STATE.NO_DATA);
+		return analysis;
+	}
+
+	const currentRevenue = current?.revenue ?? current?.collected ?? null;
+	const previousRevenue = previous?.revenue ?? previous?.collected ?? null;
+
+	analysis.metrics = {
+		revenue: { current: currentRevenue, previous: previousRevenue },
+		salesCount: {
+			current: current?.salesCount ?? null,
+			previous: previous?.salesCount ?? null,
+		},
+	};
+	analysis.comparisons = {
+		revenue: compareMetric(currentRevenue, previousRevenue),
+	};
+	analysis.periods.current = current?.period || null;
+	analysis.periods.previous = previous?.period || null;
+	analysis.evidence = normalized.evidence;
+	analysis.sourceSteps = stepResults.map((s) => s.stepId);
+	analysis.partial = partial;
+	analysis.status = partial
+		? FINANCIAL_ANALYSIS_STATUS.PARTIAL
+		: FINANCIAL_ANALYSIS_STATUS.COMPLETE;
+
+	return analysis;
+}
+
 function analyzeExpensesCompare({ normalized, stepResults, partial }) {
 	const analysis = createEmptyFinancialAnalysis('EXPENSES');
 	analysis.analysisType = FINANCIAL_ANALYSIS_TYPES.COMPARISON;
@@ -515,6 +567,8 @@ export function analyzeFinancialResults({
 		financialAnalysis = analyzeActivitySummary({ goal, normalized, stepResults, partial });
 	} else if (domain === 'SALES' && objective === 'RETRIEVE') {
 		financialAnalysis = analyzeSalesRetrieve({ normalized, stepResults, partial });
+	} else if (domain === 'SALES' && objective === 'COMPARE') {
+		financialAnalysis = analyzeSalesCompare({ normalized, stepResults, partial });
 	} else if (domain === 'EXPENSES' && objective === 'RETRIEVE') {
 		financialAnalysis = analyzeExpensesRetrieve({ normalized, stepResults, partial });
 	} else if (domain === 'EXPENSES' && objective === 'COMPARE') {
