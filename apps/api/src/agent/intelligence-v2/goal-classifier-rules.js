@@ -1,7 +1,10 @@
+import { parseCreateExpenseFromText } from '../intent-resolver/regex-resolver.js';
 import { buildActivityComparison, buildPeriodComparison } from './comparison-contract.js';
 import { buildPeriodSpecFromLegacyId } from './period-contract.js';
 import { sanitizeBusinessFieldValue } from './business-field-sanitizer.js';
 import { validateGoal } from './goal-contract.js';
+
+const JAI_DEPENSE_PREFIX = /^j['']?ai d[eé]pens[eé]/i;
 
 const CONFIRMATION_PATTERN = /^(?:oui|yes|ok|confirme(?:r|z)?|je confirme|c['']est bon|vas[- ]?y)\b[!?.]*$/i;
 const PREVIOUS_MONTH_PATTERN = /(?:mois\s+(?:dernier|pass[eé])|le\s+mois\s+pass[eé])/i;
@@ -195,18 +198,72 @@ function parseSaleAction(text) {
 	};
 }
 
+function parseQuantityProductPriceSale(match) {
+	return {
+		quantity: Number(String(match[1]).replace(',', '.')),
+		product: sanitizeBusinessFieldValue(match[2].trim()),
+		unitPrice: Number(String(match[3]).replace(',', '.')),
+	};
+}
+
 function parsePastTenseSaleAction(text) {
 	const match = text.match(
-		/^j['']?ai\s+vendu\s+(\d+(?:[.,]\d+)?)\s+(.+?)\s+[àa@]\s+(\d+(?:[.,]\d+)?)\s*(?:\$|dollars?)?\.?$/i,
+		/^j['']?ai\s+vendu\s+(\d+(?:[.,]\d+)?)\s+(.+?)\s+[àa@]\s+(\d+(?:[.,]\d+)?)\s*(?:\$|dollars?)?/i,
 	);
 	if (!match) {
 		return null;
 	}
 
+	return parseQuantityProductPriceSale(match);
+}
+
+function parseJeViensDeVendreAction(text) {
+	const match = text.match(
+		/^je\s+viens\s+de\s+vendre\s+(\d+(?:[.,]\d+)?)\s+(.+?)\s+[àa@]\s+(\d+(?:[.,]\d+)?)\s*(?:\$|dollars?)?/i,
+	);
+	if (!match) {
+		return null;
+	}
+
+	return parseQuantityProductPriceSale(match);
+}
+
+function parseVenteDeAction(text) {
+	const match = text.match(
+		/^une\s+vente\s+de\s+(\d+(?:[.,]\d+)?)\s+(.+?)\s+[àa@]\s+(\d+(?:[.,]\d+)?)\s*(?:\$|dollars?)?/i,
+	);
+	if (!match) {
+		return null;
+	}
+
+	return parseQuantityProductPriceSale(match);
+}
+
+function parseJaiFaitUneVenteAction(text) {
+	const match = text.match(
+		/^j['']?ai\s+fait\s+une\s+vente\s+(?:de\s+)?(\d+(?:[.,]\d+)?)\s+(.+?)\s+[àa@]\s+(\d+(?:[.,]\d+)?)\s*(?:\$|dollars?)?/i,
+	);
+	if (!match) {
+		return null;
+	}
+
+	return parseQuantityProductPriceSale(match);
+}
+
+function parseJaiVenduPourPriceAction(text) {
+	const match = text.match(
+		/^j['']?ai\s+vendu\s+(?:un(?:e)?\s+)?(.+?)\s+pour\s+(\d+(?:[.,]\d+)?)\s*(?:\$|dollars?)?/i,
+	);
+	if (!match) {
+		return null;
+	}
+
+	const unitPrice = Number(String(match[2]).replace(',', '.'));
 	return {
-		quantity: Number(match[1]),
-		product: sanitizeBusinessFieldValue(match[2].trim()),
-		unitPrice: Number(String(match[3]).replace(',', '.')),
+		quantity: 1,
+		product: sanitizeBusinessFieldValue(match[1].trim()),
+		unitPrice,
+		amountPaid: unitPrice,
 	};
 }
 
@@ -224,6 +281,78 @@ function parseIncompleteExpenseAction(text) {
 	}
 
 	return { label, amount: null };
+}
+
+function parseJaiExpenseWithoutAmount(text) {
+	const normalized = String(text || '').trim();
+	if (!JAI_DEPENSE_PREFIX.test(normalized)) {
+		return null;
+	}
+	if (/^j['']?ai d[eé]pens[eé]\s+\d+(?:[.,]\d+)?/i.test(normalized)) {
+		return null;
+	}
+
+	const parsed = parseCreateExpenseFromText(normalized);
+	if (!parsed || parsed.amount != null) {
+		return null;
+	}
+
+	return {
+		label: parsed.label ? sanitizeBusinessFieldValue(parsed.label) : null,
+		amount: null,
+	};
+}
+
+function parseJeViensDeDepenserAction(text) {
+	if (!/^je\s+viens\s+de\s+d[eé]pens/i.test(text)) {
+		return null;
+	}
+	const asJai = text.replace(/^je\s+viens\s+de\s+d[eé]pens(?:er|[eé])\s+/i, "j'ai dépensé ");
+	const withAmount = parseExpenseAction(asJai);
+	if (withAmount?.amount != null) {
+		return withAmount;
+	}
+	return parseJaiExpenseWithoutAmount(asJai);
+}
+
+function parseJaiPayeAction(text) {
+	const amountLabel = text.match(
+		/^j['']?ai\s+pay[eé]\s+(\d+(?:[.,]\d+)?)\s*(?:\$|dollars?)?\s*(?:pour|en|de|dans)\s+(.+?)\.?$/i,
+	);
+	if (amountLabel) {
+		return {
+			amount: Number(String(amountLabel[1]).replace(',', '.')),
+			label: sanitizeBusinessFieldValue(amountLabel[2].trim()),
+		};
+	}
+
+	const incomplete = text.match(/^j['']?ai\s+pay[eé]\s+(?:pour|en|de|dans)\s+(.+?)\.?$/i);
+	if (incomplete) {
+		return {
+			amount: null,
+			label: sanitizeBusinessFieldValue(incomplete[1].trim()) || null,
+		};
+	}
+
+	if (/^j['']?ai\s+pay[eé]\b/i.test(text)) {
+		return { amount: null, label: null };
+	}
+
+	return null;
+}
+
+function isDeclarativeExpenseWriteQuery(text) {
+	return JAI_DEPENSE_PREFIX.test(text)
+		|| /^je\s+viens\s+de\s+d[eé]pens/i.test(text)
+		|| /^j['']?ai pay[eé]/i.test(text);
+}
+
+function isDeclarativeSaleWriteQuery(text) {
+	return /^j['']?ai\s+vendu\s+\d+/i.test(text)
+		|| /^j['']?ai\s+vendu\s+(?:un(?:e)?\s+)?.+\s+pour\s+\d+/i.test(text)
+		|| /^je\s+viens\s+de\s+vendre/i.test(text)
+		|| /^une\s+vente\s+de/i.test(text)
+		|| /^j['']?ai\s+fait\s+une\s+vente/i.test(text);
 }
 
 function extractActivityReference(text) {
@@ -454,6 +583,57 @@ export function classifyGoalRules(message, conversationContext = {}, referenceDa
 		}, { rejectWriteExecution: true });
 	}
 
+	const jaiExpenseWithoutAmount = parseJaiExpenseWithoutAmount(text);
+	if (jaiExpenseWithoutAmount) {
+		return validateGoal({
+			type: 'ACTION',
+			domain: 'EXPENSES',
+			objective: 'CREATE',
+			period: null,
+			comparison: null,
+			activityReference: null,
+			parameters: {
+				amount: jaiExpenseWithoutAmount.amount,
+				label: jaiExpenseWithoutAmount.label,
+				confirmed: false,
+			},
+		}, { rejectWriteExecution: true });
+	}
+
+	const jeViensDeDepenser = parseJeViensDeDepenserAction(text);
+	if (jeViensDeDepenser) {
+		return validateGoal({
+			type: 'ACTION',
+			domain: 'EXPENSES',
+			objective: 'CREATE',
+			period: null,
+			comparison: null,
+			activityReference: null,
+			parameters: {
+				amount: jeViensDeDepenser.amount,
+				label: jeViensDeDepenser.label,
+				confirmed: false,
+			},
+		}, { rejectWriteExecution: true });
+	}
+
+	const jaiPaye = parseJaiPayeAction(text);
+	if (jaiPaye) {
+		return validateGoal({
+			type: 'ACTION',
+			domain: 'EXPENSES',
+			objective: 'CREATE',
+			period: null,
+			comparison: null,
+			activityReference: null,
+			parameters: {
+				amount: jaiPaye.amount,
+				label: jaiPaye.label,
+				confirmed: false,
+			},
+		}, { rejectWriteExecution: true });
+	}
+
 	const pastTenseSale = parsePastTenseSaleAction(text);
 	if (pastTenseSale) {
 		return validateGoal({
@@ -481,6 +661,70 @@ export function classifyGoalRules(message, conversationContext = {}, referenceDa
 			activityReference: null,
 			parameters: {
 				...saleAction,
+				confirmed: false,
+			},
+		}, { rejectWriteExecution: true });
+	}
+
+	const jeViensDeVendre = parseJeViensDeVendreAction(text);
+	if (jeViensDeVendre) {
+		return validateGoal({
+			type: 'ACTION',
+			domain: 'SALES',
+			objective: 'CREATE',
+			period: null,
+			comparison: null,
+			activityReference: null,
+			parameters: {
+				...jeViensDeVendre,
+				confirmed: false,
+			},
+		}, { rejectWriteExecution: true });
+	}
+
+	const venteDe = parseVenteDeAction(text);
+	if (venteDe) {
+		return validateGoal({
+			type: 'ACTION',
+			domain: 'SALES',
+			objective: 'CREATE',
+			period: null,
+			comparison: null,
+			activityReference: null,
+			parameters: {
+				...venteDe,
+				confirmed: false,
+			},
+		}, { rejectWriteExecution: true });
+	}
+
+	const jaiFaitUneVente = parseJaiFaitUneVenteAction(text);
+	if (jaiFaitUneVente) {
+		return validateGoal({
+			type: 'ACTION',
+			domain: 'SALES',
+			objective: 'CREATE',
+			period: null,
+			comparison: null,
+			activityReference: null,
+			parameters: {
+				...jaiFaitUneVente,
+				confirmed: false,
+			},
+		}, { rejectWriteExecution: true });
+	}
+
+	const jaiVenduPour = parseJaiVenduPourPriceAction(text);
+	if (jaiVenduPour) {
+		return validateGoal({
+			type: 'ACTION',
+			domain: 'SALES',
+			objective: 'CREATE',
+			period: null,
+			comparison: null,
+			activityReference: null,
+			parameters: {
+				...jaiVenduPour,
 				confirmed: false,
 			},
 		}, { rejectWriteExecution: true });
@@ -829,7 +1073,8 @@ export function classifyGoalRules(message, conversationContext = {}, referenceDa
 		}, { rejectWriteExecution: true });
 	}
 
-	if (/combien.*vendu|(?:mes|mon)\s+ventes|j['']?ai vendu|tu peux me dire.*ventes|je veux savoir.*vendu|qu['']est-ce que j['']ai vendu|chiffre d['']affaires|\bventes\b/i.test(text)) {
+	if (/combien.*vendu|(?:mes|mon)\s+ventes|tu peux me dire.*ventes|je veux savoir.*vendu|qu['']est-ce que j['']ai vendu|chiffre d['']affaires|\bventes\b/i.test(text)
+		&& !isDeclarativeSaleWriteQuery(text)) {
 		return validateGoal({
 			type: 'QUESTION',
 			domain: 'SALES',
@@ -841,7 +1086,8 @@ export function classifyGoalRules(message, conversationContext = {}, referenceDa
 		}, { rejectWriteExecution: true });
 	}
 
-	if (/combien.*d[eé]pens|(?:mes|mon)\s+d[eé]penses|j['']?ai (?:beaucoup )?d[eé]pens|mes d[eé]penses c['']est combien|\bd[eé]penses\b/i.test(text)) {
+	if (/combien.*d[eé]pens|(?:mes|mon)\s+d[eé]penses|mes d[eé]penses c['']est combien|\bd[eé]penses\b|j['']?ai\s+beaucoup\s+d[eé]pens/i.test(text)
+		&& !isDeclarativeExpenseWriteQuery(text)) {
 		return validateGoal({
 			type: 'QUESTION',
 			domain: 'EXPENSES',
