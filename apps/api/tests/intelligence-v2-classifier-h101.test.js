@@ -113,6 +113,18 @@ test('H10.1 natural language expense without amount', async () => {
 	}
 });
 
+test('H10.2 multi-turn amount then label follow-up', async () => {
+	const first = await classify("J'ai dépensé 30 dollars.");
+	assertAction(first, { domain: 'EXPENSES', label: 'amount-first' });
+	const draft = buildActionProposalFromGoal(first.goal).value;
+	const followUp = parseClarificationFollowUp('pour le transport.', {
+		tool: 'create_expense',
+		label: draft.fields.label,
+		amount: draft.fields.amount,
+	});
+	assert.deepEqual(followUp, { label: 'le transport' });
+});
+
 test('H10.1 multi-turn clarification follow-up', async () => {
 	const first = await classify("J'ai dépensé de l'argent.");
 	assertAction(first, { domain: 'EXPENSES', label: 'multi-turn start' });

@@ -283,6 +283,19 @@ function parseIncompleteExpenseAction(text) {
 	return { label, amount: null };
 }
 
+function parseJaiDepenseAmountOnly(text) {
+	const match = text.match(
+		/^j['']?ai d[eé]pens[eé]\s+(\d+(?:[.,]\d+)?)\s*(?:\$|dollars?)?\.?$/i,
+	);
+	if (!match) {
+		return null;
+	}
+	return {
+		amount: Number(String(match[1]).replace(',', '.')),
+		label: null,
+	};
+}
+
 function parseJaiExpenseWithoutAmount(text) {
 	const normalized = String(text || '').trim();
 	if (!JAI_DEPENSE_PREFIX.test(normalized)) {
@@ -578,6 +591,23 @@ export function classifyGoalRules(message, conversationContext = {}, referenceDa
 			parameters: {
 				amount: incompleteExpense.amount,
 				label: incompleteExpense.label,
+				confirmed: false,
+			},
+		}, { rejectWriteExecution: true });
+	}
+
+	const jaiDepenseAmountOnly = parseJaiDepenseAmountOnly(text);
+	if (jaiDepenseAmountOnly) {
+		return validateGoal({
+			type: 'ACTION',
+			domain: 'EXPENSES',
+			objective: 'CREATE',
+			period: null,
+			comparison: null,
+			activityReference: null,
+			parameters: {
+				amount: jaiDepenseAmountOnly.amount,
+				label: jaiDepenseAmountOnly.label,
 				confirmed: false,
 			},
 		}, { rejectWriteExecution: true });

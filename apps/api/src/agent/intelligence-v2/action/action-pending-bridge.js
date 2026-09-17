@@ -22,14 +22,14 @@ export function buildPartialPendingWrite(proposal) {
 	}
 
 	if (proposal.tool === 'create_expense') {
-		if (!proposal.fields.label) {
+		if (!proposal.fields.label && proposal.fields.amount == null) {
 			return null;
 		}
 		/** @type {Record<string, unknown>} */
-		const draft = {
-			tool: 'create_expense',
-			label: proposal.fields.label,
-		};
+		const draft = { tool: 'create_expense' };
+		if (proposal.fields.label) {
+			draft.label = proposal.fields.label;
+		}
 		if (proposal.fields.amount != null) {
 			draft.amount = proposal.fields.amount;
 		}

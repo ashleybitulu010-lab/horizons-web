@@ -149,6 +149,23 @@ export function parseClarificationFollowUp(message, pendingWrite) {
 		return null;
 	}
 
+	if (pendingWrite.tool === ACTION_TOOLS.CREATE_EXPENSE) {
+		if (pendingWrite.amount != null && !pendingWrite.label) {
+			const labelMatch = text.match(/^(?:pour\s+)?(.+?)\.?$/i);
+			if (labelMatch && labelMatch[1].trim()) {
+				return { label: labelMatch[1].trim() };
+			}
+		}
+		const amountMatch = text.match(/^(\d+(?:[.,]\d+)?)\s*(?:\$|dollars?)?\.?$/i);
+		if (amountMatch && pendingWrite.label && pendingWrite.amount == null) {
+			const parsedAmount = parseNumber(amountMatch[1]);
+			if (parsedAmount != null && parsedAmount > 0) {
+				return { amount: parsedAmount };
+			}
+		}
+		return null;
+	}
+
 	const amountMatch = text.match(/^(\d+(?:[.,]\d+)?)\s*(?:\$|dollars?)?\.?$/i);
 	if (!amountMatch) {
 		return null;
@@ -156,13 +173,6 @@ export function parseClarificationFollowUp(message, pendingWrite) {
 
 	const parsedAmount = parseNumber(amountMatch[1]);
 	if (parsedAmount == null || parsedAmount <= 0) {
-		return null;
-	}
-
-	if (pendingWrite.tool === ACTION_TOOLS.CREATE_EXPENSE) {
-		if (pendingWrite.label && pendingWrite.amount == null) {
-			return { amount: parsedAmount };
-		}
 		return null;
 	}
 
