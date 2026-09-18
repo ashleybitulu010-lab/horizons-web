@@ -199,6 +199,8 @@ test('isWriteIntent and isReadIntent are mutually exclusive for QuickAdd drafts'
 
 test('isPdfReportRequest detects explicit PDF report asks', () => {
   assert.equal(isPdfReportRequest('Génère mon bilan PDF'), true);
+  assert.equal(isPdfReportRequest('Envoie-moi le PDF'), true);
+  assert.equal(isPdfReportRequest('Génère le PDF de mon activité'), true);
   assert.equal(isPdfReportRequest('Quel est mon bénéfice ?'), false);
 });
 

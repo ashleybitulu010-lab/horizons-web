@@ -37,8 +37,8 @@ const ASHY_WRITE_CONFIRMATION_PATTERN = /^(?:oui|yes|ok|confirme(?:r|z)?|je conf
 
 const ASHY_WRITE_CANCEL_PATTERN = /^(?:non|no|annule(?:r|z)?)\b[!?.]*$/i;
 
-const PDF_REQUEST_PATTERN = /\b(pdf|document|fichier|export(?:e)?|t[eé]l[eé]charg(?:e|er)|envoie[- ]?moi)\b/i;
-const PDF_REPORT_CONTEXT_PATTERN = /\b(bilan|rapport|synth[eè]se|r[eé]sum[eé]|r[eé]cap(?:itulatif)?)\b/i;
+const PDF_REQUEST_PATTERN = /\b(pdf|document|fichier|export(?:e)?|t[eé]l[eé]charg(?:e|er)|g[eé]n[eè]re|envoie[- ]?moi)\b/i;
+const PDF_REPORT_CONTEXT_PATTERN = /\b(bilan|rapport|synth[eè]se|r[eé]sum[eé]|r[eé]cap(?:itulatif)?|activit[eé]|r[eé]sultats)\b/i;
 
 const READ_PATTERNS = [
   /^(combien|quel(?:le)?|quels|montre|liste|donne|affiche|compare)\b/i,
@@ -76,6 +76,7 @@ export function extractClassificationText(message) {
 
 export function isPdfReportRequest(text) {
   const t = String(text || '');
+  if (/\bpdf\b/i.test(t) && PDF_REQUEST_PATTERN.test(t)) return true;
   return PDF_REQUEST_PATTERN.test(t) && PDF_REPORT_CONTEXT_PATTERN.test(t);
 }
 
@@ -203,6 +204,9 @@ export function resolveChatRoute(message, options = {}) {
     return CHAT_ROUTE.ASHY;
   }
   if (isMigratedReadIntent(READ_CAPABILITY.PROFIT, text, options.env)) {
+    return CHAT_ROUTE.ASHY;
+  }
+  if (isMigratedReadIntent(READ_CAPABILITY.REPORT, text, options.env)) {
     return CHAT_ROUTE.ASHY;
   }
 

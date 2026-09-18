@@ -6,6 +6,7 @@ import {
   isAshyReadExpensesMigrated,
   isAshyReadProductsMigrated,
   isAshyReadProfitMigrated,
+  isAshyReadReportMigrated,
   isAshyReadSalesMigrated,
   isAshyReadStockMigrated,
   isDebtsReadIntent,
@@ -13,11 +14,12 @@ import {
   isMigratedReadIntent,
   isProductsReadIntent,
   isProfitReadIntent,
+  isReportReadIntent,
   isSalesReadIntent,
   isStockReadIntent,
   READ_CAPABILITY,
 } from './ashyReadMigration.js';
-import { CHAT_ROUTE, resolveChatRoute } from './chatRouter.js';
+import { CHAT_ROUTE, isPdfReportRequest, resolveChatRoute } from './chatRouter.js';
 
 const FLAG_OFF = { VITE_ASHY_READ_CHAT: 'false', VITE_ASHY_WRITE_CHAT: 'false' };
 const SALES_ROLLBACK = { ...FLAG_OFF, VITE_ASHY_READ_SALES: 'false' };
@@ -28,10 +30,12 @@ const H123_ON = { ...FLAG_OFF, VITE_ASHY_READ_EXPENSES: 'true', VITE_ASHY_READ_S
 const H124_ON = { ...H123_ON, VITE_ASHY_READ_PRODUCTS: 'true' };
 const H125_ON = { ...H124_ON, VITE_ASHY_READ_DEBTS: 'true' };
 const H126_ON = { ...H125_ON, VITE_ASHY_READ_PROFIT: 'true' };
+const H128_ON = { ...H126_ON, VITE_ASHY_READ_REPORT: 'true' };
 const STOCK_ROLLBACK = { ...FLAG_OFF, VITE_ASHY_READ_STOCK: 'false' };
 const PRODUCTS_ROLLBACK = { ...H123_ON, VITE_ASHY_READ_PRODUCTS: 'false' };
 const DEBTS_ROLLBACK = { ...H124_ON, VITE_ASHY_READ_DEBTS: 'false' };
 const PROFIT_ROLLBACK = { ...H125_ON, VITE_ASHY_READ_PROFIT: 'false' };
+const REPORT_ROLLBACK = { ...H126_ON, VITE_ASHY_READ_REPORT: 'false' };
 
 test('isAshyReadSalesMigrated defaults ON for H12.1 rollback via false', () => {
   assert.equal(isAshyReadSalesMigrated({}), true);
@@ -428,6 +432,87 @@ test('isMigratedReadIntent matches PROFIT capability', () => {
   );
   assert.equal(
     isMigratedReadIntent(READ_CAPABILITY.PROFIT, 'Quel est mon bénéfice ?', PROFIT_ROLLBACK),
+    false,
+  );
+});
+
+test('isAshyReadReportMigrated defaults OFF; true enables H12.8', () => {
+  assert.equal(isAshyReadReportMigrated({}), false);
+  assert.equal(isAshyReadReportMigrated({ VITE_ASHY_READ_REPORT: 'false' }), false);
+  assert.equal(isAshyReadReportMigrated({ VITE_ASHY_READ_REPORT: 'true' }), true);
+});
+
+test('H12.8 isReportReadIntent detects generic report text not pdf/profit/writes', () => {
+  assert.equal(isReportReadIntent('Fais-moi un rapport'), true);
+  assert.equal(isReportReadIntent('Fais-moi un rapport financier'), true);
+  assert.equal(isReportReadIntent('Fais-moi un bilan'), true);
+  assert.equal(isReportReadIntent('Donne-moi un bilan'), true);
+  assert.equal(isReportReadIntent('Donne-moi un bilan de mon activité'), true);
+  assert.equal(isReportReadIntent('Fais-moi le résumé de mon activité'), true);
+  assert.equal(isReportReadIntent('Résumé financier'), true);
+  assert.equal(isReportReadIntent('Donne-moi un résumé financier'), true);
+  assert.equal(isReportReadIntent('Fais-moi le bilan du mois'), true);
+  assert.equal(isReportReadIntent('Je peux avoir mon bilan'), true);
+  assert.equal(isReportReadIntent('Fais-moi un rapport PDF'), false);
+  assert.equal(isReportReadIntent('Génère mon bilan PDF'), false);
+  assert.equal(isReportReadIntent('Quel est mon bénéfice ?'), false);
+  assert.equal(isReportReadIntent('Analyse mes résultats'), false);
+  assert.equal(isReportReadIntent('Pourquoi mon bénéfice a changé ?'), false);
+  assert.equal(isReportReadIntent('Ajoute une dépense de 30 dollars'), false);
+  assert.equal(isReportReadIntent('Enregistre une vente de 50 dollars'), false);
+});
+
+test('H12.8 report migration routes to ashy when flag ON', () => {
+  assert.equal(resolveChatRoute('Fais-moi un rapport', { env: H128_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Fais-moi un rapport financier', { env: H128_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Fais-moi un bilan', { env: H128_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Donne-moi un bilan', { env: H128_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Résumé financier', { env: H128_ON }), CHAT_ROUTE.ASHY);
+});
+
+test('H12.8 report flag OFF keeps legacy n8n routing', () => {
+  assert.equal(resolveChatRoute('Fais-moi un rapport', { env: REPORT_ROLLBACK }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Fais-moi un bilan', { env: REPORT_ROLLBACK }), CHAT_ROUTE.N8N);
+});
+
+test('H12.8 PDF guard stays n8n even when report flag ON', () => {
+  assert.equal(isPdfReportRequest('Fais-moi un rapport PDF'), true);
+  assert.equal(isPdfReportRequest('Fais-moi un bilan PDF'), true);
+  assert.equal(isPdfReportRequest('Génère le PDF de mon activité'), true);
+  assert.equal(isPdfReportRequest('Envoie-moi le PDF'), true);
+  assert.equal(resolveChatRoute('Fais-moi un rapport PDF', { env: H128_ON }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Fais-moi un bilan PDF', { env: H128_ON }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Génère le PDF de mon activité', { env: H128_ON }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Envoie-moi le PDF', { env: H128_ON }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Génère mon bilan PDF', { env: H128_ON }), CHAT_ROUTE.N8N);
+});
+
+test('H12.8 profit/analysis regression when report flag enabled', () => {
+  assert.equal(resolveChatRoute('Quel est mon bénéfice ?', { env: H128_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Analyse mes résultats', { env: H128_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Pourquoi mon bénéfice a changé ?', { env: H128_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Donne-moi un résumé', { env: H128_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Donne-moi un résumé financier', { env: H128_ON }), CHAT_ROUTE.ASHY);
+});
+
+test('H12.8 read regressions and write safety when report flag enabled', () => {
+  assert.equal(resolveChatRoute('Quelles sont mes ventes ?', { env: H128_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Quelles sont mes dépenses ?', { env: H128_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Quel est mon stock ?', { env: H128_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Liste mes produits', { env: H128_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Qui me doit de l\'argent ?', { env: H128_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Ajoute une dépense de 30 dollars', { env: H128_ON }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Enregistre une vente de 50 dollars', { env: H128_ON }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Ajoute un paiement', { env: H128_ON }), CHAT_ROUTE.N8N);
+});
+
+test('isMigratedReadIntent matches REPORT capability', () => {
+  assert.equal(
+    isMigratedReadIntent(READ_CAPABILITY.REPORT, 'Fais-moi un bilan', H128_ON),
+    true,
+  );
+  assert.equal(
+    isMigratedReadIntent(READ_CAPABILITY.REPORT, 'Fais-moi un bilan', REPORT_ROLLBACK),
     false,
   );
 });

@@ -6,6 +6,7 @@
  * Rollback PRODUCTS: VITE_ASHY_READ_PRODUCTS=false
  * Rollback DEBTS: VITE_ASHY_READ_DEBTS=false
  * Rollback PROFIT: VITE_ASHY_READ_PROFIT=false
+ * Rollback REPORT: VITE_ASHY_READ_REPORT=false
  */
 
 export const READ_CAPABILITY = Object.freeze({
@@ -15,6 +16,7 @@ export const READ_CAPABILITY = Object.freeze({
   PRODUCTS: 'PRODUCTS',
   DEBTS: 'DEBTS',
   PROFIT: 'PROFIT',
+  REPORT: 'REPORT',
 });
 
 const CREATE_SALE_PREFIX = /^j['']?ai vendu\b/i;
@@ -74,6 +76,11 @@ export function isAshyReadDebtsMigrated(env = import.meta.env) {
 /** H12.6 sixth migrated READ (Profit/Analysis). Default OFF; explicit true enables. */
 export function isAshyReadProfitMigrated(env = import.meta.env) {
   return String(env?.VITE_ASHY_READ_PROFIT || '').toLowerCase() === 'true';
+}
+
+/** H12.8 seventh migrated READ (Report text). Default OFF; explicit true enables. */
+export function isAshyReadReportMigrated(env = import.meta.env) {
+  return String(env?.VITE_ASHY_READ_REPORT || '').toLowerCase() === 'true';
 }
 
 const SALES_READ_PATTERNS = [
@@ -254,8 +261,21 @@ const PROFIT_READ_PATTERNS = [
   /(?:[ée]volu[eé]|evolution).*(?:b[eé]n[eé]f|profit)/i,
   /comment va(?:ient)?\s+(?:mon|ma|mes)\s+(?:activit[eé]|commerce|boutique)/i,
   /^fais(?:-|\s)?moi le point/i,
-  /^donne(?:-|\s)?moi un r[eé]sum[eé]/i,
+  /^donne(?:-|\s)?moi un r[eé]sum[eé](?:\s*$|[.?!]\s*$)/i,
   /compare.*(?:d[eé]penses?.*revenus?|revenus?.*d[eé]penses?|ventes?.*d[eé]penses?)/i,
+];
+
+const REPORT_READ_PATTERNS = [
+  /^fais(?:-|\s)?moi\s+(?:un\s+)?rapport(?:\s+financier)?\b/i,
+  /^fais(?:-|\s)?moi\s+(?:(?:un|le)\s+)?bilan\b/i,
+  /^donne(?:-|\s)?moi\s+(?:(?:un|le)\s+)?bilan\b/i,
+  /^donne(?:-|\s)?moi\s+un\s+bilan\s+(?:de\s+)?(?:mon\s+)?activit[eé]/i,
+  /^fais(?:-|\s)?moi\s+le\s+r[eé]sum[eé]\s+(?:de\s+)?(?:mon\s+)?activit[eé]/i,
+  /^(?:fais(?:-|\s)?moi\s+)?(?:le\s+)?r[eé]sum[eé]\s+(?:de\s+)?(?:mon\s+)?activit[eé]/i,
+  /^(?:donne(?:-|\s)?moi\s+)?(?:un\s+)?r[eé]sum[eé]\s+financier/i,
+  /^je\s+peux\s+avoir\s+(?:mon\s+)?bilan\b/i,
+  /^fais(?:-|\s)?moi\s+(?:le\s+)?r[eé]cap(?:itulatif)?\b/i,
+  /^donne(?:-|\s)?moi\s+(?:le\s+)?r[eé]cap(?:itulatif)?\b/i,
 ];
 
 function isProfitSalesOrExpensesOnlyQuery(text) {
@@ -298,6 +318,27 @@ export function isProfitReadIntent(text) {
   return PROFIT_READ_PATTERNS.some((pattern) => pattern.test(t));
 }
 
+/**
+ * Generic activity report text READ — excludes PDF exports, profit/analysis, and writes.
+ */
+export function isReportReadIntent(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (/\bpdf\b/i.test(t)) return false;
+  if (isSalesWriteOpener(t)) return false;
+  if (isExpensesWriteOpener(t)) return false;
+  if (isStockWriteOpener(t)) return false;
+  if (isDebtsWriteOpener(t)) return false;
+  if (isProductsWriteOpener(t)) return false;
+  if (isProfitReadIntent(t)) return false;
+  if (isSalesReadIntent(t)) return false;
+  if (isExpensesReadIntent(t)) return false;
+  if (isStockReadIntent(t)) return false;
+  if (isProductsReadIntent(t)) return false;
+  if (isDebtsReadIntent(t)) return false;
+  return REPORT_READ_PATTERNS.some((pattern) => pattern.test(t));
+}
+
 export function isMigratedReadIntent(capability, text, env = import.meta.env) {
   if (capability === READ_CAPABILITY.SALES) {
     return isAshyReadSalesMigrated(env) && isSalesReadIntent(text);
@@ -316,6 +357,9 @@ export function isMigratedReadIntent(capability, text, env = import.meta.env) {
   }
   if (capability === READ_CAPABILITY.PROFIT) {
     return isAshyReadProfitMigrated(env) && isProfitReadIntent(text);
+  }
+  if (capability === READ_CAPABILITY.REPORT) {
+    return isAshyReadReportMigrated(env) && isReportReadIntent(text);
   }
   return false;
 }

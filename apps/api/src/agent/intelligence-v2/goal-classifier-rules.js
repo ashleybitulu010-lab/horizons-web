@@ -446,8 +446,19 @@ function parseProductWriteAction(text) {
 	return null;
 }
 
+function isReportTextQuery(text) {
+	if (/\bpdf\b/i.test(text)) return false;
+	return /^(?:fais(?:-|\s)?moi|donne(?:-|\s)?moi)\s+(?:(?:un|le)\s+)?(?:rapport|bilan)/i.test(text)
+		|| /^je\s+peux\s+avoir\s+(?:mon\s+)?bilan\b/i.test(text)
+		|| /r[eé]sum[eé]\s+(?:financier|de\s+(?:mon\s+)?activit[eé])/i.test(text)
+		|| /^fais(?:-|\s)?moi\s+le\s+r[eé]sum[eé]/i.test(text)
+		|| /^fais(?:-|\s)?moi\s+(?:le\s+)?r[eé]cap(?:itulatif)?\b/i.test(text)
+		|| /^donne(?:-|\s)?moi\s+(?:le\s+)?r[eé]cap(?:itulatif)?\b/i.test(text);
+}
+
 function isGeneralActivitySummaryQuery(text) {
-	return /comment va(?:ient)?\s+(?:mon|ma|mes)\s+(?:activit[eé]|commerce|boutique|finances)/i.test(text)
+	return isReportTextQuery(text)
+		|| /comment va(?:ient)?\s+(?:mon|ma|mes)\s+(?:activit[eé]|commerce|boutique|finances)/i.test(text)
 		|| /quelle est ma situation/i.test(text)
 		|| /^fais(?:-|\s)?moi le point\.?$/i.test(text)
 		|| /^donne(?:-|\s)?moi un r[eé]sum[eé]\.?$/i.test(text)
