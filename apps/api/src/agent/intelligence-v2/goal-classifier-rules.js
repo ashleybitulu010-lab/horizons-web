@@ -447,7 +447,7 @@ function parseProductWriteAction(text) {
 }
 
 function isGeneralActivitySummaryQuery(text) {
-	return /comment va(?:ient)?\s+(?:mon|ma|mes)\s+(?:activit[eé]|commerce|boutique)/i.test(text)
+	return /comment va(?:ient)?\s+(?:mon|ma|mes)\s+(?:activit[eé]|commerce|boutique|finances)/i.test(text)
 		|| /quelle est ma situation/i.test(text)
 		|| /^fais(?:-|\s)?moi le point\.?$/i.test(text)
 		|| /^donne(?:-|\s)?moi un r[eé]sum[eé]\.?$/i.test(text)
@@ -1031,7 +1031,7 @@ export function classifyGoalRules(message, conversationContext = {}, referenceDa
 		}, { rejectWriteExecution: true });
 	}
 
-	if (/ratio.*d[eé]pense|ratio.*revenu|d[eé]penses?\/revenus?/i.test(text)) {
+	if (/ratio.*d[eé]pense|ratio.*revenu|d[eé]penses?\/revenus?|(?:pourcentage|ratio).*revenus?.*d[eé]penses?|d[eé]penses?.*revenus?.*(?:pourcentage|ratio)/i.test(text)) {
 		return validateGoal({
 			type: 'QUESTION',
 			domain: 'PROFIT',
@@ -1050,6 +1050,42 @@ export function classifyGoalRules(message, conversationContext = {}, referenceDa
 			objective: 'COMPARE',
 			period: periodFromText(text, conversationContext, referenceDate),
 			comparison: profitComparison(referenceDate),
+			activityReference: null,
+			parameters: {},
+		}, { rejectWriteExecution: true });
+	}
+
+	if (/^combien ai-?je gagn[eé]/i.test(text)) {
+		return validateGoal({
+			type: 'QUESTION',
+			domain: 'PROFIT',
+			objective: 'RETRIEVE',
+			period: periodFromText(text, conversationContext, referenceDate),
+			comparison: null,
+			activityReference: null,
+			parameters: {},
+		}, { rejectWriteExecution: true });
+	}
+
+	if (/^analyse mes r[eé]sultats/i.test(text) || /^comment vont mes finances/i.test(text)) {
+		return validateGoal({
+			type: 'ANALYSIS',
+			domain: 'GENERAL',
+			objective: 'SUMMARIZE',
+			period: periodFromText(text, conversationContext, referenceDate),
+			comparison: null,
+			activityReference: null,
+			parameters: { summary: true },
+		}, { rejectWriteExecution: true });
+	}
+
+	if (isEvolutionCue(text) && /chiffre d['']affaires/i.test(text)) {
+		return validateGoal({
+			type: 'ANALYSIS',
+			domain: 'SALES',
+			objective: 'COMPARE',
+			period: periodFromText(text, conversationContext, referenceDate),
+			comparison: salesComparison(referenceDate),
 			activityReference: null,
 			parameters: {},
 		}, { rejectWriteExecution: true });

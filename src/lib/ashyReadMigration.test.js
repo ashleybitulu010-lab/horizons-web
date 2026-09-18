@@ -5,12 +5,14 @@ import {
   isAshyReadDebtsMigrated,
   isAshyReadExpensesMigrated,
   isAshyReadProductsMigrated,
+  isAshyReadProfitMigrated,
   isAshyReadSalesMigrated,
   isAshyReadStockMigrated,
   isDebtsReadIntent,
   isExpensesReadIntent,
   isMigratedReadIntent,
   isProductsReadIntent,
+  isProfitReadIntent,
   isSalesReadIntent,
   isStockReadIntent,
   READ_CAPABILITY,
@@ -25,9 +27,11 @@ const H122_ON = { ...FLAG_OFF, VITE_ASHY_READ_EXPENSES: 'true' };
 const H123_ON = { ...FLAG_OFF, VITE_ASHY_READ_EXPENSES: 'true', VITE_ASHY_READ_STOCK: 'true' };
 const H124_ON = { ...H123_ON, VITE_ASHY_READ_PRODUCTS: 'true' };
 const H125_ON = { ...H124_ON, VITE_ASHY_READ_DEBTS: 'true' };
+const H126_ON = { ...H125_ON, VITE_ASHY_READ_PROFIT: 'true' };
 const STOCK_ROLLBACK = { ...FLAG_OFF, VITE_ASHY_READ_STOCK: 'false' };
 const PRODUCTS_ROLLBACK = { ...H123_ON, VITE_ASHY_READ_PRODUCTS: 'false' };
 const DEBTS_ROLLBACK = { ...H124_ON, VITE_ASHY_READ_DEBTS: 'false' };
+const PROFIT_ROLLBACK = { ...H125_ON, VITE_ASHY_READ_PROFIT: 'false' };
 
 test('isAshyReadSalesMigrated defaults ON for H12.1 rollback via false', () => {
   assert.equal(isAshyReadSalesMigrated({}), true);
@@ -344,6 +348,86 @@ test('isMigratedReadIntent matches DEBTS capability', () => {
   );
   assert.equal(
     isMigratedReadIntent(READ_CAPABILITY.DEBTS, 'Quelles sont mes dettes ?', DEBTS_ROLLBACK),
+    false,
+  );
+});
+
+test('isAshyReadProfitMigrated defaults OFF; true enables H12.6', () => {
+  assert.equal(isAshyReadProfitMigrated({}), false);
+  assert.equal(isAshyReadProfitMigrated({ VITE_ASHY_READ_PROFIT: 'false' }), false);
+  assert.equal(isAshyReadProfitMigrated({ VITE_ASHY_READ_PROFIT: 'true' }), true);
+});
+
+test('H12.6 isProfitReadIntent detects profit/analysis reads not writes', () => {
+  assert.equal(isProfitReadIntent('Quel est mon bénéfice ?'), true);
+  assert.equal(isProfitReadIntent('Combien ai-je gagné ?'), true);
+  assert.equal(isProfitReadIntent('Quel est mon profit ?'), true);
+  assert.equal(isProfitReadIntent('Est-ce que j\'ai fait du bénéfice ?'), true);
+  assert.equal(isProfitReadIntent('Analyse mes résultats'), true);
+  assert.equal(isProfitReadIntent('Comment vont mes finances ?'), true);
+  assert.equal(isProfitReadIntent('Pourquoi mon bénéfice a changé ?'), true);
+  assert.equal(isProfitReadIntent('Compare mon bénéfice avec le mois passé'), true);
+  assert.equal(isProfitReadIntent('Mon bénéfice a-t-il augmenté ?'), true);
+  assert.equal(isProfitReadIntent('Quelle est ma marge ?'), true);
+  assert.equal(isProfitReadIntent('Quel pourcentage de mes revenus part dans les dépenses ?'), true);
+  assert.equal(isProfitReadIntent('Comment évolue mon bénéfice ?'), true);
+  assert.equal(isProfitReadIntent('Combien ai-je vendu ?'), false);
+  assert.equal(isProfitReadIntent('Combien ai-je dépensé ?'), false);
+  assert.equal(isProfitReadIntent('Comment évoluent mes ventes ?'), false);
+  assert.equal(isProfitReadIntent('Comment évoluent mes dépenses ?'), false);
+  assert.equal(isProfitReadIntent('Quelle est l\'évolution de mon chiffre d\'affaires ?'), false);
+  assert.equal(isProfitReadIntent('Ajoute une dépense de 30 dollars'), false);
+  assert.equal(isProfitReadIntent('Enregistre une vente de 50 dollars'), false);
+  assert.equal(isProfitReadIntent('Ajoute un paiement'), false);
+});
+
+test('H12.6 profit migration routes to ashy when flag ON', () => {
+  assert.equal(resolveChatRoute('Quel est mon bénéfice ?', { env: H126_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Combien ai-je gagné ?', { env: H126_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Analyse mes résultats', { env: H126_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Comment vont mes finances ?', { env: H126_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Pourquoi mon bénéfice a changé ?', { env: H126_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Compare mon bénéfice avec le mois passé', { env: H126_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Quelle est ma marge ?', { env: H126_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Quel pourcentage de mes revenus part dans les dépenses ?', { env: H126_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Comment évolue mon bénéfice ?', { env: H126_ON }), CHAT_ROUTE.ASHY);
+});
+
+test('H12.6 profit flag OFF keeps legacy n8n routing', () => {
+  assert.equal(resolveChatRoute('Quel est mon bénéfice ?', { env: PROFIT_ROLLBACK }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Analyse mes résultats', { env: PROFIT_ROLLBACK }), CHAT_ROUTE.N8N);
+});
+
+test('H12.6 sales/expenses/stock/products/debts stay V2 when profit flag enabled', () => {
+  assert.equal(resolveChatRoute('Quelles sont mes ventes ?', { env: H126_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Quelles sont mes dépenses ?', { env: H126_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Quel est mon stock ?', { env: H126_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Liste mes produits', { env: H126_ON }), CHAT_ROUTE.ASHY);
+  assert.equal(resolveChatRoute('Qui me doit de l\'argent ?', { env: H126_ON }), CHAT_ROUTE.ASHY);
+});
+
+test('H12.6 write safety — writes not routed as profit read', () => {
+  const writeOn = { ...H126_ON, VITE_ASHY_WRITE_CHAT: 'true' };
+  assert.equal(resolveChatRoute('Ajoute une dépense de 30 dollars', { env: writeOn }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Enregistre une vente de 50 dollars', { env: writeOn }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Ajoute un paiement', { env: writeOn }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Ajoute une dépense de 30 dollars', { env: H126_ON }), CHAT_ROUTE.N8N);
+});
+
+test('H12.6 regression — pdf and sales/expenses evolution stay non-profit', () => {
+  assert.equal(resolveChatRoute('Génère mon bilan PDF', { env: H126_ON }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Comment évoluent mes ventes ?', { env: H126_ON }), CHAT_ROUTE.N8N);
+  assert.equal(resolveChatRoute('Comment évoluent mes dépenses ?', { env: H126_ON }), CHAT_ROUTE.N8N);
+  assert.equal(isSalesReadIntent('Quelle est l\'évolution de mon chiffre d\'affaires ?'), false);
+});
+
+test('isMigratedReadIntent matches PROFIT capability', () => {
+  assert.equal(
+    isMigratedReadIntent(READ_CAPABILITY.PROFIT, 'Quel est mon bénéfice ?', H126_ON),
+    true,
+  );
+  assert.equal(
+    isMigratedReadIntent(READ_CAPABILITY.PROFIT, 'Quel est mon bénéfice ?', PROFIT_ROLLBACK),
     false,
   );
 });

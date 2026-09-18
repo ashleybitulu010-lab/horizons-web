@@ -202,6 +202,9 @@ export function resolveChatRoute(message, options = {}) {
   if (isMigratedReadIntent(READ_CAPABILITY.DEBTS, text, options.env)) {
     return CHAT_ROUTE.ASHY;
   }
+  if (isMigratedReadIntent(READ_CAPABILITY.PROFIT, text, options.env)) {
+    return CHAT_ROUTE.ASHY;
+  }
 
   if (!readFlag && !writeFlag) {
     return CHAT_ROUTE.N8N;

@@ -1,10 +1,11 @@
 /**
- * H12.1 + H12.2 + H12.3 + H12.4 + H12.5 — incremental Legacy → V2 read migration (one capability at a time).
+ * H12.1 + H12.2 + H12.3 + H12.4 + H12.5 + H12.6 — incremental Legacy → V2 read migration (one capability at a time).
  * Rollback SALES: VITE_ASHY_READ_SALES=false
  * Rollback EXPENSES: VITE_ASHY_READ_EXPENSES=false
  * Rollback STOCK: VITE_ASHY_READ_STOCK=false
  * Rollback PRODUCTS: VITE_ASHY_READ_PRODUCTS=false
  * Rollback DEBTS: VITE_ASHY_READ_DEBTS=false
+ * Rollback PROFIT: VITE_ASHY_READ_PROFIT=false
  */
 
 export const READ_CAPABILITY = Object.freeze({
@@ -13,6 +14,7 @@ export const READ_CAPABILITY = Object.freeze({
   STOCK: 'STOCK',
   PRODUCTS: 'PRODUCTS',
   DEBTS: 'DEBTS',
+  PROFIT: 'PROFIT',
 });
 
 const CREATE_SALE_PREFIX = /^j['']?ai vendu\b/i;
@@ -67,6 +69,11 @@ export function isAshyReadProductsMigrated(env = import.meta.env) {
 /** H12.5 fifth migrated READ. Default OFF; explicit true enables. */
 export function isAshyReadDebtsMigrated(env = import.meta.env) {
   return String(env?.VITE_ASHY_READ_DEBTS || '').toLowerCase() === 'true';
+}
+
+/** H12.6 sixth migrated READ (Profit/Analysis). Default OFF; explicit true enables. */
+export function isAshyReadProfitMigrated(env = import.meta.env) {
+  return String(env?.VITE_ASHY_READ_PROFIT || '').toLowerCase() === 'true';
 }
 
 const SALES_READ_PATTERNS = [
@@ -168,6 +175,9 @@ export function isSalesReadIntent(text) {
   const t = String(text || '').trim();
   if (!t) return false;
   if (isSalesWriteOpener(t)) return false;
+  if ((/[ée]volu(?:e|ent|tion)|evolution|compare/i.test(t) || /comment/i.test(t)) && /chiffre d['']affaires/i.test(t)) {
+    return false;
+  }
   return SALES_READ_PATTERNS.some((pattern) => pattern.test(t));
 }
 
@@ -226,6 +236,68 @@ export function isDebtsReadIntent(text) {
   return DEBTS_READ_PATTERNS.some((pattern) => pattern.test(t));
 }
 
+const PROFIT_READ_PATTERNS = [
+  /^quel(?:le)?s?\s+(?:est\s+)?(?:mon|mes|le|la)\s+(?:b[eé]n[eé]fice|profit)/i,
+  /^combien ai-?je gagn[eé]/i,
+  /est-ce que j['']?ai fait du b[eé]n[eé]fice/i,
+  /^analyse mes r[eé]sultats/i,
+  /^comment vont mes finances/i,
+  /pourquoi mon b[eé]n[eé]fice/i,
+  /pourquoi mes r[eé]sultats/i,
+  /compare.*(?:mon\s+)?b[eé]n[eé]f|compare.*profit/i,
+  /(?:mon\s+)?b[eé]n[eé]fice.*(?:augment|mois|pass[eé])/i,
+  /quelle est ma marge/i,
+  /marge b[eé]n[eé]ficiaire/i,
+  /(?:pourcentage|ratio).*revenus?.*d[eé]penses?/i,
+  /d[eé]penses?.*revenus?.*(?:pourcentage|ratio)/i,
+  /ratio.*d[eé]pense.*revenu/i,
+  /(?:[ée]volu[eé]|evolution).*(?:b[eé]n[eé]f|profit)/i,
+  /comment va(?:ient)?\s+(?:mon|ma|mes)\s+(?:activit[eé]|commerce|boutique)/i,
+  /^fais(?:-|\s)?moi le point/i,
+  /^donne(?:-|\s)?moi un r[eé]sum[eé]/i,
+  /compare.*(?:d[eé]penses?.*revenus?|revenus?.*d[eé]penses?|ventes?.*d[eé]penses?)/i,
+];
+
+function isProfitSalesOrExpensesOnlyQuery(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (/^combien ai-?je vendu/i.test(t)) return true;
+  if (/^combien ai-?je d[eé]pens[eé]/i.test(t)) return true;
+  if (/^quelles sont mes ventes/i.test(t)) return true;
+  if (/^quelles sont mes d[eé]penses/i.test(t)) return true;
+  if ((/[ée]volu[eé]|evolution|compare/i.test(t) || /^comment/i.test(t))
+    && /\bventes?\b/i.test(t) && !/b[eé]n[eé]f|profit|marge|revenu|d[eé]pense/i.test(t)) {
+    return true;
+  }
+  if ((/[ée]volu[eé]|evolution|compare/i.test(t) || /^comment/i.test(t))
+    && /\bd[eé]penses?\b/i.test(t) && !/b[eé]n[eé]f|profit|marge|ventes?|revenu/i.test(t)) {
+    return true;
+  }
+  if ((/[ée]volu[eé]|evolution/i.test(t) || /comment/i.test(t)) && /chiffre d['']affaires/i.test(t)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Profit / financial analysis READ — excludes sales/expenses-only queries and writes.
+ */
+export function isProfitReadIntent(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (isSalesWriteOpener(t)) return false;
+  if (isExpensesWriteOpener(t)) return false;
+  if (isStockWriteOpener(t)) return false;
+  if (isDebtsWriteOpener(t)) return false;
+  if (isProfitSalesOrExpensesOnlyQuery(t)) return false;
+  if (isSalesReadIntent(t)) return false;
+  if (isExpensesReadIntent(t)) return false;
+  if (isStockReadIntent(t)) return false;
+  if (isProductsReadIntent(t)) return false;
+  if (isDebtsReadIntent(t)) return false;
+  return PROFIT_READ_PATTERNS.some((pattern) => pattern.test(t));
+}
+
 export function isMigratedReadIntent(capability, text, env = import.meta.env) {
   if (capability === READ_CAPABILITY.SALES) {
     return isAshyReadSalesMigrated(env) && isSalesReadIntent(text);
@@ -241,6 +313,9 @@ export function isMigratedReadIntent(capability, text, env = import.meta.env) {
   }
   if (capability === READ_CAPABILITY.DEBTS) {
     return isAshyReadDebtsMigrated(env) && isDebtsReadIntent(text);
+  }
+  if (capability === READ_CAPABILITY.PROFIT) {
+    return isAshyReadProfitMigrated(env) && isProfitReadIntent(text);
   }
   return false;
 }
